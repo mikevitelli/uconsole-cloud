@@ -2,6 +2,8 @@
 
 A monorepo for monitoring and managing system backup repositories on GitHub. Built with Next.js and Sanity Studio.
 
+**Production:** [uconsole.cloud](https://uconsole.cloud)
+
 ## Structure
 
 ```
@@ -21,6 +23,7 @@ The dashboard authenticates via GitHub OAuth and displays data from a linked bac
 - **Browser Extensions** — Chromium extension inventory
 - **Scripts Manifest** — table of backup scripts
 - **Repository Structure** — file/directory tree with sizes
+- **3D Model** — interactive Sketchfab embed of the ClockworkPi uConsole on the landing page
 
 ### Tech
 
@@ -43,12 +46,43 @@ Sanity Studio for managing dashboard content:
 - Sanity v3 (Structure Tool, Vision)
 - TypeScript 5
 
+## Deployment
+
+### Environments
+
+| Environment | Domain | Trigger |
+|---|---|---|
+| Production | [uconsole.cloud](https://uconsole.cloud) | Push to `main` or `vercel --prod` |
+| Preview | `uconsole-dashboard-*.vercel.app` | PRs, non-main branches, or `vercel` |
+| Local | `localhost:3000` | `npm run dev` |
+
+Each environment uses its own GitHub OAuth app and environment variables, configured in Vercel.
+
+### Frontend (Vercel)
+
+The frontend is deployed to [Vercel](https://vercel.com) with the root directory set to `frontend/`. Pushes to `main` trigger production deployments automatically via GitHub integration.
+
+### Studio (Sanity Cloud)
+
+Deploy the studio from the `studio/` directory:
+
+```bash
+cd studio && npx sanity deploy
+```
+
+### CORS Origins (Sanity)
+
+Add these in [sanity.io/manage](https://sanity.io/manage) → API → CORS origins (with credentials):
+
+- `https://uconsole.cloud`
+- `http://localhost:3000`
+
 ## Setup
 
 ### Prerequisites
 
 - Node.js 20+
-- GitHub OAuth App
+- GitHub OAuth App (one per environment)
 - Upstash Redis database
 - Sanity project
 
@@ -79,16 +113,19 @@ npm run dev        # starts frontend (:3000) and studio (:3333) in parallel
 npm run build      # builds both workspaces
 ```
 
-### GitHub OAuth App Setup
+### GitHub OAuth Apps
 
-Create an OAuth App at **GitHub > Settings > Developer settings > OAuth Apps**:
+Create a separate OAuth App per environment at **GitHub > Settings > Developer settings > OAuth Apps**:
 
-- **Homepage URL:** `http://localhost:3000`
-- **Callback URL:** `http://localhost:3000/api/auth/callback/github`
+| Environment | Homepage URL | Callback URL |
+|---|---|---|
+| Production | `https://uconsole.cloud` | `https://uconsole.cloud/api/auth/callback/github` |
+| Preview | `https://uconsole-dashboard.vercel.app` | `https://uconsole-dashboard.vercel.app/api/auth/callback/github` |
+| Local | `http://localhost:3000` | `http://localhost:3000/api/auth/callback/github` |
 
 ## How It Works
 
 1. Sign in with GitHub
-2. Link your backup repository (validates it contains `packages/apt-manual.txt`)
+2. Select your backup repository from the dropdown (or enter manually)
 3. Dashboard fetches and displays repo data via GitHub API
 4. Sanity Studio manages supplementary content (notes, logs, profiles)

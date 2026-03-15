@@ -1,13 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+
+interface Repo {
+  full_name: string;
+  private: boolean;
+}
 
 export function RepoLinker() {
   const [repo, setRepo] = useState("");
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    async function fetchRepos() {
+      try {
+        const res = await fetch("/api/github/repos");
+        if (res.ok) {
+          const data = await res.json();
+          setRepos(data);
+        }
+      } catch {
+        // Fall back to manual input
+      } finally {
+        setLoadingRepos(false);
+      }
+    }
+    fetchRepos();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,13 +61,32 @@ export function RepoLinker() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <input
-        type="text"
-        value={repo}
-        onChange={(e) => setRepo(e.target.value)}
-        placeholder="owner/repo"
-        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
-      />
+      {loadingRepos ? (
+        <div className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-dim">
+          Loading repositories...
+        </div>
+      ) : repos.length > 0 ? (
+        <select
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
+        >
+          <option value="">Select a repository</option>
+          {repos.map((r) => (
+            <option key={r.full_name} value={r.full_name}>
+              {r.full_name} {r.private ? "🔒" : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type="text"
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          placeholder="owner/repo"
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
+        />
+      )}
       {error && <p className="text-red text-xs mt-2">{error}</p>}
       <button
         type="submit"

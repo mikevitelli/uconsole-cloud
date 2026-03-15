@@ -33,7 +33,17 @@ export default async function Home() {
   // ── Not signed in ──────────────────────────────────────
   if (!session) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-4">
+        <div className="w-full max-w-md aspect-square rounded-xl overflow-hidden border border-border">
+          <iframe
+            title="ClockworkPi uConsole"
+            className="w-full h-full"
+            frameBorder="0"
+            allowFullScreen
+            allow="autoplay; fullscreen; xr-spatial-tracking"
+            src="https://sketchfab.com/models/8c1124b60692407095fce5d9978e2528/embed?autostart=1&ui_theme=dark&ui_infos=0&ui_controls=1&ui_stop=0"
+          />
+        </div>
         <div className="bg-card border border-border rounded-xl p-8 max-w-sm w-full text-center">
           <h1 className="text-2xl font-bold text-bright mb-2">
             uConsole Dashboard
