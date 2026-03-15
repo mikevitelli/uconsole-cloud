@@ -1,0 +1,22 @@
+{
+  "name": "@uconsole/studio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "sanity dev",
+    "build": "sanity build",
+    "deploy": "sanity deploy",
+    "start": "sanity start"
+  },
+  "dependencies": {
+    "@sanity/vision": "^3.72.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sanity": "^3.72.1",
+    "styled-components": "^6.1.15"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}

@@ -1,26 +1,16 @@
 {
   "name": "uconsole-dashboard",
-  "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "concurrently -n frontend,studio -c blue,green \"npm run dev -w @uconsole/frontend\" \"npm run dev -w @uconsole/studio\"",
+    "build": "npm run build -w @uconsole/frontend && npm run build -w @uconsole/studio"
   },
-  "dependencies": {
-    "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+  "workspaces": ["frontend", "studio"],
+  "overrides": {
+    "sanity": "^3.72.1",
+    "@sanity/types": "^3.72.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "concurrently": "^9.2.1"
   }
 }
