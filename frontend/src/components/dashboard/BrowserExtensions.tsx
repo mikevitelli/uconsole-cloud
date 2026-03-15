@@ -1,19 +1,23 @@
-"use client";
-
-import { useState } from "react";
 import { StatCards } from "@/components/viz/StatCards";
+import { StatusGrid } from "@/components/viz/StatusGrid";
+
+interface BrowserExtensionsContent {
+  heading?: string;
+  statLabel?: string;
+  emptyState?: string;
+}
 
 interface BrowserExtensionsProps {
   extensions: string[];
+  content?: BrowserExtensionsContent;
 }
 
-export function BrowserExtensions({ extensions }: BrowserExtensionsProps) {
-  const [open, setOpen] = useState(false);
-
+export function BrowserExtensions({ extensions, content }: BrowserExtensionsProps) {
   return (
     <section className="bg-card border border-border rounded-xl p-4 mb-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
-        <span>&#x1F310;</span> Browser
+        <span>&#x1F310;</span>{" "}
+        {content?.heading ?? "Browser"}
       </h2>
       {extensions.length > 0 ? (
         <>
@@ -21,25 +25,24 @@ export function BrowserExtensions({ extensions }: BrowserExtensionsProps) {
             items={[
               {
                 value: String(extensions.length),
-                label: "Chromium Extensions",
+                label: content?.statLabel ?? "Chromium Extensions",
                 color: "var(--accent)",
               },
             ]}
           />
-          <button
-            onClick={() => setOpen(!open)}
-            className="bg-transparent border border-border text-accent rounded-md px-3 py-1 text-xs cursor-pointer mt-1.5 hover:bg-border"
-          >
-            {open ? "Collapse" : "Show all"}
-          </button>
-          {open && (
-            <div className="mt-2 max-h-[300px] overflow-y-auto bg-background border border-border rounded-md p-3 text-xs text-sub font-mono leading-7">
-              {extensions.join("\n")}
-            </div>
-          )}
+          <div className="max-h-[300px] overflow-y-auto">
+            <StatusGrid
+              items={extensions.map((ext) => ({
+                name: ext,
+                color: "var(--accent)",
+              }))}
+            />
+          </div>
         </>
       ) : (
-        <p className="text-sub text-sm">No extension data found.</p>
+        <p className="text-sub text-sm">
+          {content?.emptyState ?? "No extension data found."}
+        </p>
       )}
     </section>
   );

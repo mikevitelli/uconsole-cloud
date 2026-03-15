@@ -2,71 +2,154 @@
 
 import { useState } from "react";
 import { Donut } from "@/components/viz/Donut";
-import { HBar } from "@/components/viz/HBar";
+import { Treemap } from "@/components/viz/Treemap";
+import { CategoryPills } from "@/components/viz/CategoryPills";
+import type { AptCategory } from "@/lib/types";
 
-const COLORS = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff", "#79c0ff"];
+interface PackageInventoryContent {
+  heading?: string;
+  totalLabel?: string;
+}
 
 interface PackageInventoryProps {
   packages: Record<string, string[]>;
+  aptCategories: AptCategory[];
+  content?: PackageInventoryContent;
 }
 
-export function PackageInventory({ packages }: PackageInventoryProps) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+type Selection = { type: "apt-category" | "manager"; name: string } | null;
+
+export function PackageInventory({
+  packages,
+  aptCategories,
+  content,
+}: PackageInventoryProps) {
+  const [selected, setSelected] = useState<Selection>(null);
 
   const managers = Object.keys(packages);
   const total = managers.reduce((sum, m) => sum + packages[m].length, 0);
-  const barItems = managers
-    .filter((m) => packages[m].length > 0)
-    .map((m) => ({ name: m, value: packages[m].length, label: String(packages[m].length) }));
+  const aptCount = (packages["APT"] || []).length;
+  const otherCount = total - aptCount;
+
+  // Treemap items from APT categories
+  const treemapItems = aptCategories.map((c) => ({
+    name: c.name,
+    value: c.packages.length,
+    color: c.color,
+  }));
+
+  // Pills: APT subcategories + non-APT managers
+  const nonAptManagers = managers.filter(
+    (m) => m !== "APT" && packages[m].length > 0
+  );
+  const pillItems = [
+    ...aptCategories.map((c) => ({
+      name: c.name,
+      count: c.packages.length,
+      color: c.color,
+    })),
+    ...nonAptManagers.map((m, i) => ({
+      name: m,
+      count: packages[m].length,
+      color: ["#56d364", "#e3b341", "#ff7b72", "#d2a8ff", "#79c0ff"][i % 5],
+    })),
+  ];
+
+  function handleSelect(name: string) {
+    const isAptCat = aptCategories.some((c) => c.name === name);
+    if (selected?.name === name) {
+      setSelected(null);
+    } else {
+      setSelected({ type: isAptCat ? "apt-category" : "manager", name });
+    }
+  }
+
+  function handlePillSelect(name: string | null) {
+    if (!name) {
+      setSelected(null);
+      return;
+    }
+    handleSelect(name);
+  }
+
+  // Get detail packages for current selection
+  let detailPackages: string[] = [];
+  let detailLabel = "";
+  if (selected) {
+    if (selected.type === "apt-category") {
+      const cat = aptCategories.find((c) => c.name === selected.name);
+      detailPackages = cat?.packages || [];
+      detailLabel = `${selected.name} (${detailPackages.length.toLocaleString()} packages)`;
+    } else {
+      detailPackages = packages[selected.name] || [];
+      detailLabel = `${selected.name} (${detailPackages.length.toLocaleString()} packages)`;
+    }
+  }
 
   return (
     <section className="bg-card border border-border rounded-xl p-4 mb-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
-        <span>&#x1F4E6;</span> Package Inventory
+        <span>&#x1F4E6;</span>{" "}
+        {content?.heading ?? "Package Inventory"}
       </h2>
 
-      <div className="flex gap-4 justify-center flex-wrap my-2">
-        <Donut
-          percent={100}
-          size={120}
-          label="Total Packages"
-          centerText={String(total)}
-          subText={`${managers.length} managers`}
-        />
-        {barItems.map((item, i) => (
+      <div className="grid grid-cols-[auto_1fr] gap-4 items-center">
+        {/* Left: Total donut */}
+        <div className="flex flex-col items-center gap-1">
           <Donut
-            key={item.name}
-            percent={(item.value * 100) / total}
-            size={80}
-            label={item.name}
-            centerText={String(item.value)}
-            color={COLORS[i % COLORS.length]}
+            percent={100}
+            size={130}
+            label={content?.totalLabel ?? "Total Packages"}
+            centerText={total.toLocaleString()}
+            subText={`${managers.length} managers`}
           />
-        ))}
+          <div className="text-xs text-dim mt-1 space-y-0.5 text-center">
+            <div>APT: {aptCount.toLocaleString()}</div>
+            <div>Other: {otherCount.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Right: Treemap */}
+        {treemapItems.length > 0 && (
+          <Treemap
+            items={treemapItems}
+            height={180}
+            onSelect={handleSelect}
+            selected={
+              selected?.type === "apt-category" ? selected.name : null
+            }
+          />
+        )}
       </div>
 
-      {barItems.length > 0 && <HBar items={barItems} />}
+      {/* Pills */}
+      <CategoryPills
+        items={pillItems}
+        selected={selected?.name ?? null}
+        onSelect={handlePillSelect}
+      />
 
-      {managers.map((m) => {
-        const pkgs = packages[m];
-        if (!pkgs.length) return null;
-        const isOpen = expanded === m;
-        return (
-          <div key={m}>
+      {/* Detail panel */}
+      {selected && detailPackages.length > 0 && (
+        <div className="mt-2 bg-background border border-border rounded-md p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-foreground font-medium">
+              {detailLabel}
+            </span>
             <button
-              onClick={() => setExpanded(isOpen ? null : m)}
-              className="bg-transparent border border-border text-accent rounded-md px-3 py-1 text-xs cursor-pointer mt-1.5 hover:bg-border"
+              onClick={() => setSelected(null)}
+              className="text-dim hover:text-foreground text-xs cursor-pointer bg-transparent border-none"
             >
-              {m} ({pkgs.length}) &mdash; {isOpen ? "Collapse" : "Show all"}
+              &#x2715;
             </button>
-            {isOpen && (
-              <div className="mt-2 max-h-[300px] overflow-y-auto bg-background border border-border rounded-md p-3 text-xs text-sub font-mono leading-7">
-                {pkgs.join("\n")}
-              </div>
-            )}
           </div>
-        );
-      })}
+          <div className="max-h-[300px] overflow-y-auto grid grid-cols-3 gap-x-4 gap-y-0.5 text-xs text-sub font-mono">
+            {detailPackages.map((p) => (
+              <span key={p}>{p}</span>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

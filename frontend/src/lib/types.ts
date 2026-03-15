@@ -38,3 +38,9 @@ export interface UserSettings {
   repo: string;
   linkedAt: string;
 }
+
+export interface AptCategory {
+  name: string;
+  color: string;
+  packages: string[];
+}

@@ -9,6 +9,7 @@ import {
   fetchScriptsManifest,
 } from "@/lib/github";
 import type { CommitData, TreeEntry, RepoInfo } from "@/lib/types";
+import { categorizeAptPackages } from "@/lib/packageCategories";
 import { RepoStats } from "@/components/dashboard/RepoStats";
 import { CommitHistory } from "@/components/dashboard/CommitHistory";
 import { PackageInventory } from "@/components/dashboard/PackageInventory";
@@ -17,6 +18,7 @@ import { ScriptsManifest } from "@/components/dashboard/ScriptsManifest";
 import { BackupCoverage } from "@/components/dashboard/BackupCoverage";
 import { RepoStructure } from "@/components/dashboard/RepoStructure";
 import { RepoLinker } from "@/components/RepoLinker";
+import { fetchSiteContent } from "@/lib/sanity";
 import { redirect } from "next/navigation";
 
 interface GitHubCommit {
@@ -29,6 +31,7 @@ interface GitHubCommit {
 
 export default async function Home() {
   const session = await auth();
+  const content = await fetchSiteContent();
 
   // ── Not signed in ──────────────────────────────────────
   if (!session) {
@@ -46,10 +49,11 @@ export default async function Home() {
         </div>
         <div className="bg-card border border-border rounded-xl p-8 max-w-sm w-full text-center">
           <h1 className="text-2xl font-bold text-bright mb-2">
-            uConsole Dashboard
+            {content?.landing?.heading ?? "uConsole Dashboard"}
           </h1>
           <p className="text-sub text-sm mb-6">
-            Monitor your system backup repository on GitHub.
+            {content?.landing?.description ??
+              "Monitor your system backup repository on GitHub."}
           </p>
           <form
             action={async () => {
@@ -59,9 +63,14 @@ export default async function Home() {
           >
             <button
               type="submit"
-              className="w-full bg-accent text-[#0d1117] font-semibold rounded-lg px-4 py-2.5 text-sm hover:opacity-90 transition-opacity cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 bg-[#24292f] text-white font-semibold rounded-lg px-4 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer"
             >
-              Sign in with GitHub
+              <img
+                src="/github-mark-white.svg"
+                alt=""
+                className="w-5 h-5"
+              />
+              {content?.landing?.signInButton ?? "Sign in with GitHub"}
             </button>
           </form>
         </div>
@@ -99,17 +108,30 @@ export default async function Home() {
                 type="submit"
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
               >
-                Sign out
+                {content?.dashboard?.signOutButton ?? "Sign out"}
               </button>
             </form>
           </div>
           <h2 className="text-lg font-bold text-bright mb-1">
-            Link Repository
+            {content?.repoLinker?.heading ?? "Link Repository"}
           </h2>
           <p className="text-sub text-sm mb-4">
-            Enter your uconsole backup repository to get started.
+            {content?.repoLinker?.description ??
+              "Enter your uconsole backup repository to get started."}
           </p>
-          <RepoLinker />
+          <RepoLinker
+            content={
+              content?.repoLinker
+                ? {
+                    placeholder: content.repoLinker.placeholder,
+                    selectPlaceholder: content.repoLinker.selectPlaceholder,
+                    buttonText: content.repoLinker.buttonText,
+                    loadingButton: content.repoLinker.loadingButton,
+                    loadingText: content.repoLinker.loadingText,
+                  }
+                : undefined
+            }
+          />
         </div>
       </div>
     );
@@ -141,6 +163,7 @@ export default async function Home() {
     (sum, arr) => sum + arr.length,
     0
   );
+  const aptCategories = categorizeAptPackages(packages["APT"] || []);
 
   return (
     <div className="min-h-screen">
@@ -149,7 +172,7 @@ export default async function Home() {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-base font-bold text-bright">
-              uConsole Dashboard
+              {content?.dashboard?.headerTitle ?? "uConsole Dashboard"}
             </h1>
             <span className="text-xs text-sub font-mono bg-background border border-border rounded px-1.5 py-0.5">
               {settings.repo}
@@ -180,7 +203,7 @@ export default async function Home() {
                 type="submit"
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
               >
-                Unlink
+                {content?.dashboard?.unlinkButton ?? "Unlink"}
               </button>
             </form>
             <form
@@ -193,7 +216,7 @@ export default async function Home() {
                 type="submit"
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
               >
-                Sign out
+                {content?.dashboard?.signOutButton ?? "Sign out"}
               </button>
             </form>
           </div>
@@ -207,19 +230,29 @@ export default async function Home() {
             totalPackages={totalPackages}
             extensionCount={extensions.length}
             hasScripts={!!scriptsRaw}
+            content={content?.backupCoverage}
           />
-          {repoInfo && <RepoStats info={repoInfo} />}
+          {repoInfo && (
+            <RepoStats info={repoInfo} content={content?.repoStats} />
+          )}
         </div>
 
-        <CommitHistory commits={commits} />
-        <PackageInventory packages={packages} />
+        <CommitHistory commits={commits} content={content?.commitHistory} />
+        <PackageInventory
+          packages={packages}
+          aptCategories={aptCategories}
+          content={content?.packageInventory}
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 [&>section]:mb-0">
-          <BrowserExtensions extensions={extensions} />
-          <ScriptsManifest raw={scriptsRaw} />
+          <BrowserExtensions
+            extensions={extensions}
+            content={content?.browserExtensions}
+          />
+          <ScriptsManifest raw={scriptsRaw} content={content?.scriptsManifest} />
         </div>
 
-        <RepoStructure tree={tree} />
+        <RepoStructure tree={tree} content={content?.repoStructure} />
       </main>
     </div>
   );

@@ -1,13 +1,22 @@
 import { Sparkline } from "@/components/viz/Sparkline";
 import { StatCards } from "@/components/viz/StatCards";
+import { CalendarGrid } from "@/components/viz/CalendarGrid";
 import { fmtDate } from "@/lib/utils";
 import type { CommitData } from "@/lib/types";
 
-interface CommitHistoryProps {
-  commits: CommitData[];
+interface CommitHistoryContent {
+  heading?: string;
+  sparklineLabel?: string;
+  totalLabel?: string;
+  latestLabel?: string;
 }
 
-export function CommitHistory({ commits }: CommitHistoryProps) {
+interface CommitHistoryProps {
+  commits: CommitData[];
+  content?: CommitHistoryContent;
+}
+
+export function CommitHistory({ commits, content }: CommitHistoryProps) {
   // Build sparkline data for last 30 days
   const counts: Record<string, number> = {};
   const now = new Date();
@@ -26,23 +35,34 @@ export function CommitHistory({ commits }: CommitHistoryProps) {
   return (
     <section className="bg-card border border-border rounded-xl p-4 mb-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
-        <span>&#x1F4CA;</span> Commit History
+        <span>&#x1F4CA;</span>{" "}
+        {content?.heading ?? "Commit History"}
       </h2>
 
       {commits.length > 0 && (
         <>
-          <div className="text-[0.7rem] text-dim mb-2">Last 30 days</div>
+          <CalendarGrid data={counts} />
+
+          <div className="text-[0.7rem] text-dim mb-2 mt-3">
+            {content?.sparklineLabel ?? "Last 30 days"}
+          </div>
           <Sparkline data={sparkData} width={400} height={50} />
 
           <StatCards
             items={[
-              { value: String(commits.length), label: "Recent Commits" },
-              { value: fmtDate(commits[0].date), label: "Latest" },
+              {
+                value: String(commits.length),
+                label: content?.totalLabel ?? "Recent Commits",
+              },
+              {
+                value: fmtDate(commits[0].date),
+                label: content?.latestLabel ?? "Latest",
+              },
             ]}
           />
 
-          <div className="max-h-[300px] overflow-y-auto">
-            {commits.slice(0, 20).map((c) => (
+          <div className="max-h-[200px] overflow-y-auto">
+            {commits.slice(0, 5).map((c) => (
               <div
                 key={c.sha}
                 className="flex items-start gap-2.5 py-1.5 border-b border-[#1c2129] last:border-b-0 text-xs"

@@ -1,16 +1,23 @@
 import { parseScriptsManifest } from "@/lib/utils";
 
-interface ScriptsManifestProps {
-  raw: string | null;
+interface ScriptsManifestContent {
+  heading?: string;
+  emptyState?: string;
 }
 
-export function ScriptsManifest({ raw }: ScriptsManifestProps) {
+interface ScriptsManifestProps {
+  raw: string | null;
+  content?: ScriptsManifestContent;
+}
+
+export function ScriptsManifest({ raw, content }: ScriptsManifestProps) {
   const { columns, rows } = parseScriptsManifest(raw);
 
   return (
     <section className="bg-card border border-border rounded-xl p-4 mb-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
-        <span>&#x1F4DC;</span> Scripts
+        <span>&#x1F4DC;</span>{" "}
+        {content?.heading ?? "Scripts"}
       </h2>
       {rows.length > 0 ? (
         <table className="w-full border-collapse text-xs">
@@ -43,7 +50,8 @@ export function ScriptsManifest({ raw }: ScriptsManifestProps) {
         </table>
       ) : (
         <p className="text-sub text-sm">
-          Run <code>backup.sh scripts</code> to generate manifest.
+          {content?.emptyState ??
+            "Run backup.sh scripts to generate manifest."}
         </p>
       )}
     </section>

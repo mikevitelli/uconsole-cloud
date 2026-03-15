@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { fetchSiteContent } from "@/lib/sanity";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,10 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "uConsole Dashboard",
-  description: "Monitor your system backup repository on GitHub",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const content = await fetchSiteContent();
+  return {
+    title: content?.site?.title ?? "uConsole Dashboard",
+    description:
+      content?.site?.description ??
+      "Monitor your system backup repository on GitHub",
+  };
+}
 
 export default function RootLayout({
   children,

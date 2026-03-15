@@ -8,7 +8,19 @@ interface Repo {
   private: boolean;
 }
 
-export function RepoLinker() {
+interface RepoLinkerContent {
+  placeholder?: string;
+  selectPlaceholder?: string;
+  buttonText?: string;
+  loadingButton?: string;
+  loadingText?: string;
+}
+
+interface RepoLinkerProps {
+  content?: RepoLinkerContent;
+}
+
+export function RepoLinker({ content }: RepoLinkerProps) {
   const [repo, setRepo] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
@@ -63,7 +75,7 @@ export function RepoLinker() {
     <form onSubmit={handleSubmit}>
       {loadingRepos ? (
         <div className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-dim">
-          Loading repositories...
+          {content?.loadingText ?? "Loading repositories..."}
         </div>
       ) : repos.length > 0 ? (
         <select
@@ -71,7 +83,9 @@ export function RepoLinker() {
           onChange={(e) => setRepo(e.target.value)}
           className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-accent"
         >
-          <option value="">Select a repository</option>
+          <option value="">
+            {content?.selectPlaceholder ?? "Select a repository"}
+          </option>
           {repos.map((r) => (
             <option key={r.full_name} value={r.full_name}>
               {r.full_name} {r.private ? "🔒" : ""}
@@ -83,7 +97,7 @@ export function RepoLinker() {
           type="text"
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
-          placeholder="owner/repo"
+          placeholder={content?.placeholder ?? "owner/repo"}
           className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
         />
       )}
@@ -93,7 +107,9 @@ export function RepoLinker() {
         disabled={loading || !repo.trim()}
         className="w-full mt-3 bg-accent text-[#0d1117] font-semibold rounded-lg px-4 py-2.5 text-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {loading ? "Linking..." : "Link Repository"}
+        {loading
+          ? (content?.loadingButton ?? "Linking...")
+          : (content?.buttonText ?? "Link Repository")}
       </button>
     </form>
   );
