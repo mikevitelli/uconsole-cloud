@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# uConsole Dashboard
 
-## Getting Started
+A monorepo for monitoring and managing system backup repositories on GitHub. Built with Next.js and Sanity Studio.
 
-First, run the development server:
+## Structure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+├── frontend/     Next.js 16 dashboard app
+├── studio/       Sanity Studio CMS
+└── package.json  Workspace root
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Frontend
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The dashboard authenticates via GitHub OAuth and displays data from a linked backup repository:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Backup Coverage** — status grid showing what's backed up (shell configs, packages, browser extensions, scripts, desktop settings, git/ssh)
+- **Repository Stats** — repo size, branch, last push, visibility
+- **Commit History** — 30-day sparkline and recent commit list
+- **Package Inventory** — breakdown by manager (APT, Flatpak, Snap, Cargo, pip, ClockworkPi) with donut charts and horizontal bars
+- **Browser Extensions** — Chromium extension inventory
+- **Scripts Manifest** — table of backup scripts
+- **Repository Structure** — file/directory tree with sizes
 
-## Learn More
+### Tech
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js 16 (App Router, Server Components, Server Actions)
+- NextAuth v5 (GitHub OAuth)
+- Upstash Redis (user settings persistence)
+- Tailwind CSS v4 (GitHub-dark theme)
+- TypeScript 5
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Studio
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Sanity Studio for managing dashboard content:
 
-## Deploy on Vercel
+- **System Notes** — categorized notes (packages, config, scripts, hardware, general) with pinning
+- **Backup Logs** — timestamped entries with status tracking (success/partial/failed) and module coverage
+- **System Profiles** — device inventory with hostname, OS, device type, and linked backup repos
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Tech
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Sanity v3 (Structure Tool, Vision)
+- TypeScript 5
+
+## Setup
+
+### Prerequisites
+
+- Node.js 20+
+- GitHub OAuth App
+- Upstash Redis database
+- Sanity project
+
+### Environment Variables
+
+**`frontend/.env.local`**
+
+```env
+GITHUB_ID=           # GitHub OAuth App Client ID
+GITHUB_SECRET=       # GitHub OAuth App Client Secret
+AUTH_SECRET=          # openssl rand -base64 33
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+**`studio/.env.local`**
+
+```env
+SANITY_STUDIO_PROJECT_ID=
+SANITY_STUDIO_DATASET=production
+```
+
+### Install & Run
+
+```bash
+npm install        # installs all workspaces
+npm run dev        # starts frontend (:3000) and studio (:3333) in parallel
+npm run build      # builds both workspaces
+```
+
+### GitHub OAuth App Setup
+
+Create an OAuth App at **GitHub > Settings > Developer settings > OAuth Apps**:
+
+- **Homepage URL:** `http://localhost:3000`
+- **Callback URL:** `http://localhost:3000/api/auth/callback/github`
+
+## How It Works
+
+1. Sign in with GitHub
+2. Link your backup repository (validates it contains `packages/apt-manual.txt`)
+3. Dashboard fetches and displays repo data via GitHub API
+4. Sanity Studio manages supplementary content (notes, logs, profiles)
