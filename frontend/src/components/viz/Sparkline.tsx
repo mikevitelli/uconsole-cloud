@@ -19,9 +19,10 @@ export function Sparkline({ data, width, height }: SparklineProps) {
   return (
     <svg
       className="my-2"
-      width={width}
-      height={height}
+      width="100%"
+      height="100%"
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
     >
       <defs>
         <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">

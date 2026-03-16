@@ -1,3 +1,7 @@
+"use client";
+
+import { useRef, useEffect } from "react";
+
 interface CalendarGridProps {
   data: Record<string, number>;
 }
@@ -15,73 +19,110 @@ function getColor(count: number): string {
 const DAY_LABELS = ["", "M", "", "W", "", "F", ""];
 const CELL = 11;
 const GAP = 2;
+const WEEKS = 52;
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 export function CalendarGrid({ data }: CalendarGridProps) {
-  const dates = Object.keys(data).sort();
-  if (dates.length === 0) return null;
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Build grid: 7 rows (Sun-Sat) x N weeks
-  const first = new Date(dates[0] + "T00:00:00");
-  const last = new Date(dates[dates.length - 1] + "T00:00:00");
-  const startDay = first.getDay(); // 0=Sun
+  // Auto-scroll to the right (current day) on mount
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, []);
 
-  // Generate all dates from start of first week to end of last week
-  const gridStart = new Date(first);
-  gridStart.setDate(gridStart.getDate() - startDay);
+  // Always show a full year ending today, like GitHub
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Find the start: go back ~52 weeks, align to Sunday
+  const start = new Date(today);
+  start.setDate(start.getDate() - (WEEKS * 7) + 1);
+  start.setDate(start.getDate() - start.getDay()); // align to Sunday
 
   const cells: { date: string; count: number; col: number; row: number }[] = [];
-  let maxCol = 0;
-  const cursor = new Date(gridStart);
-  while (cursor <= last) {
-    const key = cursor.toISOString().slice(0, 10);
+  const monthLabels: { label: string; col: number }[] = [];
+  let lastMonth = -1;
+
+  const cursor = new Date(start);
+  let col = 0;
+  while (cursor <= today) {
     const dayOfWeek = cursor.getDay();
-    const diffDays = Math.round(
-      (cursor.getTime() - gridStart.getTime()) / 86400000
-    );
-    const col = Math.floor(diffDays / 7);
-    if (col > maxCol) maxCol = col;
+    if (dayOfWeek === 0 && cursor > start) col++;
+
+    const key = cursor.toISOString().slice(0, 10);
     cells.push({ date: key, count: data[key] || 0, col, row: dayOfWeek });
+
+    // Track month labels (first Sunday of each new month)
+    const month = cursor.getMonth();
+    if (month !== lastMonth && dayOfWeek === 0) {
+      monthLabels.push({ label: MONTH_NAMES[month], col });
+      lastMonth = month;
+    }
+
     cursor.setDate(cursor.getDate() + 1);
   }
 
+  const maxCol = col;
   const labelW = 16;
+  const monthLabelH = 12;
   const svgW = labelW + (maxCol + 1) * (CELL + GAP);
-  const svgH = 7 * (CELL + GAP);
+  const svgH = monthLabelH + 7 * (CELL + GAP);
 
   return (
-    <svg
-      viewBox={`0 0 ${svgW} ${svgH}`}
-      className="w-full max-w-md"
-      style={{ aspectRatio: `${svgW} / ${svgH}` }}
-    >
-      {DAY_LABELS.map((label, i) =>
-        label ? (
+    <div ref={scrollRef} className="w-full overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        className="w-full"
+        style={{ minWidth: 680 }}
+      >
+        {/* Month labels */}
+        {monthLabels.map((m) => (
           <text
-            key={i}
-            x={0}
-            y={i * (CELL + GAP) + CELL - 1}
+            key={`${m.label}-${m.col}`}
+            x={labelW + m.col * (CELL + GAP)}
+            y={9}
             fill="var(--dim)"
             fontSize={8}
           >
-            {label}
+            {m.label}
           </text>
-        ) : null
-      )}
-      {cells.map((c) => (
-        <rect
-          key={c.date}
-          x={labelW + c.col * (CELL + GAP)}
-          y={c.row * (CELL + GAP)}
-          width={CELL}
-          height={CELL}
-          rx={2}
-          fill={getColor(c.count)}
-        >
-          <title>
-            {c.date}: {c.count} commit{c.count !== 1 ? "s" : ""}
-          </title>
-        </rect>
-      ))}
-    </svg>
+        ))}
+        {/* Day labels */}
+        {DAY_LABELS.map((label, i) =>
+          label ? (
+            <text
+              key={i}
+              x={0}
+              y={monthLabelH + i * (CELL + GAP) + CELL - 1}
+              fill="var(--dim)"
+              fontSize={8}
+            >
+              {label}
+            </text>
+          ) : null
+        )}
+        {/* Cells */}
+        {cells.map((c) => (
+          <rect
+            key={c.date}
+            x={labelW + c.col * (CELL + GAP)}
+            y={monthLabelH + c.row * (CELL + GAP)}
+            width={CELL}
+            height={CELL}
+            rx={2}
+            fill={getColor(c.count)}
+          >
+            <title>
+              {c.date}: {c.count} backup{c.count !== 1 ? "s" : ""}
+            </title>
+          </rect>
+        ))}
+      </svg>
+    </div>
   );
 }

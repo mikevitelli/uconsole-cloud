@@ -8,10 +8,10 @@ import {
   fetchExtensions,
   fetchScriptsManifest,
 } from "@/lib/github";
-import type { CommitData, TreeEntry, RepoInfo } from "@/lib/types";
+import type { BackupEntry, TreeEntry, RepoInfo } from "@/lib/types";
 import { categorizeAptPackages } from "@/lib/packageCategories";
 import { RepoStats } from "@/components/dashboard/RepoStats";
-import { CommitHistory } from "@/components/dashboard/CommitHistory";
+import { BackupHistory } from "@/components/dashboard/BackupHistory";
 import { PackageInventory } from "@/components/dashboard/PackageInventory";
 import { BrowserExtensions } from "@/components/dashboard/BrowserExtensions";
 import { ScriptsManifest } from "@/components/dashboard/ScriptsManifest";
@@ -149,7 +149,7 @@ export default async function Home() {
     ]);
 
   const repoInfo = repoInfoRaw as RepoInfo | null;
-  const commits: CommitData[] = Array.isArray(commitsRaw)
+  const commits: BackupEntry[] = Array.isArray(commitsRaw)
     ? (commitsRaw as GitHubCommit[]).map((c) => ({
         sha: c.sha,
         message: c.commit.message,
@@ -166,10 +166,10 @@ export default async function Home() {
   const aptCategories = categorizeAptPackages(packages["APT"] || []);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       {/* Header */}
       <header className="border-b border-border px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-base font-bold text-bright">
               {content?.dashboard?.headerTitle ?? "uConsole Dashboard"}
@@ -224,8 +224,8 @@ export default async function Home() {
       </header>
 
       {/* Dashboard content */}
-      <main className="max-w-5xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 [&>section]:mb-0">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0">
           <BackupCoverage
             totalPackages={totalPackages}
             extensionCount={extensions.length}
@@ -237,14 +237,14 @@ export default async function Home() {
           )}
         </div>
 
-        <CommitHistory commits={commits} content={content?.commitHistory} />
+        <BackupHistory backups={commits} content={content?.backupHistory} />
         <PackageInventory
           packages={packages}
           aptCategories={aptCategories}
           content={content?.packageInventory}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 [&>section]:mb-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0">
           <BrowserExtensions
             extensions={extensions}
             content={content?.browserExtensions}

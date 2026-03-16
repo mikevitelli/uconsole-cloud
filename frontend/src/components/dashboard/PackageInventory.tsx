@@ -87,18 +87,18 @@ export function PackageInventory({
   }
 
   return (
-    <section className="bg-card border border-border rounded-xl p-4 mb-4">
+    <section className="bg-card border border-border rounded-xl p-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
         <span>&#x1F4E6;</span>{" "}
         {content?.heading ?? "Package Inventory"}
       </h2>
 
-      <div className="grid grid-cols-[auto_1fr] gap-4 items-center">
+      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-center">
         {/* Left: Total donut */}
         <div className="flex flex-col items-center gap-1">
           <Donut
             percent={100}
-            size={130}
+            size={110}
             label={content?.totalLabel ?? "Total Packages"}
             centerText={total.toLocaleString()}
             subText={`${managers.length} managers`}
@@ -143,7 +143,7 @@ export function PackageInventory({
               &#x2715;
             </button>
           </div>
-          <div className="max-h-[300px] overflow-y-auto grid grid-cols-3 gap-x-4 gap-y-0.5 text-xs text-sub font-mono">
+          <div className="max-h-[300px] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-0.5 text-xs text-sub font-mono">
             {detailPackages.map((p) => (
               <span key={p}>{p}</span>
             ))}

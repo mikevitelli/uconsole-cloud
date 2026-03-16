@@ -69,7 +69,7 @@ export function BackupCoverage({
   });
 
   return (
-    <section className="bg-card border border-border rounded-xl p-4 mb-4">
+    <section className="bg-card border border-border rounded-xl p-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
         <span>&#x1F6E1;</span>{" "}
         {content?.heading ?? "Backup Coverage"}

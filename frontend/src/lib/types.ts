@@ -3,7 +3,7 @@ export interface PackageData {
   packages: string[];
 }
 
-export interface CommitData {
+export interface BackupEntry {
   sha: string;
   message: string;
   date: string;

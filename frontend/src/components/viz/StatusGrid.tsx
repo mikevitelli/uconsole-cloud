@@ -10,7 +10,7 @@ interface StatusGridProps {
 
 export function StatusGrid({ items }: StatusGridProps) {
   return (
-    <div className="grid grid-cols-2 gap-1.5 my-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 my-2">
       {items.map((item) => (
         <div
           key={item.name}
@@ -22,7 +22,7 @@ export function StatusGrid({ items }: StatusGridProps) {
           />
           <span className="text-foreground flex-1">{item.name}</span>
           {item.detail && (
-            <span className="text-dim text-[0.85em]">{item.detail}</span>
+            <span className="text-dim text-xs">{item.detail}</span>
           )}
         </div>
       ))}

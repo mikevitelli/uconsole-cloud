@@ -21,7 +21,7 @@ export interface SiteContent {
     heading?: string;
     items?: { key?: string; name?: string; defaultDetail?: string }[];
   };
-  commitHistory?: {
+  backupHistory?: {
     heading?: string;
     sparklineLabel?: string;
     totalLabel?: string;
@@ -50,7 +50,7 @@ const SITE_CONTENT_QUERY = `*[_id == "siteContent"][0]{
   repoLinker,
   dashboard,
   backupCoverage,
-  commitHistory,
+  backupHistory,
   packageInventory,
   browserExtensions,
   scriptsManifest,

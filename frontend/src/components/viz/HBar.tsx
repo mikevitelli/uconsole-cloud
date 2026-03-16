@@ -24,7 +24,7 @@ export function HBar({ items, maxVal }: HBarProps) {
         const pct = Math.round((item.value * 100) / max);
         return (
           <div key={item.name} className="flex items-center gap-2 py-0.5 text-sm">
-            <span className="text-sub min-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap shrink-0">
+            <span className="text-sub min-w-20 sm:min-w-[90px] overflow-hidden text-ellipsis whitespace-nowrap shrink-0">
               {item.name}
             </span>
             <div className="flex-1 h-2.5 bg-[#21262d] rounded-full overflow-hidden">
@@ -33,7 +33,7 @@ export function HBar({ items, maxVal }: HBarProps) {
                 style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }}
               />
             </div>
-            <span className="min-w-[45px] text-right text-dim tabular-nums">
+            <span className="min-w-10 sm:min-w-[45px] text-right text-dim tabular-nums">
               {item.label || String(item.value)}
             </span>
           </div>

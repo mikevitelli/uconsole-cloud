@@ -10,7 +10,7 @@ interface StatCardsProps {
 
 export function StatCards({ items }: StatCardsProps) {
   return (
-    <div className="grid grid-cols-2 gap-2 my-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2">
       {items.map((item) => (
         <div
           key={item.label}
@@ -22,7 +22,7 @@ export function StatCards({ items }: StatCardsProps) {
           >
             {item.value}
           </div>
-          <div className="text-[0.65rem] text-dim mt-0.5">{item.label}</div>
+          <div className="text-xs text-dim mt-0.5">{item.label}</div>
         </div>
       ))}
     </div>

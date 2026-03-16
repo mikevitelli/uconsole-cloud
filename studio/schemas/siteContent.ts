@@ -127,8 +127,8 @@ export const siteContent = defineType({
       ],
     }),
     defineField({
-      name: "commitHistory",
-      title: "Commit History",
+      name: "backupHistory",
+      title: "Backup History",
       type: "object",
       fields: [
         defineField({ name: "heading", title: "Heading", type: "string" }),
