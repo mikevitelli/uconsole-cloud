@@ -250,7 +250,11 @@ export default async function Home() {
               action={async () => {
                 "use server";
                 const s = await auth();
-                if (s?.user?.id) await deleteUserSettings(s.user.id);
+                if (!s?.user?.id) {
+                  await signOut();
+                  return;
+                }
+                await deleteUserSettings(s.user.id);
                 redirect("/");
               }}
             >

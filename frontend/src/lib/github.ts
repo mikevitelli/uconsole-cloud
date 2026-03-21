@@ -73,6 +73,8 @@ export async function fetchRawFile(
     },
     next: { revalidate: 60 },
   });
+  if (res.status === 401) throw new GitHubError(401, "GitHub token expired");
+  if (res.status === 403) throw new GitHubError(403, "GitHub rate limit exceeded");
   if (!res.ok) return null;
   return res.text();
 }
@@ -158,7 +160,7 @@ export async function fetchCommitDetail(
   return {
     sha: data.sha,
     stats: data.stats,
-    files: data.files.map((f) => ({
+    files: (data.files ?? []).map((f) => ({
       filename: f.filename,
       status: f.status,
       additions: f.additions,
