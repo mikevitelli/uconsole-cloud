@@ -42,6 +42,7 @@ export interface SiteContent {
     visibilityLabel?: string;
   };
   repoStructure?: { heading?: string };
+  deviceStatus?: { heading?: string; offlineMessage?: string };
 }
 
 const SITE_CONTENT_QUERY = `*[_id == "siteContent"][0]{
@@ -55,7 +56,8 @@ const SITE_CONTENT_QUERY = `*[_id == "siteContent"][0]{
   browserExtensions,
   scriptsManifest,
   repoStats,
-  repoStructure
+  repoStructure,
+  deviceStatus
 }`;
 
 export async function fetchSiteContent(): Promise<SiteContent | null> {

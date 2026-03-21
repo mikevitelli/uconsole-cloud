@@ -17,7 +17,9 @@ import { BrowserExtensions } from "@/components/dashboard/BrowserExtensions";
 import { ScriptsManifest } from "@/components/dashboard/ScriptsManifest";
 import { BackupCoverage } from "@/components/dashboard/BackupCoverage";
 import { RepoStructure } from "@/components/dashboard/RepoStructure";
+import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
 import { RepoLinker } from "@/components/RepoLinker";
+import { getDeviceStatus } from "@/lib/deviceStatus";
 import { fetchSiteContent } from "@/lib/sanity";
 import { redirect } from "next/navigation";
 
@@ -138,7 +140,7 @@ export default async function Home() {
   }
 
   // ── Dashboard ──────────────────────────────────────────
-  const [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw] =
+  const [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
     await Promise.all([
       fetchRepoInfo(session.accessToken, settings.repo),
       fetchCommits(session.accessToken, settings.repo),
@@ -146,6 +148,7 @@ export default async function Home() {
       fetchAllPackages(session.accessToken, settings.repo),
       fetchExtensions(session.accessToken, settings.repo),
       fetchScriptsManifest(session.accessToken, settings.repo),
+      getDeviceStatus(settings.repo),
     ]);
 
   const repoInfo = repoInfoRaw as RepoInfo | null;
@@ -164,6 +167,11 @@ export default async function Home() {
     0
   );
   const aptCategories = categorizeAptPackages(packages["APT"] || []);
+  const deviceAgeMinutes = deviceStatus
+    ? Math.floor(
+        (Date.now() - new Date(deviceStatus.collectedAt).getTime()) / 60000
+      )
+    : 0;
 
   return (
     <div className="min-h-screen overflow-x-hidden">
@@ -236,6 +244,12 @@ export default async function Home() {
             <RepoStats info={repoInfo} content={content?.repoStats} />
           )}
         </div>
+
+        <DeviceStatus
+          status={deviceStatus}
+          ageMinutes={deviceAgeMinutes}
+          content={content?.deviceStatus}
+        />
 
         <BackupHistory backups={commits} content={content?.backupHistory} />
         <PackageInventory
