@@ -229,6 +229,19 @@ export const siteContent = defineType({
         defineField({ name: "heading", title: "Heading", type: "string" }),
       ],
     }),
+    defineField({
+      name: "deviceStatus",
+      title: "Device Status",
+      type: "object",
+      fields: [
+        defineField({ name: "heading", title: "Heading", type: "string" }),
+        defineField({
+          name: "offlineMessage",
+          title: "Offline Message",
+          type: "string",
+        }),
+      ],
+    }),
   ],
   preview: {
     prepare() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
 interface CalendarGridProps {
   data: Record<string, number>;
@@ -28,12 +28,24 @@ const MONTH_NAMES = [
 
 export function CalendarGrid({ data }: CalendarGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Auto-scroll to the right (current day) on mount
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, []);
+  }, [mounted]);
+
+  // Don't render date-dependent SVG on server to avoid hydration mismatch
+  if (!mounted) {
+    return (
+      <div className="w-full overflow-x-auto h-[103px]" />
+    );
+  }
 
   // Always show a full year ending today, like GitHub
   const today = new Date();

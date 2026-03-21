@@ -20,6 +20,9 @@ export async function GET(req: NextRequest) {
       { status: 400 }
     );
   }
+  if (!/^[\w\-./]+$/.test(path) || path.includes("..")) {
+    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  }
 
   const url = `https://raw.githubusercontent.com/${settings.repo}/main/${path}`;
   const res = await fetch(url, {

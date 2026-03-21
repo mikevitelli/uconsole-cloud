@@ -14,6 +14,12 @@ export async function GET(req: NextRequest) {
   }
 
   const path = req.nextUrl.searchParams.get("path") || "";
+  if (path && !/^[\w\-./]+$/.test(path)) {
+    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  }
+  if (path.includes("..")) {
+    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  }
   const url = `https://api.github.com/repos/${settings.repo}${path ? "/" + path : ""}`;
 
   const res = await fetch(url, {

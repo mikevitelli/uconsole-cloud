@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { repo } = await req.json();
-  if (!repo || typeof repo !== "string" || !repo.includes("/")) {
+  if (!repo || typeof repo !== "string" || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repo.trim())) {
     return NextResponse.json(
       { error: "Invalid repo format. Use owner/repo" },
       { status: 400 }
