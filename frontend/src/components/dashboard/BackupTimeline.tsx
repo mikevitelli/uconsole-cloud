@@ -105,9 +105,11 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
   const [details, setDetails] = useState<Record<string, CommitDetail>>({});
   const [loading, setLoading] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const openFilePreview = useCallback(async (filename: string) => {
     setPreview({ filename, content: null, loading: true });
+    setFetchError(null);
     try {
       const res = await fetch(
         `/api/raw?path=${encodeURIComponent(filename)}`
@@ -117,9 +119,11 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
         setPreview({ filename, content: text, loading: false });
       } else {
         setPreview({ filename, content: null, loading: false });
+        setFetchError(`Failed to load file (${res.status})`);
       }
     } catch {
       setPreview({ filename, content: null, loading: false });
+      setFetchError("Network error loading file");
     }
   }, []);
 
@@ -169,7 +173,7 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
             setDetails((prev) => ({ ...prev, [sha]: data }));
           }
         } catch {
-          // silently fail — row just won't expand
+          setFetchError("Network error loading commit details");
         } finally {
           setLoading(null);
         }
@@ -366,7 +370,7 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
                   )}
                   {!isLoading && !detail && (
                     <p className="text-xs text-sub">
-                      Could not load commit details.
+                      {fetchError || "Could not load commit details."}
                     </p>
                   )}
                 </div>
