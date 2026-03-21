@@ -17,7 +17,7 @@ export async function GET() {
         headers: {
           Authorization: `token ${session.accessToken}`,
           Accept: "application/vnd.github.v3+json",
-          "User-Agent": "uconsole-dashboard",
+          "User-Agent": "uconsole-cloud",
         },
       },
     );

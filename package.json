@@ -1,5 +1,5 @@
 {
-  "name": "uconsole-dashboard",
+  "name": "uconsole-cloud",
   "private": true,
   "scripts": {
     "dev": "concurrently -n frontend,studio -c blue,green \"npm run dev -w @uconsole/frontend\" \"npm run dev -w @uconsole/studio\"",

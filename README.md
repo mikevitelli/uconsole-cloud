@@ -126,7 +126,7 @@ bash ~/scripts/push-status.sh
 ## Project structure
 
 ```
-uconsole-dashboard/
+uconsole-cloud/
 ├── frontend/                    Next.js 16 app
 │   ├── src/
 │   │   ├── app/                 Pages, API routes, server actions
@@ -188,8 +188,8 @@ This codebase has been through three rounds of security audit. Hardening include
 ## Local development
 
 ```bash
-git clone https://github.com/mikevitelli/uconsole-dashboard.git
-cd uconsole-dashboard
+git clone https://github.com/mikevitelli/uconsole-cloud.git
+cd uconsole-cloud
 npm install
 
 # Configure (see .env.example or Vercel dashboard)

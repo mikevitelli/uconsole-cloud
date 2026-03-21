@@ -20,7 +20,7 @@ async function githubFetch(
     headers: {
       Authorization: `token ${token}`,
       Accept: "application/vnd.github.v3+json",
-      "User-Agent": "uconsole-dashboard",
+      "User-Agent": "uconsole-cloud",
     },
     next: { revalidate: 60 },
   });

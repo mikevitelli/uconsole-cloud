@@ -6,7 +6,7 @@ import type { StructureBuilder } from "sanity/structure";
 import { DashboardTool } from "./components/DashboardTool";
 
 const dashboardPlugin = definePlugin({
-  name: "uconsole-dashboard",
+  name: "uconsole-cloud",
   tools: [
     {
       name: "dashboard",
