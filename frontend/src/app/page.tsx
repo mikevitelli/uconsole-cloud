@@ -19,6 +19,7 @@ import { ScriptsManifest } from "@/components/dashboard/ScriptsManifest";
 import { BackupCoverage } from "@/components/dashboard/BackupCoverage";
 import { RepoStructure } from "@/components/dashboard/RepoStructure";
 import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
+import { SystemSummary } from "@/components/dashboard/SystemSummary";
 import { RepoLinker } from "@/components/RepoLinker";
 import { getDeviceStatus } from "@/lib/deviceStatus";
 import { fetchSiteContent } from "@/lib/sanity";
@@ -241,6 +242,12 @@ export default async function Home() {
 
       {/* Dashboard content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
+        <SystemSummary
+          backups={commits}
+          deviceStatus={deviceStatus}
+          deviceAgeMinutes={deviceAgeMinutes}
+          totalPackages={totalPackages}
+        />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0">
           <BackupCoverage
             backups={commits}
