@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ sha: string }> }
 ) {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.accessToken || !session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,6 +18,9 @@ export async function GET(
   }
 
   const { sha } = await params;
+  if (!/^[0-9a-f]{7,40}$/i.test(sha)) {
+    return NextResponse.json({ error: "Invalid SHA" }, { status: 400 });
+  }
   const detail = await fetchCommitDetail(
     session.accessToken,
     settings.repo,
