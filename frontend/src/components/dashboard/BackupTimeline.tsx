@@ -14,9 +14,11 @@ interface FilePreview {
 
 function FilePreviewModal({
   preview,
+  error,
   onClose,
 }: {
   preview: FilePreview;
+  error: string | null;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -86,7 +88,7 @@ function FilePreviewModal({
           )}
           {!preview.loading && preview.content === null && (
             <p className="text-sm text-sub text-center py-8">
-              {previewError || `Could not load ${basename}`}
+              {error || `Could not load ${basename}`}
             </p>
           )}
         </div>
@@ -399,6 +401,7 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
       {preview && (
         <FilePreviewModal
           preview={preview}
+          error={previewError}
           onClose={() => setPreview(null)}
         />
       )}
