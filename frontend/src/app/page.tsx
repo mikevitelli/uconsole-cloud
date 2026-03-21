@@ -26,6 +26,7 @@ import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus } from "@/lib/deviceStatus";
+import { DeviceSetup } from "@/components/DeviceSetup";
 import { fetchSiteContent } from "@/lib/sanity";
 import { signInAction, signOutAction, unlinkAction } from "./actions";
 
@@ -224,6 +225,15 @@ export default async function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
+        {settings.deviceToken && (
+          <DeviceSetup
+            deviceToken={settings.deviceToken}
+            repo={settings.repo}
+            apiUrl={process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL
+              ? `https://${process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL}`
+              : "https://uconsole.cloud"}
+          />
+        )}
         <SystemSummary
           backups={commits}
           deviceStatus={deviceStatus}

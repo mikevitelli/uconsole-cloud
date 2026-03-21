@@ -199,3 +199,39 @@ describe("Redis key isolation", () => {
     expect(statusRoute).not.toMatch(/searchParams.*repo/);
   });
 });
+
+// ── 9. Device push endpoint security ─────────────────────────
+
+describe("Device push endpoint", () => {
+  it("should NOT use NextAuth auth() — uses its own Bearer token auth", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync(
+      "src/app/api/device/push/route.ts",
+      "utf-8"
+    );
+    expect(source).not.toContain('from "@/lib/auth"');
+    expect(source).toContain("Authorization");
+    expect(source).toContain("Bearer");
+  });
+
+  it("should validate token format before Redis lookup", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync(
+      "src/app/api/device/push/route.ts",
+      "utf-8"
+    );
+    expect(source).toContain("validateDeviceToken");
+  });
+
+  it("middleware should exclude device/push from NextAuth", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync("src/middleware.ts", "utf-8");
+    expect(source).toContain("device/push");
+  });
+
+  it("unlink action should revoke device token", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync("src/app/actions.ts", "utf-8");
+    expect(source).toContain("revokeDeviceToken");
+  });
+});
