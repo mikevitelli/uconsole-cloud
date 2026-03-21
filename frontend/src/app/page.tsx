@@ -113,13 +113,6 @@ export default async function Home() {
     );
   }
 
-  // ── Auto-generate device token for existing users ──────
-  if (settings.repo && !settings.deviceToken && session.accessToken) {
-    const { generateDeviceToken } = await import("@/lib/deviceToken");
-    const token = await generateDeviceToken(session.user.id, settings.repo);
-    settings.deviceToken = token;
-  }
-
   // ── Session expired ────────────────────────────────────
   if (!session.accessToken) {
     return (
