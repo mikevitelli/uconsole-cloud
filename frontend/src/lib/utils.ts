@@ -55,6 +55,7 @@ export function categoryLabel(key: string): string {
 }
 
 const BACKUP_CATEGORIES_RE = /^backup\(([^)]+)\)/;
+const BACKUP_PLAIN_RE = /^backup:/;
 const BACKUP_FILES_RE = /(\d+)\s+file\(s\)/;
 
 export function parseBackupMessage(message: string): {
@@ -62,13 +63,26 @@ export function parseBackupMessage(message: string): {
   fileCount: number | null;
 } {
   const firstLine = message.split("\n")[0];
-  const catMatch = firstLine.match(BACKUP_CATEGORIES_RE);
-  if (!catMatch) return { categories: [], fileCount: null };
   const fileMatch = firstLine.match(BACKUP_FILES_RE);
-  return {
-    categories: catMatch[1].split(",").map((c) => c.trim()),
-    fileCount: fileMatch ? parseInt(fileMatch[1], 10) : null,
-  };
+
+  // Format: backup(category1, category2) N file(s)
+  const catMatch = firstLine.match(BACKUP_CATEGORIES_RE);
+  if (catMatch) {
+    return {
+      categories: catMatch[1].split(",").map((c) => c.trim()),
+      fileCount: fileMatch ? parseInt(fileMatch[1], 10) : null,
+    };
+  }
+
+  // Format: backup: 2026-03-14 23:57 — N file(s)
+  if (BACKUP_PLAIN_RE.test(firstLine)) {
+    return {
+      categories: ["all"],
+      fileCount: fileMatch ? parseInt(fileMatch[1], 10) : null,
+    };
+  }
+
+  return { categories: [], fileCount: null };
 }
 
 export function parseScriptsManifest(
