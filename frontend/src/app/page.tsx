@@ -27,6 +27,7 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus } from "@/lib/deviceStatus";
 import { DeviceSetup } from "@/components/DeviceSetup";
+import { CopyCommand } from "@/components/CopyCommand";
 import { fetchSiteContent } from "@/lib/sanity";
 import { signInAction, signOutAction, unlinkAction } from "./actions";
 
@@ -48,7 +49,7 @@ export default async function Home() {
             src="https://sketchfab.com/models/8c1124b60692407095fce5d9978e2528/embed?autostart=1&ui_theme=dark&ui_infos=0&ui_controls=1&ui_stop=0"
           />
         </div>
-        <div className="bg-card border border-border rounded-xl p-8 max-w-sm w-full text-center">
+        <div className="bg-card border border-border rounded-xl p-8 max-w-md w-full text-center">
           <h1 className="text-2xl font-bold text-bright mb-2">
             {content?.landing?.heading ?? "uConsole Dashboard"}
           </h1>
@@ -56,6 +57,17 @@ export default async function Home() {
             {content?.landing?.description ??
               "Monitor your system backup repository on GitHub."}
           </p>
+          <div className="mb-6">
+            <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+            <p className="text-dim text-xs mt-2">
+              Run on your uConsole, then <span className="font-mono">uconsole setup</span>
+            </p>
+          </div>
+          <div className="relative flex items-center mb-6">
+            <div className="flex-1 border-t border-border" />
+            <span className="px-3 text-xs text-dim">or</span>
+            <div className="flex-1 border-t border-border" />
+          </div>
           <form action={signInAction}>
             <button
               type="submit"
