@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // ── 1. Sanity client: no hardcoded fallback in production ────
 
@@ -48,8 +48,6 @@ describe("Error boundary", () => {
 // ── 4. URL scheme validation on external links ───────────────
 
 describe("URL scheme validation", () => {
-  const SAFE_PREFIXES = ["https://github.com/", "https://"];
-
   function isValidGitHubUrl(url: string): boolean {
     return url.startsWith("https://github.com/");
   }
@@ -123,8 +121,6 @@ describe("Secrets management", () => {
 
   it("no NEXT_PUBLIC_ env vars should contain secrets", async () => {
     const fs = await import("fs");
-    const path = await import("path");
-    const glob = await import("fs");
 
     // Check all .ts files for NEXT_PUBLIC_ vars that might be secret
     function checkFile(filePath: string) {

@@ -30,9 +30,8 @@ export function CalendarGrid({ data }: CalendarGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration guard pattern
+  useEffect(() => { setMounted(true); }, []);
 
   // Auto-scroll to the right (current day) on mount
   useEffect(() => {

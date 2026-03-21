@@ -1,6 +1,6 @@
 import { StatusGrid } from "@/components/viz/StatusGrid";
 import type { BackupEntry } from "@/lib/types";
-import { categoryLabel, ageLabel, freshnessColor, getLastBackupByCategory } from "@/lib/utils";
+import { ageLabel, freshnessColor, getLastBackupByCategory } from "@/lib/utils";
 
 interface BackupCoverageContent {
   heading?: string;
