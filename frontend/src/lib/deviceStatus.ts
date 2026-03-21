@@ -51,7 +51,7 @@ export interface AioBoardStatus {
   sdr: AioDevice;
   lora: AioDevice;
   gps: AioGps;
-  rtc: { detected: boolean; synced: boolean };
+  rtc: { detected: boolean; synced: boolean; time?: string };
 }
 
 export interface DeviceStatusPayload {
