@@ -1,4 +1,5 @@
 import type { TreeEntry } from "@/lib/types";
+import { fmtBytes } from "@/lib/utils";
 
 interface RepoStructureContent {
   heading?: string;
@@ -15,11 +16,6 @@ const DIR_COLORS = [
   "#84cc16", "#a855f7", "#0ea5e9", "#22c55e", "#e11d48",
 ];
 
-function fmtSize(bytes: number): string {
-  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + "M";
-  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + "K";
-  return bytes + "B";
-}
 
 export function RepoStructure({ tree, content }: RepoStructureProps) {
   const dirs = tree
@@ -34,7 +30,7 @@ export function RepoStructure({ tree, content }: RepoStructureProps) {
   let rootFileSize = 0;
   let rootFileCount = 0;
 
-  for (const f of tree.filter((t) => t.type === "blob")) {
+  for (const f of files) {
     const parts = f.path.split("/");
     if (parts.length > 1) {
       const dir = parts[0];
@@ -89,7 +85,7 @@ export function RepoStructure({ tree, content }: RepoStructureProps) {
               <span className="text-xs font-semibold truncate w-full" style={{ color }}>
                 {dir === "." ? "root" : dir}/
               </span>
-              <span className="text-xs text-dim mt-0.5">{fmtSize(info.size)} &middot; {info.files} file{info.files !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-dim mt-0.5">{fmtBytes(info.size)} &middot; {info.files} file{info.files !== 1 ? "s" : ""}</span>
             </div>
           );
         })}
@@ -101,7 +97,7 @@ export function RepoStructure({ tree, content }: RepoStructureProps) {
         <span>&middot;</span>
         <span>{files.length} files</span>
         <span>&middot;</span>
-        <span>{fmtSize(totalSize)} total</span>
+        <span>{fmtBytes(totalSize)} total</span>
       </div>
 
       {/* Largest files bar chart */}
@@ -124,7 +120,7 @@ export function RepoStructure({ tree, content }: RepoStructureProps) {
                     />
                   </div>
                   <span className="text-dim tabular-nums w-12 text-right shrink-0">
-                    {fmtSize(f.size || 0)}
+                    {fmtBytes(f.size || 0)}
                   </span>
                 </div>
               );

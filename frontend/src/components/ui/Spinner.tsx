@@ -1,7 +1,7 @@
-export function Spinner() {
+export function Spinner({ className = "w-7 h-7" }: { className?: string }) {
   return (
-    <div className="flex items-center justify-center p-10">
-      <div className="w-7 h-7 border-3 border-border border-t-accent rounded-full animate-spin" />
-    </div>
+    <div
+      className={`${className} border-3 border-border border-t-accent rounded-full animate-spin`}
+    />
   );
 }
