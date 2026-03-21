@@ -1,70 +1,126 @@
 import { StatusGrid } from "@/components/viz/StatusGrid";
+import type { BackupEntry } from "@/lib/types";
+import { categoryLabel } from "@/lib/utils";
 
 interface BackupCoverageContent {
   heading?: string;
-  items?: { key?: string; name?: string; defaultDetail?: string }[];
 }
 
 interface BackupCoverageProps {
+  backups: BackupEntry[];
   totalPackages: number;
   extensionCount: number;
   hasScripts: boolean;
   content?: BackupCoverageContent;
 }
 
-const DEFAULT_ITEMS: { key: string; name: string; defaultDetail: string }[] = [
-  { key: "shell", name: "Shell configs", defaultDetail: "symlinked" },
-  { key: "system", name: "System configs", defaultDetail: "copied" },
-  { key: "packages", name: "Package manifests", defaultDetail: "" },
-  { key: "browser", name: "Browser", defaultDetail: "" },
-  { key: "scripts", name: "Scripts", defaultDetail: "" },
-  { key: "desktop", name: "Desktop (dconf)", defaultDetail: "backed up" },
-  { key: "gitssh", name: "Git/SSH config", defaultDetail: "symlinked" },
-  { key: "ghcli", name: "GitHub CLI", defaultDetail: "backed up" },
+// Map backup categories to coverage items
+// Some coverage items map directly to backup categories,
+// others are derived from file existence checks
+const COVERAGE_ITEMS: {
+  name: string;
+  backupCategory?: string; // matches against backup commit categories
+  fileCheck?: "packages" | "extensions" | "scripts"; // derived from file data
+}[] = [
+  { name: "Shell configs", backupCategory: "dotfiles" },
+  { name: "System configs", backupCategory: "system" },
+  { name: "Package manifests", fileCheck: "packages" },
+  { name: "Browser", fileCheck: "extensions" },
+  { name: "Scripts", fileCheck: "scripts" },
+  { name: "Desktop (dconf)", backupCategory: "desktop" },
+  { name: "Git/SSH config", backupCategory: "git" },
+  { name: "GitHub CLI", backupCategory: "gh" },
 ];
 
-function getItemByKey(
-  contentItems: BackupCoverageContent["items"],
-  key: string
-) {
-  return contentItems?.find((i) => i.key === key);
+function ageText(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return "today";
+  if (days === 1) return "1d ago";
+  return `${days}d ago`;
+}
+
+function freshnessColor(iso: string | null): string {
+  if (!iso) return "var(--red)";
+  const days = Math.floor(
+    (Date.now() - new Date(iso).getTime()) / 86400000
+  );
+  if (days < 7) return "var(--green)";
+  if (days < 14) return "var(--yellow)";
+  return "var(--red)";
 }
 
 export function BackupCoverage({
+  backups,
   totalPackages,
   extensionCount,
   hasScripts,
   content,
 }: BackupCoverageProps) {
-  const dynamicDetails: Record<string, () => { color: string; detail: string }> =
-    {
-      packages: () => ({
-        color: totalPackages > 0 ? "var(--green)" : "var(--red)",
-        detail: `${totalPackages} pkgs`,
-      }),
-      browser: () => ({
-        color: extensionCount > 0 ? "var(--green)" : "var(--yellow)",
-        detail: `${extensionCount} ext`,
-      }),
-      scripts: () => ({
-        color: hasScripts ? "var(--green)" : "var(--yellow)",
-        detail: hasScripts ? "manifest" : "missing",
-      }),
-    };
+  // Find last backup date for each category
+  const lastBackupByCategory: Record<string, string> = {};
+  for (const b of backups) {
+    for (const c of b.categories) {
+      if (!lastBackupByCategory[c]) {
+        lastBackupByCategory[c] = b.date;
+      }
+    }
+    // "all" means every category was backed up
+    if (b.categories.includes("all")) {
+      for (const item of COVERAGE_ITEMS) {
+        if (item.backupCategory && !lastBackupByCategory[item.backupCategory]) {
+          lastBackupByCategory[item.backupCategory] = b.date;
+        }
+      }
+    }
+  }
 
-  const items = DEFAULT_ITEMS.map((def) => {
-    const override = getItemByKey(content?.items, def.key);
-    const name = override?.name ?? def.name;
-    const dynamic = dynamicDetails[def.key];
-
-    if (dynamic) {
-      return { name, ...dynamic() };
+  const items = COVERAGE_ITEMS.map((item) => {
+    // File-check based items
+    if (item.fileCheck === "packages") {
+      const lastDate = lastBackupByCategory["packages"] ?? null;
+      return {
+        name: item.name,
+        color: totalPackages > 0 ? freshnessColor(lastDate) : "var(--red)",
+        detail:
+          totalPackages > 0
+            ? `${totalPackages} pkgs${lastDate ? " · " + ageText(lastDate) : ""}`
+            : "missing",
+      };
+    }
+    if (item.fileCheck === "extensions") {
+      const lastDate = lastBackupByCategory["browser"] ?? null;
+      return {
+        name: item.name,
+        color: extensionCount > 0 ? freshnessColor(lastDate) : "var(--dim)",
+        detail:
+          extensionCount > 0
+            ? `${extensionCount} ext${lastDate ? " · " + ageText(lastDate) : ""}`
+            : "none tracked",
+      };
+    }
+    if (item.fileCheck === "scripts") {
+      const lastDate = lastBackupByCategory["scripts"] ?? null;
+      return {
+        name: item.name,
+        color: hasScripts ? freshnessColor(lastDate) : "var(--yellow)",
+        detail: hasScripts
+          ? lastDate
+            ? ageText(lastDate)
+            : "present"
+          : "no manifest",
+      };
     }
 
+    // Category-based items
+    const lastDate = item.backupCategory
+      ? lastBackupByCategory[item.backupCategory] ?? null
+      : null;
+
     return {
-      name,
-      color: "var(--green)",
-      detail: override?.defaultDetail ?? def.defaultDetail,
+      name: item.name,
+      color: freshnessColor(lastDate),
+      detail: lastDate ? ageText(lastDate) : "never",
     };
   });
 

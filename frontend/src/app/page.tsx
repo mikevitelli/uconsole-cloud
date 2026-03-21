@@ -243,6 +243,7 @@ export default async function Home() {
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0">
           <BackupCoverage
+            backups={commits}
             totalPackages={totalPackages}
             extensionCount={extensions.length}
             hasScripts={!!scriptsRaw}
