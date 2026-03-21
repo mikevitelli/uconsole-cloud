@@ -224,7 +224,7 @@ export function DeviceStatus({
                 : "var(--dim)",
               detail: aio.rtc.detected
                 ? aio.rtc.synced
-                  ? "synced"
+                  ? aio.rtc.time || "synced"
                   : "not synced"
                 : "not found",
             },
