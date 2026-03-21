@@ -21,12 +21,18 @@ interface RepoLinkerProps {
 }
 
 export function RepoLinker({ content }: RepoLinkerProps) {
+  const [mode, setMode] = useState<"select" | "create">("select");
   const [repo, setRepo] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Create mode state
+  const [repoName, setRepoName] = useState("uconsole");
+  const [isPrivate, setIsPrivate] = useState(true);
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     async function fetchRepos() {
@@ -35,6 +41,9 @@ export function RepoLinker({ content }: RepoLinkerProps) {
         if (res.ok) {
           const data = await res.json();
           setRepos(data);
+          if (data.length > 0) {
+            setUsername(data[0].full_name.split("/")[0]);
+          }
         }
       } catch {
         // Fall back to manual input
@@ -45,7 +54,16 @@ export function RepoLinker({ content }: RepoLinkerProps) {
     fetchRepos();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (mode === "create" && !username) {
+      fetch("/api/github/user")
+        .then((r) => r.json())
+        .then((d) => d.login && setUsername(d.login))
+        .catch(() => {});
+    }
+  }, [mode, username]);
+
+  async function handleLink(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -71,8 +89,78 @@ export function RepoLinker({ content }: RepoLinkerProps) {
     }
   }
 
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/github/repos/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: repoName.trim(), private: isPrivate }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to create repository");
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setError("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (mode === "create") {
+    return (
+      <form onSubmit={handleCreate}>
+        <div className="flex items-center gap-1 mb-3">
+          <span className="text-sub text-sm font-mono">
+            {username ? `${username}/` : ""}
+          </span>
+          <input
+            type="text"
+            value={repoName}
+            onChange={(e) => setRepoName(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, ""))}
+            placeholder="uconsole"
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono text-foreground placeholder:text-dim focus:outline-none focus:border-accent"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-sub mb-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isPrivate}
+            onChange={(e) => setIsPrivate(e.target.checked)}
+            className="accent-accent"
+          />
+          Private repository
+        </label>
+        {error && <p className="text-red text-xs mb-2">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading || !repoName.trim()}
+          className="w-full bg-accent text-[#0d1117] font-semibold rounded-lg px-4 py-2.5 text-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? "Creating..." : "Create & Link"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setMode("select"); setError(""); }}
+          className="w-full mt-2 text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
+        >
+          Link an existing repo instead
+        </button>
+      </form>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleLink}>
       {loadingRepos ? (
         <div className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-dim">
           {content?.loadingText ?? "Loading repositories..."}
@@ -110,6 +198,13 @@ export function RepoLinker({ content }: RepoLinkerProps) {
         {loading
           ? (content?.loadingButton ?? "Linking...")
           : (content?.buttonText ?? "Link Repository")}
+      </button>
+      <button
+        type="button"
+        onClick={() => { setMode("create"); setError(""); }}
+        className="w-full mt-2 text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
+      >
+        or create a new repo
       </button>
     </form>
   );
