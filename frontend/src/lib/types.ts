@@ -7,6 +7,22 @@ export interface BackupEntry {
   sha: string;
   message: string;
   date: string;
+  categories: string[];
+  fileCount: number | null;
+  htmlUrl: string;
+}
+
+export interface CommitFileChange {
+  filename: string;
+  status: "added" | "removed" | "modified" | "renamed";
+  additions: number;
+  deletions: number;
+}
+
+export interface CommitDetail {
+  sha: string;
+  stats: { total: number; additions: number; deletions: number };
+  files: CommitFileChange[];
 }
 
 export interface TreeEntry {

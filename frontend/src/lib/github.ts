@@ -115,6 +115,46 @@ export async function fetchScriptsManifest(
   return fetchRawFile(token, repo, "scripts/scripts-manifest.txt");
 }
 
+export async function fetchCommitDetail(
+  token: string,
+  repo: string,
+  sha: string
+): Promise<{
+  sha: string;
+  stats: { total: number; additions: number; deletions: number };
+  files: {
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }[];
+} | null> {
+  const data = (await githubFetch(
+    `${GITHUB_API}/repos/${repo}/commits/${sha}`,
+    token
+  )) as {
+    sha: string;
+    stats: { total: number; additions: number; deletions: number };
+    files: {
+      filename: string;
+      status: string;
+      additions: number;
+      deletions: number;
+    }[];
+  } | null;
+  if (!data) return null;
+  return {
+    sha: data.sha,
+    stats: data.stats,
+    files: data.files.map((f) => ({
+      filename: f.filename,
+      status: f.status,
+      additions: f.additions,
+      deletions: f.deletions,
+    })),
+  };
+}
+
 export async function validateUconsoleRepo(
   token: string,
   repo: string

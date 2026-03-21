@@ -8,6 +8,7 @@ interface HBarItem {
   name: string;
   value: number;
   label?: string;
+  color?: string;
 }
 
 interface HBarProps {
@@ -30,7 +31,7 @@ export function HBar({ items, maxVal }: HBarProps) {
             <div className="flex-1 h-2.5 bg-[#21262d] rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full transition-[width] duration-300"
-                style={{ width: `${pct}%`, background: COLORS[i % COLORS.length] }}
+                style={{ width: `${pct}%`, background: item.color || COLORS[i % COLORS.length] }}
               />
             </div>
             <span className="min-w-10 sm:min-w-[45px] text-right text-dim tabular-nums">

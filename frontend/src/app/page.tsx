@@ -10,6 +10,7 @@ import {
 } from "@/lib/github";
 import type { BackupEntry, TreeEntry, RepoInfo } from "@/lib/types";
 import { categorizeAptPackages } from "@/lib/packageCategories";
+import { parseBackupMessage } from "@/lib/utils";
 import { RepoStats } from "@/components/dashboard/RepoStats";
 import { BackupHistory } from "@/components/dashboard/BackupHistory";
 import { PackageInventory } from "@/components/dashboard/PackageInventory";
@@ -25,6 +26,7 @@ import { redirect } from "next/navigation";
 
 interface GitHubCommit {
   sha: string;
+  html_url: string;
   commit: {
     message: string;
     author: { date: string };
@@ -153,11 +155,17 @@ export default async function Home() {
 
   const repoInfo = repoInfoRaw as RepoInfo | null;
   const commits: BackupEntry[] = Array.isArray(commitsRaw)
-    ? (commitsRaw as GitHubCommit[]).map((c) => ({
-        sha: c.sha,
-        message: c.commit.message,
-        date: c.commit.author.date,
-      }))
+    ? (commitsRaw as GitHubCommit[]).map((c) => {
+        const parsed = parseBackupMessage(c.commit.message);
+        return {
+          sha: c.sha,
+          message: c.commit.message,
+          date: c.commit.author.date,
+          htmlUrl: c.html_url ?? "",
+          categories: parsed.categories,
+          fileCount: parsed.fileCount,
+        };
+      })
     : [];
   const tree: TreeEntry[] = treeRaw
     ? ((treeRaw as { tree: TreeEntry[] }).tree || [])

@@ -10,7 +10,7 @@ interface StatCardsProps {
 
 export function StatCards({ items }: StatCardsProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-3">
       {items.map((item) => (
         <div
           key={item.label}

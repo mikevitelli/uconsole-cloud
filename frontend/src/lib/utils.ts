@@ -18,6 +18,59 @@ export function fmtSize(kb: number): string {
   return kb > 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " KB";
 }
 
+export const CATEGORY_COLORS: Record<string, string> = {
+  all: "#58a6ff",
+  packages: "#3fb950",
+  system: "#f85149",
+  config: "#d29922",
+  desktop: "#bc8cff",
+  browser: "#79c0ff",
+  git: "#56d364",
+  scripts: "#e3b341",
+  dotfiles: "#ff7b72",
+  gh: "#d2a8ff",
+  retropie: "#f778ba",
+  emulators: "#ffa657",
+  drivers: "#a5d6ff",
+};
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  all: "all",
+  packages: "packages",
+  system: "system",
+  config: "config",
+  desktop: "desktop",
+  browser: "browser",
+  git: "git config",
+  scripts: "scripts",
+  dotfiles: "dotfiles",
+  gh: "GitHub CLI",
+  retropie: "RetroPie",
+  emulators: "emulators",
+  drivers: "drivers",
+};
+
+export function categoryLabel(key: string): string {
+  return CATEGORY_LABELS[key] || key;
+}
+
+const BACKUP_CATEGORIES_RE = /^backup\(([^)]+)\)/;
+const BACKUP_FILES_RE = /(\d+)\s+file\(s\)/;
+
+export function parseBackupMessage(message: string): {
+  categories: string[];
+  fileCount: number | null;
+} {
+  const firstLine = message.split("\n")[0];
+  const catMatch = firstLine.match(BACKUP_CATEGORIES_RE);
+  if (!catMatch) return { categories: [], fileCount: null };
+  const fileMatch = firstLine.match(BACKUP_FILES_RE);
+  return {
+    categories: catMatch[1].split(",").map((c) => c.trim()),
+    fileCount: fileMatch ? parseInt(fileMatch[1], 10) : null,
+  };
+}
+
 export function parseScriptsManifest(
   text: string | null
 ): { columns: string[]; rows: string[][] } {

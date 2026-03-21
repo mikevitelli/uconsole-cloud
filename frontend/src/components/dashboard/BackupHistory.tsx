@@ -1,7 +1,8 @@
 import { Sparkline } from "@/components/viz/Sparkline";
 import { StatCards } from "@/components/viz/StatCards";
 import { CalendarGrid } from "@/components/viz/CalendarGrid";
-import { fmtDate } from "@/lib/utils";
+import { BackupTimeline } from "@/components/dashboard/BackupTimeline";
+import { fmtDate, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
 import type { BackupEntry } from "@/lib/types";
 
 interface BackupHistoryContent {
@@ -14,6 +15,16 @@ interface BackupHistoryContent {
 interface BackupHistoryProps {
   backups: BackupEntry[];
   content?: BackupHistoryContent;
+}
+
+function ageLabel(iso: string): { text: string; color: string } {
+  const ms = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return { text: "today", color: "var(--green)" };
+  if (days === 1) return { text: "yesterday", color: "var(--green)" };
+  if (days < 7) return { text: `${days}d ago`, color: "var(--green)" };
+  if (days < 14) return { text: `${days}d ago`, color: "var(--yellow)" };
+  return { text: `${days}d ago`, color: "var(--red)" };
 }
 
 export function BackupHistory({ backups, content }: BackupHistoryProps) {
@@ -32,6 +43,30 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
     .sort()
     .map((k) => counts[k]);
 
+  // Aggregate stats
+  const totalFiles = backups.reduce(
+    (sum, b) => sum + (b.fileCount ?? 0),
+    0
+  );
+
+  // Last backup per category
+  const lastBackupByCategory: Record<string, string> = {};
+  for (const b of backups) {
+    for (const c of b.categories) {
+      if (!lastBackupByCategory[c]) {
+        lastBackupByCategory[c] = b.date;
+      }
+    }
+  }
+  // Remove "all" — it's a meta-category, the individual categories within it
+  // are what matters. But if "all" is the only one, keep it.
+  const categoryEntries = Object.entries(lastBackupByCategory)
+    .filter(([name]) => name !== "all" || Object.keys(lastBackupByCategory).length === 1)
+    .sort((a, b) => {
+      // Sort: most recently backed up first
+      return new Date(b[1]).getTime() - new Date(a[1]).getTime();
+    });
+
   return (
     <section className="bg-card border border-border rounded-xl p-4">
       <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
@@ -43,13 +78,14 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
         <>
           <CalendarGrid data={counts} />
 
-          <div className="text-xs text-dim mb-2 mt-3">
+          <div className="text-xs text-dim mb-2 mt-4">
             {content?.sparklineLabel ?? "Last 30 days"}
           </div>
           <div className="w-full overflow-hidden h-12">
             <Sparkline data={sparkData} width={400} height={50} />
           </div>
 
+          <div className="mt-4" />
           <StatCards
             items={[
               {
@@ -60,30 +96,54 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
                 value: fmtDate(backups[0].date),
                 label: content?.latestLabel ?? "Latest",
               },
+              {
+                value: totalFiles.toLocaleString(),
+                label: "Files Backed Up",
+              },
+              {
+                value: String(categoryEntries.length),
+                label: "Categories Tracked",
+              },
             ]}
           />
 
-          <div className="max-h-48 overflow-y-auto">
-            {backups.slice(0, 5).map((b) => (
-              <div
-                key={b.sha}
-                className="flex items-start gap-2.5 py-1.5 border-b border-[#1c2129] last:border-b-0 text-xs"
-              >
-                <span className="w-2 h-2 rounded-full bg-accent shrink-0 mt-1.5" />
-                <div className="flex-1">
-                  <div className="text-foreground">{b.message}</div>
-                  <div>
-                    <span className="text-dim text-sm">
-                      {fmtDate(b.date)}
-                    </span>{" "}
-                    <span className="text-dim font-mono text-sm">
-                      {b.sha.substring(0, 7)}
-                    </span>
-                  </div>
-                </div>
+          {/* Last backup per category */}
+          {categoryEntries.length > 0 && (
+            <div className="mt-4">
+              <div className="text-xs text-dim mb-2">
+                Last Backup by Category
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {categoryEntries.map(([name, date]) => {
+                  const age = ageLabel(date);
+                  const color = CATEGORY_COLORS[name] || "var(--accent)";
+                  return (
+                    <div
+                      key={name}
+                      className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-2 text-xs"
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: age.color }}
+                      />
+                      <span
+                        className="font-medium shrink-0"
+                        style={{ color }}
+                      >
+                        {categoryLabel(name)}
+                      </span>
+                      <span className="text-dim ml-auto tabular-nums shrink-0">
+                        {age.text}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Interactive timeline */}
+          <BackupTimeline backups={backups} />
         </>
       )}
     </section>
