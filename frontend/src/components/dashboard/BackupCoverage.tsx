@@ -1,6 +1,6 @@
 import { StatusGrid } from "@/components/viz/StatusGrid";
 import type { BackupEntry } from "@/lib/types";
-import { categoryLabel } from "@/lib/utils";
+import { categoryLabel, ageLabel, freshnessColor, getLastBackupByCategory } from "@/lib/utils";
 
 interface BackupCoverageContent {
   heading?: string;
@@ -32,23 +32,6 @@ const COVERAGE_ITEMS: {
   { name: "GitHub CLI", backupCategory: "gh" },
 ];
 
-function ageText(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(ms / 86400000);
-  if (days === 0) return "today";
-  if (days === 1) return "1d ago";
-  return `${days}d ago`;
-}
-
-function freshnessColor(iso: string | null): string {
-  if (!iso) return "var(--red)";
-  const days = Math.floor(
-    (Date.now() - new Date(iso).getTime()) / 86400000
-  );
-  if (days < 7) return "var(--green)";
-  if (days < 14) return "var(--yellow)";
-  return "var(--red)";
-}
 
 export function BackupCoverage({
   backups,
@@ -58,19 +41,12 @@ export function BackupCoverage({
   content,
 }: BackupCoverageProps) {
   // Find last backup date for each category
-  const lastBackupByCategory: Record<string, string> = {};
-  for (const b of backups) {
-    for (const c of b.categories) {
-      if (!lastBackupByCategory[c]) {
-        lastBackupByCategory[c] = b.date;
-      }
-    }
-    // "all" means every category was backed up
-    if (b.categories.includes("all")) {
-      for (const item of COVERAGE_ITEMS) {
-        if (item.backupCategory && !lastBackupByCategory[item.backupCategory]) {
-          lastBackupByCategory[item.backupCategory] = b.date;
-        }
+  const lastBackupByCategory = getLastBackupByCategory(backups);
+  // "all" means every category was backed up — expand to individual items
+  if (lastBackupByCategory["all"]) {
+    for (const item of COVERAGE_ITEMS) {
+      if (item.backupCategory && !lastBackupByCategory[item.backupCategory]) {
+        lastBackupByCategory[item.backupCategory] = lastBackupByCategory["all"];
       }
     }
   }
@@ -85,7 +61,7 @@ export function BackupCoverage({
         color: totalPackages > 0 ? freshnessColor(lastDate) : "var(--red)",
         detail:
           totalPackages > 0
-            ? `${totalPackages} pkgs${lastDate ? " · " + ageText(lastDate) : ""}`
+            ? `${totalPackages} pkgs${lastDate ? " · " + ageLabel(lastDate).text : ""}`
             : "missing",
       };
     }
@@ -95,7 +71,7 @@ export function BackupCoverage({
         color: extensionCount > 0 ? freshnessColor(lastDate) : "var(--dim)",
         detail:
           extensionCount > 0
-            ? `${extensionCount} ext${lastDate ? " · " + ageText(lastDate) : ""}`
+            ? `${extensionCount} ext${lastDate ? " · " + ageLabel(lastDate).text : ""}`
             : "none tracked",
       };
     }
@@ -105,7 +81,7 @@ export function BackupCoverage({
         color: hasScripts ? freshnessColor(lastDate) : "var(--yellow)",
         detail: hasScripts
           ? lastDate
-            ? ageText(lastDate)
+            ? ageLabel(lastDate).text
             : "present"
           : "no manifest",
       };
@@ -114,7 +90,7 @@ export function BackupCoverage({
     return {
       name: item.name,
       color: freshnessColor(lastDate),
-      detail: lastDate ? ageText(lastDate) : "never",
+      detail: lastDate ? ageLabel(lastDate).text : "never",
     };
   });
 

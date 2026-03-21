@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { CategoryPills } from "@/components/viz/CategoryPills";
 import { fmtDate, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
+import { Spinner } from "@/components/ui/Spinner";
 import type { BackupEntry, CommitDetail } from "@/lib/types";
 
 interface FilePreview {
@@ -66,7 +67,7 @@ function FilePreviewModal({
         <div className="flex-1 overflow-auto p-4">
           {preview.loading && (
             <div className="flex items-center justify-center py-12">
-              <div className="w-6 h-6 border-2 border-border border-t-accent rounded-full animate-spin" />
+              <Spinner className="w-6 h-6" />
             </div>
           )}
           {!preview.loading && preview.content !== null && (
@@ -308,7 +309,7 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
                 <div className="ml-4 sm:ml-5 mt-1 mb-3 bg-background border border-border rounded-lg p-3">
                   {isLoading && (
                     <div className="flex items-center justify-center py-4">
-                      <div className="w-5 h-5 border-2 border-border border-t-accent rounded-full animate-spin" />
+                      <Spinner className="w-5 h-5" />
                     </div>
                   )}
                   {!isLoading && detail && (

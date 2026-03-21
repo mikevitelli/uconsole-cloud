@@ -65,18 +65,11 @@ export async function fetchRawFile(
   path: string,
   branch = "main"
 ): Promise<string | null> {
-  const url = `${GITHUB_RAW}/${repo}/${branch}/${path}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `token ${token}`,
-      "User-Agent": "uconsole-dashboard",
-    },
-    next: { revalidate: 60 },
-  });
-  if (res.status === 401) throw new GitHubError(401, "GitHub token expired");
-  if (res.status === 403) throw new GitHubError(403, "GitHub rate limit exceeded");
-  if (!res.ok) return null;
-  return res.text();
+  return githubFetch(
+    `${GITHUB_RAW}/${repo}/${branch}/${path}`,
+    token,
+    false
+  ) as Promise<string | null>;
 }
 
 const PACKAGE_FILES: Record<string, string> = {

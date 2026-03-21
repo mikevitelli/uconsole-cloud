@@ -1,5 +1,6 @@
 import type { BackupEntry } from "@/lib/types";
 import type { DeviceStatusPayload } from "@/lib/deviceStatus";
+import { daysSince } from "@/lib/utils";
 
 interface SystemSummaryProps {
   backups: BackupEntry[];
@@ -8,9 +9,6 @@ interface SystemSummaryProps {
   totalPackages: number;
 }
 
-function daysSince(iso: string): number {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-}
 
 function restoreReadiness(backups: BackupEntry[]): number {
   const EXPECTED_CATEGORIES = [

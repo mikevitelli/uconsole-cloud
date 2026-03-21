@@ -2,7 +2,7 @@ import { Sparkline } from "@/components/viz/Sparkline";
 import { StatCards } from "@/components/viz/StatCards";
 import { CalendarGrid } from "@/components/viz/CalendarGrid";
 import { BackupTimeline } from "@/components/dashboard/BackupTimeline";
-import { fmtDate, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
+import { fmtDate, daysSince, ageLabel, getLastBackupByCategory, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
 import type { BackupEntry } from "@/lib/types";
 
 interface BackupHistoryContent {
@@ -17,15 +17,6 @@ interface BackupHistoryProps {
   content?: BackupHistoryContent;
 }
 
-function ageLabel(iso: string): { text: string; color: string } {
-  const ms = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(ms / 86400000);
-  if (days === 0) return { text: "today", color: "var(--green)" };
-  if (days === 1) return { text: "yesterday", color: "var(--green)" };
-  if (days < 7) return { text: `${days}d ago`, color: "var(--green)" };
-  if (days < 14) return { text: `${days}d ago`, color: "var(--yellow)" };
-  return { text: `${days}d ago`, color: "var(--red)" };
-}
 
 export function BackupHistory({ backups, content }: BackupHistoryProps) {
   // Build sparkline data for last 30 days
@@ -50,14 +41,7 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
   );
 
   // Last backup per category
-  const lastBackupByCategory: Record<string, string> = {};
-  for (const b of backups) {
-    for (const c of b.categories) {
-      if (!lastBackupByCategory[c]) {
-        lastBackupByCategory[c] = b.date;
-      }
-    }
-  }
+  const lastBackupByCategory = getLastBackupByCategory(backups);
   // Remove "all" — it's a meta-category, the individual categories within it
   // are what matters. But if "all" is the only one, keep it.
   const categoryEntries = Object.entries(lastBackupByCategory)

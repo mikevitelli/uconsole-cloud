@@ -18,6 +18,45 @@ export function fmtSize(kb: number): string {
   return kb > 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " KB";
 }
 
+export function ageLabel(iso: string): { text: string; color: string } {
+  const days = daysSince(iso);
+  if (days === 0) return { text: "today", color: "var(--green)" };
+  if (days === 1) return { text: "yesterday", color: "var(--green)" };
+  if (days < 7) return { text: `${days}d ago`, color: "var(--green)" };
+  if (days < 14) return { text: `${days}d ago`, color: "var(--yellow)" };
+  return { text: `${days}d ago`, color: "var(--red)" };
+}
+
+export function freshnessColor(iso: string | null): string {
+  if (!iso) return "var(--red)";
+  const days = daysSince(iso);
+  if (days < 7) return "var(--green)";
+  if (days < 14) return "var(--yellow)";
+  return "var(--red)";
+}
+
+export function getLastBackupByCategory(
+  backups: { categories: string[]; date: string }[]
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const b of backups) {
+    for (const c of b.categories) {
+      if (!result[c]) result[c] = b.date;
+    }
+  }
+  return result;
+}
+
+export function daysSince(iso: string): number {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+
+export function fmtBytes(bytes: number): string {
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + "M";
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + "K";
+  return bytes + "B";
+}
+
 export const CATEGORY_COLORS: Record<string, string> = {
   all: "#58a6ff",
   packages: "#3fb950",
