@@ -145,6 +145,20 @@ export default async function Home() {
   }
 
   // ── Dashboard ──────────────────────────────────────────
+  if (!session.accessToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h2 className="text-xl font-semibold text-red-400">Session expired</h2>
+          <p className="text-sub text-sm">Please sign out and sign back in.</p>
+          <form action={async () => { "use server"; await signOut(); }}>
+            <button className="text-sm underline text-sub hover:text-fg cursor-pointer">Sign out</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus;
   try {
     [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
