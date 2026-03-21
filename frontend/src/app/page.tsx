@@ -1,5 +1,5 @@
-import { auth, signIn, signOut } from "@/lib/auth";
-import { getUserSettings, deleteUserSettings } from "@/lib/redis";
+import { auth } from "@/lib/auth";
+import { getUserSettings } from "@/lib/redis";
 import {
   fetchRepoInfo,
   fetchCommits,
@@ -9,7 +9,7 @@ import {
   fetchScriptsManifest,
   GitHubError,
 } from "@/lib/github";
-import type { BackupEntry, TreeEntry, RepoInfo } from "@/lib/types";
+import type { BackupEntry, TreeEntry, RepoInfo, GitHubCommit } from "@/lib/types";
 import { categorizeAptPackages } from "@/lib/packageCategories";
 import { parseBackupMessage } from "@/lib/utils";
 import { RepoStats } from "@/components/dashboard/RepoStats";
@@ -23,18 +23,10 @@ import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
 import { SystemSummary } from "@/components/dashboard/SystemSummary";
 import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus } from "@/lib/deviceStatus";
 import { fetchSiteContent } from "@/lib/sanity";
-import { redirect } from "next/navigation";
-
-interface GitHubCommit {
-  sha: string;
-  html_url: string;
-  commit: {
-    message: string;
-    author: { date: string };
-  };
-}
+import { signInAction, signOutAction, unlinkAction } from "./actions";
 
 export default async function Home() {
   const session = await auth();
@@ -62,21 +54,12 @@ export default async function Home() {
             {content?.landing?.description ??
               "Monitor your system backup repository on GitHub."}
           </p>
-          <form
-            action={async () => {
-              "use server";
-              await signIn("github");
-            }}
-          >
+          <form action={signInAction}>
             <button
               type="submit"
               className="w-full flex items-center justify-center gap-2 bg-[#24292f] text-white font-semibold rounded-lg px-4 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer"
             >
-              <img
-                src="/github-mark-white.svg"
-                alt=""
-                className="w-5 h-5"
-              />
+              <img src="/github-mark-white.svg" alt="" className="w-5 h-5" />
               {content?.landing?.signInButton ?? "Sign in with GitHub"}
             </button>
           </form>
@@ -93,24 +76,8 @@ export default async function Home() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="bg-card border border-border rounded-xl p-8 max-w-md w-full">
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              {session.user?.image && (
-                <img
-                  src={session.user.image}
-                  alt=""
-                  className="w-8 h-8 rounded-full"
-                />
-              )}
-              <span className="text-sm text-foreground">
-                {session.user?.name}
-              </span>
-            </div>
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/" });
-              }}
-            >
+            <UserAvatar session={session} size="w-8 h-8" />
+            <form action={signOutAction}>
               <button
                 type="submit"
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
@@ -144,14 +111,14 @@ export default async function Home() {
     );
   }
 
-  // ── Dashboard ──────────────────────────────────────────
+  // ── Session expired ────────────────────────────────────
   if (!session.accessToken) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
           <h2 className="text-xl font-semibold text-red-400">Session expired</h2>
           <p className="text-sub text-sm">Please sign out and sign back in.</p>
-          <form action={async () => { "use server"; await signOut(); }}>
+          <form action={signOutAction}>
             <button className="text-sm underline text-sub hover:text-fg cursor-pointer">Sign out</button>
           </form>
         </div>
@@ -159,6 +126,7 @@ export default async function Home() {
     );
   }
 
+  // ── Fetch dashboard data ───────────────────────────────
   let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus;
   try {
     [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
@@ -182,8 +150,8 @@ export default async function Home() {
                 ? "Please sign out and sign back in to refresh your token."
                 : "Please wait a few minutes and try again."}
             </p>
-            <form action={async () => { "use server"; await signOut(); }}>
-              <button className="text-sm underline text-sub hover:text-fg">Sign out</button>
+            <form action={signOutAction}>
+              <button className="text-sm underline text-sub hover:text-fg cursor-pointer">Sign out</button>
             </form>
           </div>
         </div>
@@ -192,19 +160,16 @@ export default async function Home() {
     throw err;
   }
 
+  // ── Transform data ─────────────────────────────────────
   const repoInfo = repoInfoRaw as RepoInfo | null;
   const commits: BackupEntry[] = Array.isArray(commitsRaw)
-    ? (commitsRaw as GitHubCommit[]).map((c) => {
-        const parsed = parseBackupMessage(c.commit.message);
-        return {
-          sha: c.sha,
-          message: c.commit.message,
-          date: c.commit.author.date,
-          htmlUrl: c.html_url ?? "",
-          categories: parsed.categories,
-          fileCount: parsed.fileCount,
-        };
-      })
+    ? (commitsRaw as GitHubCommit[]).map((c) => ({
+        sha: c.sha,
+        message: c.commit.message,
+        date: c.commit.author.date,
+        htmlUrl: c.html_url ?? "",
+        ...parseBackupMessage(c.commit.message),
+      }))
     : [];
   const tree: TreeEntry[] = treeRaw
     ? ((treeRaw as { tree: TreeEntry[] }).tree || [])
@@ -220,9 +185,9 @@ export default async function Home() {
       )
     : 0;
 
+  // ── Render dashboard ───────────────────────────────────
   return (
     <div className="min-h-screen overflow-x-hidden">
-      {/* Header */}
       <header className="border-b border-border px-4 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -234,30 +199,8 @@ export default async function Home() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              {session.user?.image && (
-                <img
-                  src={session.user.image}
-                  alt=""
-                  className="w-6 h-6 rounded-full"
-                />
-              )}
-              <span className="text-sm text-foreground hidden sm:inline">
-                {session.user?.name}
-              </span>
-            </div>
-            <form
-              action={async () => {
-                "use server";
-                const s = await auth();
-                if (!s?.user?.id) {
-                  await signOut();
-                  return;
-                }
-                await deleteUserSettings(s.user.id);
-                redirect("/");
-              }}
-            >
+            <UserAvatar session={session} />
+            <form action={unlinkAction}>
               <ConfirmButton
                 message="Are you sure you want to unlink this repo? You can re-link it later."
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
@@ -265,12 +208,7 @@ export default async function Home() {
                 {content?.dashboard?.unlinkButton ?? "Unlink"}
               </ConfirmButton>
             </form>
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/" });
-              }}
-            >
+            <form action={signOutAction}>
               <button
                 type="submit"
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
@@ -282,7 +220,6 @@ export default async function Home() {
         </div>
       </header>
 
-      {/* Dashboard content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
         <SystemSummary
           backups={commits}

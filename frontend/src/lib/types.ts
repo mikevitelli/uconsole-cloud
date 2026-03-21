@@ -55,6 +55,15 @@ export interface UserSettings {
   linkedAt: string;
 }
 
+export interface GitHubCommit {
+  sha: string;
+  html_url: string;
+  commit: {
+    message: string;
+    author: { date: string };
+  };
+}
+
 export interface AptCategory {
   name: string;
   color: string;
