@@ -19,14 +19,14 @@ interface BackupCoverageProps {
 // others are derived from file existence checks
 const COVERAGE_ITEMS: {
   name: string;
-  backupCategory?: string; // matches against backup commit categories
-  fileCheck?: "packages" | "extensions" | "scripts"; // derived from file data
+  backupCategory: string; // matches against backup commit categories
+  fileCheck?: "packages" | "extensions" | "scripts"; // also derived from file data
 }[] = [
   { name: "Shell configs", backupCategory: "dotfiles" },
   { name: "System configs", backupCategory: "system" },
-  { name: "Package manifests", fileCheck: "packages" },
-  { name: "Browser", fileCheck: "extensions" },
-  { name: "Scripts", fileCheck: "scripts" },
+  { name: "Package manifests", backupCategory: "packages", fileCheck: "packages" },
+  { name: "Browser", backupCategory: "browser", fileCheck: "extensions" },
+  { name: "Scripts", backupCategory: "scripts", fileCheck: "scripts" },
   { name: "Desktop (dconf)", backupCategory: "desktop" },
   { name: "Git/SSH config", backupCategory: "git" },
   { name: "GitHub CLI", backupCategory: "gh" },
@@ -76,9 +76,10 @@ export function BackupCoverage({
   }
 
   const items = COVERAGE_ITEMS.map((item) => {
-    // File-check based items
+    const lastDate = lastBackupByCategory[item.backupCategory] ?? null;
+
+    // File-check based items (have extra data beyond just the date)
     if (item.fileCheck === "packages") {
-      const lastDate = lastBackupByCategory["packages"] ?? null;
       return {
         name: item.name,
         color: totalPackages > 0 ? freshnessColor(lastDate) : "var(--red)",
@@ -89,7 +90,6 @@ export function BackupCoverage({
       };
     }
     if (item.fileCheck === "extensions") {
-      const lastDate = lastBackupByCategory["browser"] ?? null;
       return {
         name: item.name,
         color: extensionCount > 0 ? freshnessColor(lastDate) : "var(--dim)",
@@ -100,7 +100,6 @@ export function BackupCoverage({
       };
     }
     if (item.fileCheck === "scripts") {
-      const lastDate = lastBackupByCategory["scripts"] ?? null;
       return {
         name: item.name,
         color: hasScripts ? freshnessColor(lastDate) : "var(--yellow)",
@@ -111,11 +110,6 @@ export function BackupCoverage({
           : "no manifest",
       };
     }
-
-    // Category-based items
-    const lastDate = item.backupCategory
-      ? lastBackupByCategory[item.backupCategory] ?? null
-      : null;
 
     return {
       name: item.name,
