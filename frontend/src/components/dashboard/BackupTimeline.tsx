@@ -292,7 +292,7 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
                   )}
                 </div>
                 <a
-                  href={b.htmlUrl}
+                  href={b.htmlUrl.startsWith("https://github.com/") ? b.htmlUrl : "#"}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}

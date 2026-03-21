@@ -6,6 +6,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: process.env.GITHUB_ID,
       clientSecret: process.env.GITHUB_SECRET,
+      // "repo" scope required for private repo access (read commits, files, tree).
+      // Cannot use narrower "public_repo" since backup repos may be private.
       authorization: { params: { scope: "repo read:user" } },
     }),
   ],

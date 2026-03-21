@@ -14,8 +14,13 @@ export default function Error({
           Something went wrong
         </h2>
         <p className="text-sub text-sm max-w-md">
-          {error.message || "An unexpected error occurred loading the dashboard."}
+          {process.env.NODE_ENV === "production"
+            ? "An unexpected error occurred loading the dashboard."
+            : error.message || "An unexpected error occurred loading the dashboard."}
         </p>
+        {error.digest && (
+          <p className="text-xs text-dim">Error ID: {error.digest}</p>
+        )}
         <button
           onClick={reset}
           className="text-sm underline text-sub hover:text-fg cursor-pointer"
