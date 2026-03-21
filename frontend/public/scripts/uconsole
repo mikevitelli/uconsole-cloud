@@ -1,0 +1,216 @@
+#!/bin/bash
+# uconsole CLI — manage your uconsole.cloud device connection
+# Usage: uconsole <command>
+set -euo pipefail
+
+BASE_URL="https://uconsole.cloud"
+CONFIG_DIR="${HOME}/.config/uconsole"
+ENV_FILE="${CONFIG_DIR}/status.env"
+SCRIPTS_DIR="${HOME}/scripts"
+
+# ── Helpers ──────────────────────────────────────────────
+
+die() { echo "ERROR: $1" >&2; exit 1; }
+
+# Extract a JSON string value: json_val '{"k":"v"}' k → v
+json_val() {
+  local json="$1" key="$2"
+  echo "$json" | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:.*"\(.*\)"/\1/'
+}
+
+# Extract a JSON number value: json_num '{"k":600}' k → 600
+json_num() {
+  local json="$1" key="$2"
+  echo "$json" | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*[0-9]*" | head -1 | sed 's/.*:[[:space:]]*//'
+}
+
+# ── Commands ─────────────────────────────────────────────
+
+cmd_setup() {
+  # Check for existing config
+  if [ -f "${ENV_FILE}" ]; then
+    # shellcheck source=/dev/null
+    source "${ENV_FILE}"
+    echo "This device is already linked."
+    echo "  Repo:  ${DEVICE_REPO:-unknown}"
+    echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
+    echo ""
+    printf "Re-link with a new token? This will replace your current config. [y/N] "
+    read -r CONFIRM
+    case "$CONFIRM" in
+      [yY]|[yY][eE][sS]) ;;
+      *) echo "Cancelled."; return 0 ;;
+    esac
+    echo ""
+  fi
+
+  echo "Requesting device code..."
+  RESPONSE=$(curl -fsSL -X POST "${BASE_URL}/api/device/code")
+  CODE=$(json_val "$RESPONSE" "code")
+  SECRET=$(json_val "$RESPONSE" "secret")
+  EXPIRES=$(json_num "$RESPONSE" "expiresIn")
+
+  if [ -z "$CODE" ] || [ -z "$SECRET" ]; then
+    die "Failed to get device code. Check your network connection."
+  fi
+
+  MINS=$((EXPIRES / 60))
+  echo ""
+  echo "Enter this code at ${BASE_URL}/link"
+  echo ""
+  echo "  ┌──────────────┐"
+  echo "  │  ${CODE}   │"
+  echo "  └──────────────┘"
+  echo ""
+  echo "Waiting for confirmation... (expires in ${MINS}:00)"
+
+  # Poll every 3 seconds
+  ELAPSED=0
+  while [ "$ELAPSED" -lt "$EXPIRES" ]; do
+    sleep 3
+    ELAPSED=$((ELAPSED + 3))
+
+    POLL=$(curl -fsSL "${BASE_URL}/api/device/poll/${SECRET}" 2>/dev/null || echo '{"status":"error"}')
+    STATUS=$(json_val "$POLL" "status")
+
+    if [ "$STATUS" = "confirmed" ]; then
+      DEVICE_TOKEN=$(json_val "$POLL" "deviceToken")
+      REPO=$(json_val "$POLL" "repo")
+
+      echo ""
+      echo "Device confirmed!"
+      echo "Linked to ${REPO}"
+
+      # Write config
+      mkdir -p "${CONFIG_DIR}"
+      cat > "${ENV_FILE}" << EOF
+DEVICE_API_URL="${BASE_URL}/api/device/push"
+DEVICE_TOKEN="${DEVICE_TOKEN}"
+DEVICE_REPO="${REPO}"
+EOF
+      echo "Config written to ${ENV_FILE}"
+
+      # Setup cron (every 5 minutes)
+      CRON_CMD="*/5 * * * * ${SCRIPTS_DIR}/push-status.sh >> /tmp/uconsole-push.log 2>&1"
+      ( crontab -l 2>/dev/null | grep -v "push-status.sh" ; echo "$CRON_CMD" ) | crontab -
+      echo "Cron job set (every 5 minutes)"
+
+      # First push
+      if [ -x "${SCRIPTS_DIR}/push-status.sh" ]; then
+        echo "Running first status push..."
+        "${SCRIPTS_DIR}/push-status.sh" && echo "First status pushed!" || echo "Push failed (will retry via cron)"
+      fi
+
+      echo ""
+      echo "View your dashboard: ${BASE_URL}"
+      return 0
+    fi
+
+    if [ "$STATUS" = "error" ]; then
+      # Code may have expired or been consumed — re-check
+      :
+    fi
+
+    # Show countdown
+    REMAINING=$((EXPIRES - ELAPSED))
+    R_MINS=$((REMAINING / 60))
+    R_SECS=$((REMAINING % 60))
+    printf "\rWaiting for confirmation... (expires in %d:%02d) " "$R_MINS" "$R_SECS"
+  done
+
+  echo ""
+  die "Code expired. Run 'uconsole setup' to try again."
+}
+
+cmd_push() {
+  if [ ! -f "${ENV_FILE}" ]; then
+    die "Not configured. Run 'uconsole setup' first."
+  fi
+  if [ ! -x "${SCRIPTS_DIR}/push-status.sh" ]; then
+    die "push-status.sh not found. Run 'uconsole update' to download."
+  fi
+  "${SCRIPTS_DIR}/push-status.sh"
+}
+
+cmd_status() {
+  if [ ! -f "${ENV_FILE}" ]; then
+    echo "Status: not configured"
+    echo "Run 'uconsole setup' to link your device."
+    return 0
+  fi
+
+  # shellcheck source=/dev/null
+  source "${ENV_FILE}"
+  echo "Status: configured"
+  echo "  API:   ${DEVICE_API_URL:-not set}"
+  echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
+  echo "  Repo:  ${DEVICE_REPO:-not set}"
+
+  # Check cron
+  if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+    echo "  Cron:  active (every 5 min)"
+  else
+    echo "  Cron:  not set"
+  fi
+
+  # Last push
+  if [ -f /tmp/uconsole-push.log ]; then
+    LAST=$(tail -1 /tmp/uconsole-push.log)
+    echo "  Last:  ${LAST}"
+  fi
+}
+
+cmd_unlink() {
+  # Remove cron entry
+  if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+    crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
+    echo "Removed cron job"
+  fi
+
+  # Remove config
+  if [ -f "${ENV_FILE}" ]; then
+    rm -f "${ENV_FILE}"
+    echo "Removed config"
+  fi
+
+  echo "Device unlinked. Run 'uconsole setup' to reconnect."
+}
+
+cmd_update() {
+  echo "Updating scripts..."
+  mkdir -p "${SCRIPTS_DIR}" "${HOME}/.local/bin"
+
+  curl -fsSL "${BASE_URL}/api/scripts/uconsole" -o "${HOME}/.local/bin/uconsole"
+  chmod +x "${HOME}/.local/bin/uconsole"
+
+  curl -fsSL "${BASE_URL}/api/scripts/push-status.sh" -o "${SCRIPTS_DIR}/push-status.sh"
+  chmod +x "${SCRIPTS_DIR}/push-status.sh"
+
+  echo "Updated to latest versions."
+}
+
+cmd_help() {
+  echo "uconsole — manage your uconsole.cloud device"
+  echo ""
+  echo "Commands:"
+  echo "  setup    Link this device via code authentication"
+  echo "  push     Push status now"
+  echo "  status   Show current config and last push"
+  echo "  unlink   Remove config and cron job"
+  echo "  update   Re-download latest scripts"
+  echo "  help     Show this help"
+}
+
+# ── Main ─────────────────────────────────────────────────
+
+COMMAND="${1:-help}"
+
+case "$COMMAND" in
+  setup)   cmd_setup ;;
+  push)    cmd_push ;;
+  status)  cmd_status ;;
+  unlink)  cmd_unlink ;;
+  update)  cmd_update ;;
+  help|--help|-h) cmd_help ;;
+  *) echo "Unknown command: ${COMMAND}"; cmd_help; exit 1 ;;
+esac

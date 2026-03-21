@@ -229,6 +229,34 @@ describe("Device push endpoint", () => {
     expect(source).toContain("device/push");
   });
 
+  it("middleware should exclude device/code$ (generation) from NextAuth", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync("src/middleware.ts", "utf-8");
+    expect(source).toContain("device/code$");
+  });
+
+  it("middleware should exclude device/poll from NextAuth", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync("src/middleware.ts", "utf-8");
+    expect(source).toContain("device/poll");
+  });
+
+  it("middleware should exclude scripts from NextAuth", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync("src/middleware.ts", "utf-8");
+    expect(source).toContain("scripts");
+  });
+
+  it("device/code/confirm should still require auth (not excluded by code$ pattern)", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync(
+      "src/app/api/device/code/confirm/route.ts",
+      "utf-8"
+    );
+    expect(source).toContain("auth()");
+    expect(source).toMatch(/Unauthorized/);
+  });
+
   it("unlink action should revoke device token", async () => {
     const fs = await import("fs");
     const source = fs.readFileSync("src/app/actions.ts", "utf-8");
