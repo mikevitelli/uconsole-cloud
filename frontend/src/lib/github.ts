@@ -1,6 +1,16 @@
 const GITHUB_API = "https://api.github.com";
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 
+export class GitHubError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "GitHubError";
+  }
+}
+
 async function githubFetch(
   url: string,
   token: string,
@@ -14,6 +24,8 @@ async function githubFetch(
     },
     next: { revalidate: 60 },
   });
+  if (res.status === 401) throw new GitHubError(401, "GitHub token expired");
+  if (res.status === 403) throw new GitHubError(403, "GitHub rate limit exceeded");
   if (!res.ok) return null;
   return isJson ? res.json() : res.text();
 }
@@ -53,16 +65,11 @@ export async function fetchRawFile(
   path: string,
   branch = "main"
 ): Promise<string | null> {
-  const url = `${GITHUB_RAW}/${repo}/${branch}/${path}`;
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `token ${token}`,
-      "User-Agent": "uconsole-dashboard",
-    },
-    next: { revalidate: 60 },
-  });
-  if (!res.ok) return null;
-  return res.text();
+  return githubFetch(
+    `${GITHUB_RAW}/${repo}/${branch}/${path}`,
+    token,
+    false
+  ) as Promise<string | null>;
 }
 
 const PACKAGE_FILES: Record<string, string> = {
@@ -113,6 +120,46 @@ export async function fetchScriptsManifest(
   repo: string
 ): Promise<string | null> {
   return fetchRawFile(token, repo, "scripts/scripts-manifest.txt");
+}
+
+export async function fetchCommitDetail(
+  token: string,
+  repo: string,
+  sha: string
+): Promise<{
+  sha: string;
+  stats: { total: number; additions: number; deletions: number };
+  files: {
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }[];
+} | null> {
+  const data = (await githubFetch(
+    `${GITHUB_API}/repos/${repo}/commits/${sha}`,
+    token
+  )) as {
+    sha: string;
+    stats: { total: number; additions: number; deletions: number };
+    files: {
+      filename: string;
+      status: string;
+      additions: number;
+      deletions: number;
+    }[];
+  } | null;
+  if (!data) return null;
+  return {
+    sha: data.sha,
+    stats: data.stats,
+    files: (data.files ?? []).map((f) => ({
+      filename: f.filename,
+      status: f.status,
+      additions: f.additions,
+      deletions: f.deletions,
+    })),
+  };
 }
 
 export async function validateUconsoleRepo(

@@ -10,10 +10,10 @@ interface StatCardsProps {
 
 export function StatCards({ items }: StatCardsProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2">
-      {items.map((item) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-3">
+      {items.map((item, i) => (
         <div
-          key={item.label}
+          key={`${i}-${item.label}`}
           className="bg-background border border-border rounded-lg px-2.5 py-2 text-center"
         >
           <div
