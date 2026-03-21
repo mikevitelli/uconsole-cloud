@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { auth } from "@/lib/auth";
 import { getUserSettings } from "@/lib/redis";
 import {
@@ -59,7 +60,7 @@ export default async function Home() {
               type="submit"
               className="w-full flex items-center justify-center gap-2 bg-[#24292f] text-white font-semibold rounded-lg px-4 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer"
             >
-              <img src="/github-mark-white.svg" alt="" className="w-5 h-5" />
+              <Image src="/github-mark-white.svg" alt="" width={20} height={20} className="w-5 h-5" />
               {content?.landing?.signInButton ?? "Sign in with GitHub"}
             </button>
           </form>
