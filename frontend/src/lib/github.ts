@@ -1,6 +1,16 @@
 const GITHUB_API = "https://api.github.com";
 const GITHUB_RAW = "https://raw.githubusercontent.com";
 
+export class GitHubError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "GitHubError";
+  }
+}
+
 async function githubFetch(
   url: string,
   token: string,
@@ -14,6 +24,8 @@ async function githubFetch(
     },
     next: { revalidate: 60 },
   });
+  if (res.status === 401) throw new GitHubError(401, "GitHub token expired");
+  if (res.status === 403) throw new GitHubError(403, "GitHub rate limit exceeded");
   if (!res.ok) return null;
   return isJson ? res.json() : res.text();
 }

@@ -7,6 +7,7 @@ import {
   fetchAllPackages,
   fetchExtensions,
   fetchScriptsManifest,
+  GitHubError,
 } from "@/lib/github";
 import type { BackupEntry, TreeEntry, RepoInfo } from "@/lib/types";
 import { categorizeAptPackages } from "@/lib/packageCategories";
@@ -143,16 +144,38 @@ export default async function Home() {
   }
 
   // ── Dashboard ──────────────────────────────────────────
-  const [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
-    await Promise.all([
-      fetchRepoInfo(session.accessToken, settings.repo),
-      fetchCommits(session.accessToken, settings.repo),
-      fetchTree(session.accessToken, settings.repo),
-      fetchAllPackages(session.accessToken, settings.repo),
-      fetchExtensions(session.accessToken, settings.repo),
-      fetchScriptsManifest(session.accessToken, settings.repo),
-      getDeviceStatus(settings.repo),
-    ]);
+  let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus;
+  try {
+    [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
+      await Promise.all([
+        fetchRepoInfo(session.accessToken, settings.repo),
+        fetchCommits(session.accessToken, settings.repo),
+        fetchTree(session.accessToken, settings.repo),
+        fetchAllPackages(session.accessToken, settings.repo),
+        fetchExtensions(session.accessToken, settings.repo),
+        fetchScriptsManifest(session.accessToken, settings.repo),
+        getDeviceStatus(settings.repo),
+      ]);
+  } catch (err) {
+    if (err instanceof GitHubError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <h2 className="text-xl font-semibold text-red-400">{err.message}</h2>
+            <p className="text-sub text-sm">
+              {err.status === 401
+                ? "Please sign out and sign back in to refresh your token."
+                : "Please wait a few minutes and try again."}
+            </p>
+            <form action={async () => { "use server"; await signOut(); }}>
+              <button className="text-sm underline text-sub hover:text-fg">Sign out</button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+    throw err;
+  }
 
   const repoInfo = repoInfoRaw as RepoInfo | null;
   const commits: BackupEntry[] = Array.isArray(commitsRaw)
