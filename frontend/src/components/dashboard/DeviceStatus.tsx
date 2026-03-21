@@ -225,11 +225,16 @@ export function DeviceStatus({
               detail: aio.rtc.detected
                 ? aio.rtc.synced
                   ? aio.rtc.time
-                    ? new Date(aio.rtc.time).toLocaleTimeString("en-US", {
-                        hour: "numeric",
-                        minute: "2-digit",
-                        hour12: true,
-                      })
+                    ? (() => {
+                        // Parse device-local time directly (avoid server TZ conversion)
+                        const m = aio.rtc.time.match(/(\d+):(\d+):(\d+)/);
+                        if (!m) return "synced";
+                        const h = parseInt(m[1]);
+                        const min = m[2];
+                        const ampm = h >= 12 ? "PM" : "AM";
+                        const h12 = h % 12 || 12;
+                        return `${h12}:${min} ${ampm}`;
+                      })()
                     : "synced"
                   : "not synced"
                 : "not found",
