@@ -53,6 +53,7 @@ export interface BackupItem {
 export interface UserSettings {
   repo: string;
   linkedAt: string;
+  deviceToken?: string;
 }
 
 export interface GitHubCommit {

@@ -2,6 +2,7 @@
 
 import { auth, signIn, signOut } from "@/lib/auth";
 import { deleteUserSettings } from "@/lib/redis";
+import { revokeDeviceToken } from "@/lib/deviceToken";
 import { redirect } from "next/navigation";
 
 export async function signInAction() {
@@ -18,6 +19,7 @@ export async function unlinkAction() {
     await signOut();
     return;
   }
+  await revokeDeviceToken(session.user.id);
   await deleteUserSettings(session.user.id);
   redirect("/");
 }
