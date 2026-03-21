@@ -1,6 +1,7 @@
 import type { BackupEntry } from "@/lib/types";
 import type { DeviceStatusPayload } from "@/lib/deviceStatus";
-import { daysSince } from "@/lib/utils";
+import { daysSince, getLastBackupByCategory } from "@/lib/utils";
+import { COVERAGE_ITEMS } from "@/components/dashboard/BackupCoverage";
 
 interface SystemSummaryProps {
   backups: BackupEntry[];
@@ -11,27 +12,13 @@ interface SystemSummaryProps {
 
 
 function restoreReadiness(backups: BackupEntry[]): number {
-  const EXPECTED_CATEGORIES = [
-    "packages",
-    "system",
-    "config",
-    "desktop",
-    "browser",
-    "git",
-    "scripts",
-    "dotfiles",
-    "gh",
-  ];
+  const EXPECTED_CATEGORIES = COVERAGE_ITEMS.map((i) => i.backupCategory);
 
-  const lastBackup: Record<string, string> = {};
-  for (const b of backups) {
-    for (const c of b.categories) {
-      if (!lastBackup[c]) lastBackup[c] = b.date;
-    }
-    if (b.categories.includes("all")) {
-      for (const cat of EXPECTED_CATEGORIES) {
-        if (!lastBackup[cat]) lastBackup[cat] = b.date;
-      }
+  const lastBackup = getLastBackupByCategory(backups);
+  // "all" means every category was backed up — expand to individual items
+  if (lastBackup["all"]) {
+    for (const cat of EXPECTED_CATEGORIES) {
+      if (!lastBackup[cat]) lastBackup[cat] = lastBackup["all"];
     }
   }
 

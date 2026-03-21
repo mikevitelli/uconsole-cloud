@@ -166,9 +166,9 @@ export function BackupTimeline({ backups }: BackupTimelineProps) {
         return;
       }
       setExpandedSha(sha);
+      setCommitError(null);
       if (!details[sha]) {
         setLoading(sha);
-        setCommitError(null);
         try {
           const res = await fetch(`/api/github/commits/${sha}`);
           if (res.ok) {

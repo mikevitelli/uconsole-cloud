@@ -30,7 +30,7 @@ export function RepoStructure({ tree, content }: RepoStructureProps) {
   let rootFileSize = 0;
   let rootFileCount = 0;
 
-  for (const f of tree.filter((t) => t.type === "blob")) {
+  for (const f of files) {
     const parts = f.path.split("/");
     if (parts.length > 1) {
       const dir = parts[0];

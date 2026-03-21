@@ -17,7 +17,7 @@ interface BackupCoverageProps {
 // Map backup categories to coverage items
 // Some coverage items map directly to backup categories,
 // others are derived from file existence checks
-const COVERAGE_ITEMS: {
+export const COVERAGE_ITEMS: {
   name: string;
   backupCategory: string; // matches against backup commit categories
   fileCheck?: "packages" | "extensions" | "scripts"; // also derived from file data
