@@ -9,14 +9,18 @@ export const redis = new Redis({
 export async function getUserSettings(
   userId: string
 ): Promise<UserSettings | null> {
-  return redis.get<UserSettings>(`user:${userId}`);
+  const settings = await redis.get<UserSettings>(`user:${userId}`);
+  if (settings) {
+    await redis.expire(`user:${userId}`, 60 * 60 * 24 * 90);
+  }
+  return settings;
 }
 
 export async function setUserSettings(
   userId: string,
   settings: UserSettings
 ): Promise<void> {
-  await redis.set(`user:${userId}`, settings);
+  await redis.set(`user:${userId}`, settings, { ex: 60 * 60 * 24 * 90 });
 }
 
 export async function deleteUserSettings(userId: string): Promise<void> {
