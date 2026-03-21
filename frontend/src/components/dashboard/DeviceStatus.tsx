@@ -224,7 +224,13 @@ export function DeviceStatus({
                 : "var(--dim)",
               detail: aio.rtc.detected
                 ? aio.rtc.synced
-                  ? aio.rtc.time || "synced"
+                  ? aio.rtc.time
+                    ? new Date(aio.rtc.time).toLocaleTimeString("en-US", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      })
+                    : "synced"
                   : "not synced"
                 : "not found",
             },
