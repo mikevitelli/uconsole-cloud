@@ -67,7 +67,7 @@ export default async function Home() {
             <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
           </div>
           <p className="text-dim text-sm mb-10">
-            Then run <span className="font-mono text-sub">uconsole setup</span> to link your device
+            and then <span className="font-mono text-sub">uconsole setup</span> to link your device
           </p>
 
           {/* Sign in */}
