@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const res = await fetch(url, {
     headers: {
       Authorization: `token ${session.accessToken}`,
-      "User-Agent": "uconsole-dashboard",
+      "User-Agent": "uconsole-cloud",
     },
   });
 

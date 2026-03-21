@@ -590,7 +590,7 @@ export function DashboardTool() {
                   $bg="linear-gradient(135deg, #475569, #64748b)"
                   onClick={() =>
                     window.open(
-                      'https://github.com/mikevitelli/uconsole-dashboard',
+                      'https://github.com/mikevitelli/uconsole-cloud',
                       '_blank',
                     )
                   }
