@@ -6,6 +6,7 @@ import {
   deleteUserSettings,
 } from "@/lib/redis";
 import { validateUconsoleRepo } from "@/lib/github";
+import { generateDeviceToken, revokeDeviceToken } from "@/lib/deviceToken";
 
 export async function GET() {
   const session = await auth();
@@ -42,7 +43,10 @@ export async function POST(req: NextRequest) {
     repo: repo.trim(),
     linkedAt: new Date().toISOString(),
   });
-  return NextResponse.json({ ok: true });
+
+  const deviceToken = await generateDeviceToken(session.user.id, repo.trim());
+
+  return NextResponse.json({ ok: true, deviceToken });
 }
 
 export async function DELETE() {
@@ -50,6 +54,7 @@ export async function DELETE() {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  await revokeDeviceToken(session.user.id);
   await deleteUserSettings(session.user.id);
   return NextResponse.json({ ok: true });
 }
