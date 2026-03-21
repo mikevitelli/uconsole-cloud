@@ -35,6 +35,7 @@ export async function GET() {
     );
 
     if (data.length < 100) break;
+    if (page >= 10) break;
     page++;
   }
 
