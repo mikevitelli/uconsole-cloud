@@ -22,6 +22,7 @@ import { RepoStructure } from "@/components/dashboard/RepoStructure";
 import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
 import { SystemSummary } from "@/components/dashboard/SystemSummary";
 import { RepoLinker } from "@/components/RepoLinker";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { getDeviceStatus } from "@/lib/deviceStatus";
 import { fetchSiteContent } from "@/lib/sanity";
 import { redirect } from "next/navigation";
@@ -239,12 +240,12 @@ export default async function Home() {
                 redirect("/");
               }}
             >
-              <button
-                type="submit"
+              <ConfirmButton
+                message="Are you sure you want to unlink this repo? You can re-link it later."
                 className="text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
               >
                 {content?.dashboard?.unlinkButton ?? "Unlink"}
-              </button>
+              </ConfirmButton>
             </form>
             <form
               action={async () => {
