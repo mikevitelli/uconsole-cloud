@@ -52,13 +52,11 @@ function layoutRow(
     let worst = 0;
     if (horizontal) {
       const sliceW = w * firstFrac;
-      let offset = 0;
       for (let i = 0; i < split; i++) {
         const frac = items[i].value / firstSum;
         const cellH = h * frac;
         const ar = Math.max(sliceW / cellH, cellH / sliceW);
         if (ar > worst) worst = ar;
-        offset += cellH;
       }
       const sliceW2 = w * secondFrac;
       const secondSum = total - firstSum;

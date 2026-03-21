@@ -179,9 +179,11 @@ export default async function Home() {
     0
   );
   const aptCategories = categorizeAptPackages(packages["APT"] || []);
+  // eslint-disable-next-line react-hooks/purity -- Server Component: Date.now() is safe here
+  const now = Date.now();
   const deviceAgeMinutes = deviceStatus
     ? Math.floor(
-        (Date.now() - new Date(deviceStatus.collectedAt).getTime()) / 60000
+        (now - new Date(deviceStatus.collectedAt).getTime()) / 60000
       )
     : 0;
 

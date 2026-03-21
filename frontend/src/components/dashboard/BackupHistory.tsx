@@ -2,7 +2,7 @@ import { Sparkline } from "@/components/viz/Sparkline";
 import { StatCards } from "@/components/viz/StatCards";
 import { CalendarGrid } from "@/components/viz/CalendarGrid";
 import { BackupTimeline } from "@/components/dashboard/BackupTimeline";
-import { fmtDate, daysSince, ageLabel, getLastBackupByCategory, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
+import { fmtDate, ageLabel, getLastBackupByCategory, CATEGORY_COLORS, categoryLabel } from "@/lib/utils";
 import type { BackupEntry } from "@/lib/types";
 
 interface BackupHistoryContent {

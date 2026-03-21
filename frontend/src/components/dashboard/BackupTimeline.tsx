@@ -86,7 +86,7 @@ function FilePreviewModal({
           )}
           {!preview.loading && preview.content === null && (
             <p className="text-sm text-sub text-center py-8">
-              Could not load {basename}
+              {previewError || `Could not load ${basename}`}
             </p>
           )}
         </div>
