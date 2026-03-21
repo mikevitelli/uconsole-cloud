@@ -188,7 +188,7 @@ describe("Redis key isolation", () => {
     );
     expect(settingsRoute).toContain("session.user.id");
     // Should NOT accept userId from request body
-    expect(settingsRoute).not.toMatch(/req\.json\(\).*userId/s);
+    expect(settingsRoute).not.toMatch(/req\.json\(\)[\s\S]*userId/);
 
     // Check device status route - repo comes from settings, not query params
     const statusRoute = fs.readFileSync(
