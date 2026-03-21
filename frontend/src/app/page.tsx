@@ -38,45 +38,69 @@ export default async function Home() {
   // ── Not signed in ──────────────────────────────────────
   if (!session) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-4">
-        <div className="w-full max-w-md aspect-square rounded-xl overflow-hidden border border-border">
-          <iframe
-            title="ClockworkPi uConsole"
-            className="w-full h-full"
-            frameBorder="0"
-            allowFullScreen
-            allow="autoplay; fullscreen; xr-spatial-tracking"
-            src="https://sketchfab.com/models/8c1124b60692407095fce5d9978e2528/embed?autostart=1&ui_theme=dark&ui_infos=0&ui_controls=1&ui_stop=0"
-          />
-        </div>
-        <div className="bg-card border border-border rounded-xl p-8 max-w-md w-full text-center">
-          <h1 className="text-2xl font-bold text-bright mb-2">
-            {content?.landing?.heading ?? "uConsole Dashboard"}
+      <div className="min-h-screen flex flex-col">
+        {/* Hero */}
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-16">
+          {/* 3D Model */}
+          <div className="w-full max-w-xs aspect-square rounded-2xl overflow-hidden border border-border mb-10">
+            <iframe
+              title="ClockworkPi uConsole"
+              className="w-full h-full"
+              frameBorder="0"
+              allowFullScreen
+              allow="autoplay; fullscreen; xr-spatial-tracking"
+              src="https://sketchfab.com/models/8c1124b60692407095fce5d9978e2528/embed?autostart=1&ui_theme=dark&ui_infos=0&ui_controls=1&ui_stop=0"
+            />
+          </div>
+
+          {/* Heading */}
+          <h1 className="text-4xl sm:text-5xl font-bold text-bright tracking-tight text-center mb-4">
+            {content?.landing?.heading ?? "uConsole Cloud"}
           </h1>
-          <p className="text-sub text-sm mb-6">
+          <p className="text-sub text-base sm:text-lg text-center max-w-lg mb-10 leading-relaxed">
             {content?.landing?.description ??
-              "Monitor your system backup repository on GitHub."}
+              "Monitor your uConsole from anywhere. Battery, CPU, memory, WiFi, and more — pushed every 5 minutes."}
           </p>
-          <div className="mb-6">
+
+          {/* Install command */}
+          <div className="w-full max-w-lg mb-4">
             <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
-            <p className="text-dim text-xs mt-2">
-              Run on your uConsole, then <span className="font-mono">uconsole setup</span>
-            </p>
           </div>
-          <div className="relative flex items-center mb-6">
-            <div className="flex-1 border-t border-border" />
-            <span className="px-3 text-xs text-dim">or</span>
-            <div className="flex-1 border-t border-border" />
+          <p className="text-dim text-sm mb-10">
+            Then run <span className="font-mono text-sub">uconsole setup</span> to link your device
+          </p>
+
+          {/* Sign in */}
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-dim text-xs">Already have an account?</p>
+            <form action={signInAction}>
+              <button
+                type="submit"
+                className="flex items-center gap-2 bg-[#24292f] text-white font-medium rounded-lg px-5 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer border border-[#3d444d]"
+              >
+                <Image src="/github-mark-white.svg" alt="" width={18} height={18} className="w-[18px] h-[18px]" />
+                {content?.landing?.signInButton ?? "Sign in with GitHub"}
+              </button>
+            </form>
           </div>
-          <form action={signInAction}>
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 bg-[#24292f] text-white font-semibold rounded-lg px-4 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer"
-            >
-              <Image src="/github-mark-white.svg" alt="" width={20} height={20} className="w-5 h-5" />
-              {content?.landing?.signInButton ?? "Sign in with GitHub"}
-            </button>
-          </form>
+        </div>
+
+        {/* Features */}
+        <div className="border-t border-border py-16 px-4">
+          <div className="max-w-3xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+            <div>
+              <div className="text-accent text-2xl font-bold mb-1">5 min</div>
+              <div className="text-sub text-sm">Status push interval</div>
+            </div>
+            <div>
+              <div className="text-accent text-2xl font-bold mb-1">1 command</div>
+              <div className="text-sub text-sm">Install and setup</div>
+            </div>
+            <div>
+              <div className="text-accent text-2xl font-bold mb-1">Zero config</div>
+              <div className="text-sub text-sm">Device code auth</div>
+            </div>
+          </div>
         </div>
       </div>
     );
