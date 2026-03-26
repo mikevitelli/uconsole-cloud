@@ -77,6 +77,21 @@ export function QuickActions() {
         <span className="text-xs font-normal text-dim">(local only)</span>
       </h2>
 
+      {/* Prominent link to the full local webdash */}
+      <a
+        href={baseUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-between bg-background border rounded-lg px-4 py-2.5 text-sm font-semibold text-bright hover:border-[var(--accent)] transition-colors mb-3"
+        style={{
+          borderColor: "color-mix(in srgb, var(--green) 25%, var(--border))",
+          background: "color-mix(in srgb, var(--green) 5%, var(--bg))",
+        }}
+      >
+        <span>Open webdash &rarr;</span>
+        <span className="text-xs font-normal text-dim font-mono">{baseUrl}</span>
+      </a>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {actions.map((action) => {
           const result = results[action.id] ?? { status: "idle" };

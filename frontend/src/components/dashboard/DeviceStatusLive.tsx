@@ -41,7 +41,7 @@ export function DeviceStatusLive({
   lastKnownFallback,
   content,
 }: DeviceStatusLiveProps) {
-  const { isLocal, stats } = useLocalMode();
+  const { isLocal, stats, baseUrl, connectionUnstable } = useLocalMode();
   const heading = content?.heading ?? "Device Status";
 
   // Use local stats when available, otherwise fall back to server-rendered
@@ -138,10 +138,10 @@ export function DeviceStatusLive({
           {isLocal ? (
             <>
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--green)] opacity-75 animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--green)]" />
+                <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping ${connectionUnstable ? "bg-[var(--yellow)]" : "bg-[var(--green)]"}`} />
+                <span className={`relative inline-flex h-2 w-2 rounded-full ${connectionUnstable ? "bg-[var(--yellow)]" : "bg-[var(--green)]"}`} />
               </span>
-              <span>live</span>
+              <span>{connectionUnstable ? "unstable" : "live"}</span>
             </>
           ) : (
             <>
@@ -269,8 +269,8 @@ export function DeviceStatusLive({
         </div>
       </div>
 
-      {/* AIO Board — only show when we have server data (local stats don't include AIO) */}
-      {serverStatus?.aio && !isLocal && (
+      {/* AIO Board — show when we have server data (visible in both local and remote mode) */}
+      {serverStatus?.aio && (
         <div className="mt-4">
           <h3 className="text-sm font-semibold text-bright mb-1.5 flex items-center gap-1.5">
             <span>&#x1F4E1;</span> AIO Board
@@ -279,8 +279,8 @@ export function DeviceStatusLive({
         </div>
       )}
 
-      {/* Local Shell Hub — show when server data indicates webdash running */}
-      {serverStatus?.webdash?.running && wifi.ip && wifi.ip !== "none" && !isLocal && (
+      {/* Local Shell Hub / Full Dashboard — show when webdash running, more prominent in local mode */}
+      {(serverStatus?.webdash?.running || isLocal) && wifi.ip && wifi.ip !== "none" && (
         <div
           className="mt-3 flex items-center gap-3 border rounded-lg px-4 py-3"
           style={{
@@ -294,12 +294,12 @@ export function DeviceStatusLive({
           </span>
           <div className="flex-1 min-w-0">
             <a
-              href={`https://${wifi.ip}`}
+              href={isLocal && baseUrl ? baseUrl : `https://${wifi.ip}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm font-semibold text-bright hover:underline"
             >
-              Local Shell Hub
+              {isLocal ? "Open full dashboard \u2192" : "Local Shell Hub"}
             </a>
             <span className="text-xs text-dim font-mono ml-2">
               {wifi.ip}
@@ -312,7 +312,7 @@ export function DeviceStatusLive({
               background: "color-mix(in srgb, var(--green) 12%, transparent)",
             }}
           >
-            same network
+            {isLocal ? "local" : "same network"}
           </span>
         </div>
       )}

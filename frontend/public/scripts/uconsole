@@ -126,6 +126,7 @@ Description=Push uConsole status every 5 minutes
 OnBootSec=1min
 OnUnitActiveSec=5min
 AccuracySec=30s
+Persistent=true
 
 [Install]
 WantedBy=timers.target
@@ -142,9 +143,9 @@ TMREOF
       fi
 
       # First push
-      if [ -x "${SCRIPTS_DIR}/push-status.sh" ]; then
+      if [ -x "$PUSH_SCRIPT" ]; then
         echo "Running first status push..."
-        "${SCRIPTS_DIR}/push-status.sh" && echo "First status pushed!" || echo "Push failed (will retry via cron)"
+        "$PUSH_SCRIPT" && echo "First status pushed!" || echo "Push failed (will retry via timer)"
       fi
 
       echo ""
@@ -192,11 +193,13 @@ cmd_status() {
   echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
   echo "  Repo:  ${DEVICE_REPO:-not set}"
 
-  # Check cron
-  if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+  # Check scheduling
+  if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
+    echo "  Timer: active (systemd, every 5 min)"
+  elif crontab -l 2>/dev/null | grep -q "push-status.sh"; then
     echo "  Cron:  active (every 5 min)"
   else
-    echo "  Cron:  not set"
+    echo "  Timer: not set"
   fi
 
   # Last push
@@ -207,7 +210,18 @@ cmd_status() {
 }
 
 cmd_unlink() {
-  # Remove cron entry
+  # Stop and disable systemd timer if present
+  if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
+    systemctl --user stop uconsole-status.timer
+    systemctl --user disable uconsole-status.timer
+    echo "Stopped systemd timer"
+  fi
+  # Remove systemd unit files
+  SYSTEMD_DIR="${HOME}/.config/systemd/user"
+  rm -f "${SYSTEMD_DIR}/uconsole-status.service" "${SYSTEMD_DIR}/uconsole-status.timer"
+  systemctl --user daemon-reload 2>/dev/null
+
+  # Remove cron entry (fallback/legacy)
   if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
     crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
     echo "Removed cron job"

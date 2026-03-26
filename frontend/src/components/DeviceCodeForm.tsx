@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -9,6 +10,7 @@ export function DeviceCodeForm() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [repo, setRepo] = useState("");
+  const router = useRouter();
 
   function handleChange(value: string) {
     // Strip non-alphanumeric, uppercase, auto-insert hyphen
@@ -48,14 +50,24 @@ export function DeviceCodeForm() {
     }
   }
 
+  // Auto-redirect to dashboard 2 seconds after success
+  useEffect(() => {
+    if (status !== "success") return;
+    const timer = setTimeout(() => {
+      router.push("/");
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [status, router]);
+
   if (status === "success") {
     return (
       <div className="text-center py-4">
-        <div className="text-2xl mb-2">&#10003;</div>
+        <div className="text-2xl mb-2 text-green">&#10003;</div>
         <p className="text-bright font-semibold">Device linked!</p>
         <p className="text-sub text-sm mt-1">
           Connected to <span className="font-mono text-foreground">{repo}</span>
         </p>
+        <p className="text-dim text-xs mt-2">Redirecting to dashboard...</p>
       </div>
     );
   }

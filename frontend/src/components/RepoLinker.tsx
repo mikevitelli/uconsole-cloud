@@ -21,12 +21,13 @@ interface RepoLinkerProps {
 }
 
 export function RepoLinker({ content }: RepoLinkerProps) {
-  const [mode, setMode] = useState<"select" | "create">("select");
+  const [mode, setMode] = useState<"auto" | "select" | "create">("auto");
   const [repo, setRepo] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [autoDetected, setAutoDetected] = useState<Repo | null>(null);
   const router = useRouter();
 
   // Create mode state
@@ -39,14 +40,31 @@ export function RepoLinker({ content }: RepoLinkerProps) {
       try {
         const res = await fetch("/api/github/repos");
         if (res.ok) {
-          const data = await res.json();
+          const data: Repo[] = await res.json();
           setRepos(data);
           if (data.length > 0) {
             setUsername(data[0].full_name.split("/")[0]);
           }
+
+          // Auto-detect: look for a repo named "uconsole"
+          const uconsoleRepo = data.find((r) => {
+            const name = r.full_name.split("/")[1];
+            return name === "uconsole";
+          });
+
+          if (uconsoleRepo) {
+            setAutoDetected(uconsoleRepo);
+            setRepo(uconsoleRepo.full_name);
+            setMode("auto");
+          } else {
+            // No uconsole repo found — default to create mode
+            setMode("create");
+          }
+        } else {
+          setMode("create");
         }
       } catch {
-        // Fall back to manual input
+        setMode("create");
       } finally {
         setLoadingRepos(false);
       }
@@ -116,6 +134,44 @@ export function RepoLinker({ content }: RepoLinkerProps) {
     }
   }
 
+  if (loadingRepos) {
+    return (
+      <div className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-dim">
+        {content?.loadingText ?? "Loading repositories..."}
+      </div>
+    );
+  }
+
+  // Auto-detected uconsole repo — one-click link
+  if (mode === "auto" && autoDetected) {
+    return (
+      <div>
+        <p className="text-sm text-sub mb-3">
+          Found your backup repo:{" "}
+          <span className="font-mono text-foreground">{autoDetected.full_name}</span>
+          {autoDetected.private ? " \uD83D\uDD12" : ""}
+        </p>
+        {error && <p className="text-red text-xs mb-2">{error}</p>}
+        <form onSubmit={handleLink}>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-accent text-[#0d1117] font-semibold rounded-lg px-4 py-2.5 text-sm hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Linking..." : "Link this repo"}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => { setMode("select"); setRepo(""); setError(""); }}
+          className="w-full mt-2 text-xs text-sub hover:text-foreground transition-colors cursor-pointer"
+        >
+          Use a different repo
+        </button>
+      </div>
+    );
+  }
+
   if (mode === "create") {
     return (
       <form onSubmit={handleCreate}>
@@ -161,11 +217,7 @@ export function RepoLinker({ content }: RepoLinkerProps) {
 
   return (
     <form onSubmit={handleLink}>
-      {loadingRepos ? (
-        <div className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-dim">
-          {content?.loadingText ?? "Loading repositories..."}
-        </div>
-      ) : repos.length > 0 ? (
+      {repos.length > 0 ? (
         <select
           value={repo}
           onChange={(e) => setRepo(e.target.value)}
@@ -176,7 +228,7 @@ export function RepoLinker({ content }: RepoLinkerProps) {
           </option>
           {repos.map((r) => (
             <option key={r.full_name} value={r.full_name}>
-              {r.full_name} {r.private ? "🔒" : ""}
+              {r.full_name} {r.private ? "\uD83D\uDD12" : ""}
             </option>
           ))}
         </select>
