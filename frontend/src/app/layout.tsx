@@ -21,6 +21,20 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       content?.site?.description ??
       "Monitor your system backup repository on GitHub",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: "uConsole",
+    },
+    other: {
+      "mobile-web-app-capable": "yes",
+    },
+  };
+}
+
+export function generateViewport() {
+  return {
+    themeColor: "#0a0a0a",
   };
 }
 

@@ -19,20 +19,28 @@ interface BackupHistoryProps {
 
 
 export function BackupHistory({ backups, content }: BackupHistoryProps) {
-  // Build sparkline data for last 30 days
-  const counts: Record<string, number> = {};
   const now = new Date();
+
+  // Build calendar grid data for full year (all backups)
+  const calendarCounts: Record<string, number> = {};
+  for (const b of backups) {
+    const dk = b.date.slice(0, 10);
+    calendarCounts[dk] = (calendarCounts[dk] || 0) + 1;
+  }
+
+  // Build sparkline data for last 30 days
+  const sparkCounts: Record<string, number> = {};
   for (let d = 29; d >= 0; d--) {
     const day = new Date(now.getTime() - d * 86400000);
-    counts[day.toISOString().slice(0, 10)] = 0;
+    sparkCounts[day.toISOString().slice(0, 10)] = 0;
   }
   for (const b of backups) {
     const dk = b.date.slice(0, 10);
-    if (dk in counts) counts[dk]++;
+    if (dk in sparkCounts) sparkCounts[dk]++;
   }
-  const sparkData = Object.keys(counts)
+  const sparkData = Object.keys(sparkCounts)
     .sort()
-    .map((k) => counts[k]);
+    .map((k) => sparkCounts[k]);
 
   // Aggregate stats
   const totalFiles = backups.reduce(
@@ -60,7 +68,7 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
 
       {backups.length > 0 && (
         <>
-          <CalendarGrid data={counts} />
+          <CalendarGrid data={calendarCounts} />
 
           <div className="text-xs text-dim mb-2 mt-4">
             {content?.sparklineLabel ?? "Last 30 days"}

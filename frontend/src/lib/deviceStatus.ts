@@ -54,6 +54,11 @@ export interface AioBoardStatus {
   rtc: { detected: boolean; synced: boolean; time?: string };
 }
 
+export interface WebdashStatus {
+  running: boolean;
+  port: number;
+}
+
 export interface DeviceStatusPayload {
   hostname: string;
   uptime: string;
@@ -66,6 +71,7 @@ export interface DeviceStatusPayload {
   wifi: WifiStatus;
   aio: AioBoardStatus;
   screen: { brightness: number; maxBrightness: number };
+  webdash?: WebdashStatus;
   collectedAt: string;
 }
 
