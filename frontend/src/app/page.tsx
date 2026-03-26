@@ -26,6 +26,8 @@ import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus, getLastKnownFallback } from "@/lib/deviceStatus";
+import { checkSameNetwork } from "@/lib/network";
+import { headers } from "next/headers";
 import { CopyCommand } from "@/components/CopyCommand";
 import { WaitingForDevice } from "@/components/WaitingForDevice";
 import { fetchSiteContent } from "@/lib/sanity";
@@ -262,6 +264,12 @@ export default async function Home() {
       )
     : 0;
 
+  // ── Same-network detection ──────────────────────────────
+  const hdrs = await headers();
+  const userPublicIp = hdrs.get("x-forwarded-for")?.split(",")[0].trim() ?? null;
+  const devicePublicIp = (deviceStatus as Record<string, unknown> | null)?._publicIp as string | null ?? null;
+  const isSameNetwork = checkSameNetwork(userPublicIp, devicePublicIp);
+
   // ── Render dashboard ───────────────────────────────────
   return (
     <div className="min-h-screen overflow-x-hidden">
@@ -323,6 +331,7 @@ export default async function Home() {
           serverStatus={deviceStatus}
           ageMinutes={deviceAgeMinutes}
           lastKnownFallback={lastKnownFallback}
+          isSameNetwork={isSameNetwork}
           content={content?.deviceStatus}
         />
 
