@@ -91,10 +91,55 @@ EOF
       chmod 600 "${ENV_FILE}"
       echo "Config written to ${ENV_FILE}"
 
-      # Setup cron (every 5 minutes)
-      CRON_CMD="*/5 * * * * ${SCRIPTS_DIR}/push-status.sh >> /tmp/uconsole-push.log 2>&1"
-      ( crontab -l 2>/dev/null | grep -v "push-status.sh" ; echo "$CRON_CMD" ) | crontab -
-      echo "Cron job set (every 5 minutes)"
+      # Setup status push timer (prefer systemd, fallback to cron)
+      # Remove old cron entry if present (migration)
+      if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+        crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
+        echo "Removed old cron job"
+      fi
+
+      SYSTEMD_DIR="${HOME}/.config/systemd/user"
+      if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
+        mkdir -p "${SYSTEMD_DIR}"
+        # Determine push-status.sh path (prefer backup repo copy if present)
+        PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
+        [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
+
+        cat > "${SYSTEMD_DIR}/uconsole-status.service" << SVCEOF
+[Unit]
+Description=Push uConsole status to uconsole.cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${PUSH_SCRIPT}
+Environment=HOME=${HOME}
+WorkingDirectory=${HOME}
+SVCEOF
+
+        cat > "${SYSTEMD_DIR}/uconsole-status.timer" << TMREOF
+[Unit]
+Description=Push uConsole status every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+TMREOF
+
+        systemctl --user daemon-reload
+        systemctl --user enable --now uconsole-status.timer
+        echo "Systemd timer enabled (every 5 minutes)"
+      else
+        # Fallback: cron (non-systemd systems)
+        CRON_CMD="*/5 * * * * ${SCRIPTS_DIR}/push-status.sh >> /tmp/uconsole-push.log 2>&1"
+        ( crontab -l 2>/dev/null | grep -v "push-status.sh" ; echo "$CRON_CMD" ) | crontab -
+        echo "Cron job set (every 5 minutes)"
+      fi
 
       # First push
       if [ -x "${SCRIPTS_DIR}/push-status.sh" ]; then
@@ -190,6 +235,127 @@ cmd_update() {
   echo "Updated to latest versions."
 }
 
+cmd_doctor() {
+  echo "uconsole doctor"
+  echo ""
+  local pass=0 fail=0
+
+  # Config
+  if [ -f "${ENV_FILE}" ]; then
+    echo "  [OK] Config file exists (${ENV_FILE})"
+    pass=$((pass + 1))
+    # Check permissions
+    PERMS=$(stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FILE}" 2>/dev/null)
+    if [ "$PERMS" = "600" ]; then
+      echo "  [OK] Config permissions (600)"
+      pass=$((pass + 1))
+    else
+      echo "  [!!] Config permissions are ${PERMS}, should be 600"
+      fail=$((fail + 1))
+    fi
+  else
+    echo "  [!!] Config file missing — run 'uconsole setup'"
+    fail=$((fail + 1))
+  fi
+
+  # Push script
+  PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
+  [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
+  if [ -x "$PUSH_SCRIPT" ]; then
+    echo "  [OK] push-status.sh found (${PUSH_SCRIPT})"
+    pass=$((pass + 1))
+  else
+    echo "  [!!] push-status.sh not found or not executable"
+    fail=$((fail + 1))
+  fi
+
+  # Systemd timer
+  if command -v systemctl &>/dev/null; then
+    if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
+      echo "  [OK] Status timer active"
+      pass=$((pass + 1))
+    else
+      echo "  [!!] Status timer not active"
+      fail=$((fail + 1))
+    fi
+  elif crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+    echo "  [OK] Cron job active (legacy)"
+    pass=$((pass + 1))
+  else
+    echo "  [!!] No timer or cron job for status push"
+    fail=$((fail + 1))
+  fi
+
+  # Webdash
+  if command -v systemctl &>/dev/null && systemctl --user is-active --quiet webdash.service 2>/dev/null; then
+    echo "  [OK] Webdash running"
+    pass=$((pass + 1))
+  else
+    echo "  [--] Webdash not running"
+  fi
+
+  # Last push (journal or log)
+  if command -v journalctl &>/dev/null; then
+    LAST_PUSH=$(journalctl --user -u uconsole-status -n 1 --no-pager -q 2>/dev/null | tail -1)
+    if [ -n "$LAST_PUSH" ]; then
+      echo "  [OK] Last push: ${LAST_PUSH}"
+      pass=$((pass + 1))
+    fi
+  elif [ -f /tmp/uconsole-push.log ]; then
+    echo "  [OK] Last push: $(tail -1 /tmp/uconsole-push.log)"
+    pass=$((pass + 1))
+  fi
+
+  # Network
+  if curl -s --max-time 5 -o /dev/null "${BASE_URL}/api/health"; then
+    echo "  [OK] uconsole.cloud reachable"
+    pass=$((pass + 1))
+  else
+    echo "  [!!] Cannot reach uconsole.cloud"
+    fail=$((fail + 1))
+  fi
+
+  echo ""
+  echo "  ${pass} passed, ${fail} failed"
+}
+
+cmd_restore() {
+  REPO_DIR="${HOME}/uconsole"
+
+  if [ ! -d "${REPO_DIR}" ]; then
+    echo "Backup repo not found at ${REPO_DIR}"
+    echo ""
+    echo "To restore, first clone your backup repo:"
+    echo "  gh repo clone <user>/uconsole ~/uconsole"
+    echo "Then run 'uconsole restore' again."
+    return 1
+  fi
+
+  if [ ! -f "${REPO_DIR}/restore.sh" ]; then
+    echo "restore.sh not found in ${REPO_DIR}"
+    return 1
+  fi
+
+  echo "Found backup repo at ${REPO_DIR}"
+  printf "Run restore.sh --yes? [y/N] "
+  read -r CONFIRM
+  case "$CONFIRM" in
+    [yY]|[yY][eE][sS]) ;;
+    *) echo "Cancelled."; return 0 ;;
+  esac
+
+  cd "${REPO_DIR}" && bash ./restore.sh --yes
+
+  echo ""
+  # Check if cloud is linked
+  if [ ! -f "${ENV_FILE}" ]; then
+    echo "Restore complete. To connect to uconsole.cloud:"
+    echo "  uconsole setup"
+  else
+    echo "Restore complete. Cloud connection already configured."
+  fi
+}
+
 cmd_help() {
   echo "uconsole — manage your uconsole.cloud device"
   echo ""
@@ -197,7 +363,9 @@ cmd_help() {
   echo "  setup    Link this device via code authentication"
   echo "  push     Push status now"
   echo "  status   Show current config and last push"
-  echo "  unlink   Remove config and cron job"
+  echo "  doctor   Diagnose connectivity and configuration"
+  echo "  restore  Run restore.sh from backup repo"
+  echo "  unlink   Remove config and stop timer"
   echo "  update   Re-download latest scripts"
   echo "  help     Show this help"
 }
@@ -210,6 +378,8 @@ case "$COMMAND" in
   setup)   cmd_setup ;;
   push)    cmd_push ;;
   status)  cmd_status ;;
+  doctor)  cmd_doctor ;;
+  restore) cmd_restore ;;
   unlink)  cmd_unlink ;;
   update)  cmd_update ;;
   help|--help|-h) cmd_help ;;

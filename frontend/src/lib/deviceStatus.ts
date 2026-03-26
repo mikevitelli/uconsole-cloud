@@ -59,6 +59,11 @@ export interface WebdashStatus {
   port: number;
 }
 
+export interface WifiFallbackStatus {
+  enabled: boolean;
+  apName: string;
+}
+
 export interface DeviceStatusPayload {
   hostname: string;
   uptime: string;
@@ -72,6 +77,7 @@ export interface DeviceStatusPayload {
   aio: AioBoardStatus;
   screen: { brightness: number; maxBrightness: number };
   webdash?: WebdashStatus;
+  wifiFallback?: WifiFallbackStatus;
   collectedAt: string;
 }
 
@@ -80,5 +86,21 @@ export interface DeviceStatusPayload {
 export async function getDeviceStatus(
   repo: string
 ): Promise<DeviceStatusPayload | null> {
-  return redis.get<DeviceStatusPayload>(`device:${repo}:status`);
+  const status = await redis.get<DeviceStatusPayload>(`device:${repo}:status`);
+
+  // Persist wifi-fallback state with longer TTL so we can show
+  // smart offline messaging after the status TTL expires
+  if (status?.wifiFallback) {
+    await redis.set(`device:${repo}:fallback`, status.wifiFallback, {
+      ex: 60 * 60 * 24, // 24 hours
+    });
+  }
+
+  return status;
+}
+
+export async function getLastKnownFallback(
+  repo: string
+): Promise<WifiFallbackStatus | null> {
+  return redis.get<WifiFallbackStatus>(`device:${repo}:fallback`);
 }

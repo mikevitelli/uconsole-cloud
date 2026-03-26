@@ -8,7 +8,7 @@
 
 ---
 
-## Phase 1: MVP Polish (current session, uncommitted on feat/device-code-auth)
+## Phase 1: MVP Polish ✅
 
 ### Cloud Dashboard (uconsole-cloud)
 - [x] Device code auth flow (code generation, polling, confirmation)
@@ -16,18 +16,18 @@
 - [x] CLI served via `/api/scripts/uconsole`
 - [x] Landing page redesign (GIF hero, install command, sign in)
 - [x] Auto-create backup repo from web UI
-- [~] PWA manifest + Safari meta tags (standalone, dark, icons)
-- [~] Rate limiting on /api/device/code (5/min/IP, Redis-based)
-- [~] Webdash detection in telemetry (webdash.running, webdash.port)
-- [~] Local Shell Hub link on dashboard (https://uconsole.local, IP fallback)
-- [~] Calendar grid data fix (was showing only 30 days, now full year)
-- [~] GitHub-style hover tooltips on calendar grid
-- [~] GIF animation speed (8s → 1.2s per rotation)
-- [~] Token file permissions (chmod 600 in CLI)
+- [x] PWA manifest + Safari meta tags (standalone, dark, icons)
+- [x] Rate limiting on /api/device/code (5/min/IP, Redis-based)
+- [x] Webdash detection in telemetry (webdash.running, webdash.port)
+- [x] Local Shell Hub link on dashboard (https://uconsole.local, IP fallback)
+- [x] Calendar grid data fix (was showing only 30 days, now full year)
+- [x] GitHub-style hover tooltips on calendar grid
+- [x] GIF animation speed (8s → 1.2s per rotation)
+- [x] Token file permissions (chmod 600 in CLI)
 
 ### Device Scripts (uconsole backup repo)
-- [~] push-status.sh: webdash detection added to telemetry payload
-- [~] CLAUDE.md: comprehensive rewrite (Bookworm, security notes, architecture)
+- [x] push-status.sh: webdash detection added to telemetry payload
+- [x] CLAUDE.md: comprehensive rewrite (Bookworm, security notes, architecture)
 
 ---
 
