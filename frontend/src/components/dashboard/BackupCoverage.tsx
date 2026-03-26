@@ -94,12 +94,18 @@ export function BackupCoverage({
     };
   });
 
+  // Count coverage states
+  const covered = items.filter((i) => i.detail !== "never" && i.detail !== "missing" && i.detail !== "none tracked" && i.detail !== "no manifest").length;
+
   return (
     <section className="bg-card border border-border rounded-xl p-4">
-      <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
+      <h2 className="text-base font-bold text-bright mb-1 flex items-center gap-2">
         <span>&#x1F6E1;</span>{" "}
         {content?.heading ?? "Backup Coverage"}
       </h2>
+      <div className="text-[11px] text-sub mb-3">
+        {covered}/{items.length} categories covered
+      </div>
       <StatusGrid items={items} />
     </section>
   );

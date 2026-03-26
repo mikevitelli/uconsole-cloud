@@ -40,19 +40,19 @@ export function BrowserExtensions({ extensions, content }: BrowserExtensionsProp
               },
             ]}
           />
-          <div className="max-h-72 overflow-y-auto">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 my-2">
+          <div className="max-h-72 overflow-y-auto mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {parsed.map((ext) => (
                 <div
                   key={ext.id}
-                  className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-2 text-sm"
+                  className="flex items-center gap-2.5 bg-background border border-border rounded-lg px-3 py-2 text-sm"
                 >
                   <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-foreground font-medium truncate">
+                    <div className="text-foreground font-medium truncate text-xs">
                       {ext.name}
                     </div>
-                    <div className="text-dim text-xs font-mono truncate">
+                    <div className="text-dim text-[10px] font-mono truncate">
                       {ext.id}
                     </div>
                   </div>

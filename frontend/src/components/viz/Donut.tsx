@@ -5,6 +5,8 @@ interface DonutProps {
   centerText: string;
   subText?: string;
   color?: string;
+  /** When true, adds a subtle glow effect around the arc */
+  glow?: boolean;
 }
 
 export function Donut({
@@ -14,11 +16,13 @@ export function Donut({
   centerText,
   subText,
   color = "var(--accent)",
+  glow = false,
 }: DonutProps) {
   const r = (size - 8) / 2;
   const circ = 2 * Math.PI * r;
   const dashPct = Math.min(100, Math.max(0, percent));
   const filled = (circ * dashPct) / 100;
+  const filterId = `glow-${size}`;
 
   return (
     <div className="text-center">
@@ -28,6 +32,17 @@ export function Donut({
         viewBox={`0 0 ${size} ${size}`}
         className="block mx-auto"
       >
+        {glow && (
+          <defs>
+            <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+        )}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -47,6 +62,7 @@ export function Donut({
           strokeDashoffset={-circ * 0.25}
           strokeLinecap="round"
           className="transition-[stroke-dasharray] duration-500"
+          filter={glow ? `url(#${filterId})` : undefined}
         />
         <text
           x={size / 2}
