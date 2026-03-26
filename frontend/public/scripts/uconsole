@@ -3,7 +3,7 @@
 # Usage: uconsole <command>
 set -euo pipefail
 
-BASE_URL="https://uconsole.cloud"
+BASE_URL="${BASE_URL:-https://uconsole.cloud}"
 CONFIG_DIR="${HOME}/.config/uconsole"
 ENV_FILE="${CONFIG_DIR}/status.env"
 SCRIPTS_DIR="${HOME}/scripts"
@@ -88,6 +88,7 @@ DEVICE_API_URL="${BASE_URL}/api/device/push"
 DEVICE_TOKEN="${DEVICE_TOKEN}"
 DEVICE_REPO="${REPO}"
 EOF
+      chmod 600 "${ENV_FILE}"
       echo "Config written to ${ENV_FILE}"
 
       # Setup cron (every 5 minutes)
