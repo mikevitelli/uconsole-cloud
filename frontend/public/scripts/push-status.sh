@@ -158,6 +158,15 @@ if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
         | grep -oP 'WEBDASH_PORT=\K[0-9]+' || echo "8080")
 fi
 
+# ── WiFi Fallback ──────────────────────────────────────
+WIFI_FALLBACK_ENABLED=false
+WIFI_FALLBACK_AP="uConsole"
+FALLBACK_CONF="${HOME}/.config/uconsole/wifi-fallback.conf"
+if [ -f "$FALLBACK_CONF" ] && grep -q '^enabled=1' "$FALLBACK_CONF" 2>/dev/null; then
+    WIFI_FALLBACK_ENABLED=true
+    WIFI_FALLBACK_AP=$(grep -oP '^ap_name=\K.+' "$FALLBACK_CONF" 2>/dev/null || echo "uConsole")
+fi
+
 # ── Timestamp ───────────────────────────────────────────
 COLLECTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -211,6 +220,10 @@ JSON=$(cat <<ENDJSON
   "webdash": {
     "running": $WEBDASH_RUNNING,
     "port": $WEBDASH_PORT
+  },
+  "wifiFallback": {
+    "enabled": $WIFI_FALLBACK_ENABLED,
+    "apName": "$(json_escape "$WIFI_FALLBACK_AP")"
   },
   "collectedAt": "$COLLECTED_AT"
 }
