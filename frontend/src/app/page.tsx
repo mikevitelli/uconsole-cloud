@@ -25,7 +25,7 @@ import { SystemSummary } from "@/components/dashboard/SystemSummary";
 import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
-import { getDeviceStatus } from "@/lib/deviceStatus";
+import { getDeviceStatus, getLastKnownFallback } from "@/lib/deviceStatus";
 import { DeviceSetup } from "@/components/DeviceSetup";
 import { CopyCommand } from "@/components/CopyCommand";
 import { fetchSiteContent } from "@/lib/sanity";
@@ -165,9 +165,9 @@ export default async function Home() {
   }
 
   // ── Fetch dashboard data ───────────────────────────────
-  let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus;
+  let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus, lastKnownFallback;
   try {
-    [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus] =
+    [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus, lastKnownFallback] =
       await Promise.all([
         fetchRepoInfo(session.accessToken, settings.repo),
         fetchCommits(session.accessToken, settings.repo),
@@ -176,6 +176,7 @@ export default async function Home() {
         fetchExtensions(session.accessToken, settings.repo),
         fetchScriptsManifest(session.accessToken, settings.repo),
         getDeviceStatus(settings.repo),
+        getLastKnownFallback(settings.repo),
       ]);
   } catch (err) {
     if (err instanceof GitHubError) {
@@ -292,6 +293,7 @@ export default async function Home() {
         <DeviceStatus
           status={deviceStatus}
           ageMinutes={deviceAgeMinutes}
+          lastKnownFallback={lastKnownFallback}
           content={content?.deviceStatus}
         />
 

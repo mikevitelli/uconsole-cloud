@@ -1,7 +1,7 @@
 import { Donut } from "@/components/viz/Donut";
 import { StatCards } from "@/components/viz/StatCards";
 import { StatusGrid } from "@/components/viz/StatusGrid";
-import type { DeviceStatusPayload } from "@/lib/deviceStatus";
+import type { DeviceStatusPayload, WifiFallbackStatus } from "@/lib/deviceStatus";
 
 interface DeviceStatusContent {
   heading?: string;
@@ -11,6 +11,7 @@ interface DeviceStatusContent {
 interface DeviceStatusProps {
   status: DeviceStatusPayload | null;
   ageMinutes: number;
+  lastKnownFallback?: WifiFallbackStatus | null;
   content?: DeviceStatusContent;
 }
 
@@ -43,22 +44,49 @@ function fmtAge(minutes: number): string {
 export function DeviceStatus({
   status,
   ageMinutes,
+  lastKnownFallback,
   content,
 }: DeviceStatusProps) {
   const heading = content?.heading ?? "Device Status";
 
   // ── Offline state ──
   if (!status) {
+    const fallbackEnabled = lastKnownFallback?.enabled;
+    const apName = lastKnownFallback?.apName ?? "uConsole";
+
     return (
       <section className="bg-card border border-border rounded-xl p-4">
         <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
           <span>&#x1F4F1;</span> {heading}
         </h2>
-        <div className="flex items-center justify-center py-8">
-          <p className="text-sub text-sm">
-            {content?.offlineMessage ??
-              "Device offline — no status received yet."}
-          </p>
+        <div className="py-6 space-y-3">
+          <div className="flex items-center justify-center gap-2">
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: "var(--red)" }}
+            />
+            <p className="text-sub text-sm">
+              {content?.offlineMessage ?? "Device offline — no status received."}
+            </p>
+          </div>
+          {fallbackEnabled && (
+            <div className="bg-background border border-border rounded-lg px-4 py-3 max-w-sm mx-auto">
+              <p className="text-xs text-bright font-medium mb-1">
+                WiFi fallback is enabled
+              </p>
+              <p className="text-xs text-sub">
+                Your uConsole may be running its own WiFi.
+                Connect to <span className="font-mono text-bright">{apName}</span> in
+                your WiFi settings, then open{" "}
+                <a
+                  href="https://10.42.0.1"
+                  className="text-accent hover:underline font-mono"
+                >
+                  10.42.0.1
+                </a>
+              </p>
+            </div>
+          )}
         </div>
       </section>
     );
