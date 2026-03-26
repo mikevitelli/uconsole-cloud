@@ -57,14 +57,30 @@ export function DeviceStatusLive({
         <h2 className="text-base font-bold text-bright mb-3 flex items-center gap-2">
           <span>&#x1F4F1;</span> {heading}
         </h2>
-        <div className="py-6 space-y-3">
-          <div className="flex items-center justify-center gap-2">
-            <span
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{ background: "var(--red)" }}
-            />
+        <div className="py-8 space-y-4">
+          {/* Pulsing radar animation */}
+          <div className="flex justify-center">
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <span
+                className="absolute inline-flex h-full w-full rounded-full opacity-20 animate-ping"
+                style={{ background: "var(--dim)", animationDuration: "2s" }}
+              />
+              <span
+                className="absolute inline-flex h-10 w-10 rounded-full opacity-15 animate-ping"
+                style={{ background: "var(--dim)", animationDuration: "2s", animationDelay: "0.5s" }}
+              />
+              <span
+                className="relative inline-flex h-4 w-4 rounded-full"
+                style={{ background: "var(--red)" }}
+              />
+            </div>
+          </div>
+          <div className="text-center">
             <p className="text-sub text-sm">
-              {content?.offlineMessage ?? "Device offline — no status received."}
+              {content?.offlineMessage ?? "Waiting for device..."}
+            </p>
+            <p className="text-dim text-xs mt-1">
+              No status received yet. Install the agent to start monitoring.
             </p>
           </div>
           {fallbackEnabled && (
@@ -100,8 +116,16 @@ export function DeviceStatusLive({
   const uptime = liveStats?.uptime ?? serverStatus!.uptime;
   const hostname = liveStats?.hostname ?? serverStatus!.hostname;
   const kernel = liveStats?.kernel ?? serverStatus!.kernel;
+  const screen = serverStatus?.screen;
 
   const memUsedPct = Math.round((memory.usedMB / memory.totalMB) * 100);
+  const isCharging = battery.status === "Charging";
+
+  // Screen brightness as percentage (only from server data)
+  const brightnessPct =
+    screen && screen.maxBrightness > 0
+      ? Math.round((screen.brightness / screen.maxBrightness) * 100)
+      : null;
 
   return (
     <section className="bg-card border border-border rounded-xl p-4">
@@ -147,7 +171,7 @@ export function DeviceStatusLive({
             color: batteryColor(battery.capacity),
           },
           {
-            value: `${cpu.tempC.toFixed(1)}°C`,
+            value: `${cpu.tempC.toFixed(1)}\u00b0C`,
             label: "CPU Temp",
             color: tempColor(cpu.tempC),
           },
@@ -172,6 +196,7 @@ export function DeviceStatusLive({
             centerText={`${battery.capacity}%`}
             subText={battery.status}
             color={batteryColor(battery.capacity)}
+            glow={isCharging}
           />
           <div className="text-xs text-dim mt-1 text-center space-y-0.5">
             <div>
@@ -182,38 +207,72 @@ export function DeviceStatusLive({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-          {[
-            { label: "WiFi", value: `${wifi.ssid} (${wifi.signalDBm} dBm)` },
-            { label: "Bitrate", value: `${wifi.bitrateMbps} Mbps` },
-            { label: "IP", value: wifi.ip },
-            {
-              label: "CPU Load",
-              value: cpu.loadAvg.map((l) => l.toFixed(2)).join(", "),
-            },
-            { label: "Uptime", value: uptime },
-            { label: "Kernel", value: kernel },
-            { label: "Host", value: hostname },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs"
-            >
-              <span className="text-sub font-medium shrink-0 w-14">
-                {item.label}
-              </span>
-              <span className="text-foreground truncate font-mono">
-                {item.value}
-              </span>
+        <div className="space-y-3">
+          {/* Network group */}
+          <div>
+            <h4 className="text-[10px] text-dim uppercase tracking-wider font-semibold mb-1.5 px-1">
+              Network
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {[
+                { label: "WiFi", value: `${wifi.ssid} (${wifi.signalDBm} dBm)` },
+                { label: "Bitrate", value: `${wifi.bitrateMbps} Mbps` },
+                { label: "IP", value: wifi.ip },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs"
+                >
+                  <span className="text-sub font-medium shrink-0 w-14">
+                    {item.label}
+                  </span>
+                  <span className="text-foreground truncate font-mono">
+                    {item.value}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+
+          {/* System group */}
+          <div>
+            <h4 className="text-[10px] text-dim uppercase tracking-wider font-semibold mb-1.5 px-1">
+              System
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {[
+                {
+                  label: "CPU Load",
+                  value: cpu.loadAvg.map((l) => l.toFixed(2)).join(", "),
+                },
+                { label: "Uptime", value: uptime },
+                { label: "Host", value: hostname },
+                { label: "Kernel", value: kernel },
+                ...(brightnessPct !== null
+                  ? [{ label: "Screen", value: `${brightnessPct}% brightness` }]
+                  : []),
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center gap-2 bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs"
+                >
+                  <span className="text-sub font-medium shrink-0 w-14">
+                    {item.label}
+                  </span>
+                  <span className="text-foreground truncate font-mono">
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* AIO Board — only show when we have server data (local stats don't include AIO) */}
       {serverStatus?.aio && !isLocal && (
         <div className="mt-4">
-          <h3 className="text-sm font-semibold text-bright mb-1 flex items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-bright mb-1.5 flex items-center gap-1.5">
             <span>&#x1F4E1;</span> AIO Board
           </h3>
           <AioBoardGrid aio={serverStatus.aio} />
@@ -222,14 +281,23 @@ export function DeviceStatusLive({
 
       {/* Local Shell Hub — show when server data indicates webdash running */}
       {serverStatus?.webdash?.running && wifi.ip && wifi.ip !== "none" && !isLocal && (
-        <div className="mt-3 flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2">
-          <span className="w-2 h-2 rounded-full bg-[var(--green)] shrink-0" />
+        <div
+          className="mt-3 flex items-center gap-3 border rounded-lg px-4 py-3"
+          style={{
+            background: "color-mix(in srgb, var(--green) 5%, var(--bg))",
+            borderColor: "color-mix(in srgb, var(--green) 25%, var(--border))",
+          }}
+        >
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--green)] opacity-75 animate-ping" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--green)]" />
+          </span>
           <div className="flex-1 min-w-0">
             <a
               href={`https://${wifi.ip}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-medium text-bright hover:underline"
+              className="text-sm font-semibold text-bright hover:underline"
             >
               Local Shell Hub
             </a>
@@ -237,7 +305,15 @@ export function DeviceStatusLive({
               {wifi.ip}
             </span>
           </div>
-          <span className="text-xs text-dim shrink-0">same network</span>
+          <span
+            className="text-xs font-medium shrink-0 px-2 py-0.5 rounded-full"
+            style={{
+              color: "var(--green)",
+              background: "color-mix(in srgb, var(--green) 12%, transparent)",
+            }}
+          >
+            same network
+          </span>
         </div>
       )}
     </section>

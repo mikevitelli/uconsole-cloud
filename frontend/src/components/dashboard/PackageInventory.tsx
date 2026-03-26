@@ -103,9 +103,21 @@ export function PackageInventory({
             centerText={total.toLocaleString()}
             subText={`${managers.length} managers`}
           />
-          <div className="text-xs text-dim mt-1 space-y-0.5 text-center">
-            <div>APT: {aptCount.toLocaleString()}</div>
-            <div>Other: {otherCount.toLocaleString()}</div>
+          <div className="flex flex-wrap justify-center gap-1 mt-2">
+            {managers.filter(m => packages[m].length > 0).map((m) => (
+              <button
+                key={m}
+                onClick={() => handleSelect(m)}
+                className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border transition-all cursor-pointer"
+                style={{
+                  background: selected?.name === m ? "var(--accent)" : "transparent",
+                  borderColor: selected?.name === m ? "var(--accent)" : "var(--border)",
+                  color: selected?.name === m ? "var(--bg)" : "var(--sub)",
+                }}
+              >
+                {m} {packages[m].length.toLocaleString()}
+              </button>
+            ))}
           </div>
         </div>
 

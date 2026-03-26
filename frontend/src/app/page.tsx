@@ -39,9 +39,9 @@ export default async function Home() {
     return (
       <div className="min-h-screen flex flex-col">
         {/* Hero */}
-        <div className="flex-1 flex flex-col items-center justify-center px-4 py-16">
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-20 sm:py-24">
           {/* Device Image */}
-          <div className="mb-10">
+          <div className="mb-12">
             <Image
               src="/uConsole-spin.gif"
               alt="ClockworkPi uConsole"
@@ -53,10 +53,10 @@ export default async function Home() {
           </div>
 
           {/* Heading */}
-          <h1 className="text-4xl sm:text-5xl font-bold text-bright tracking-tight text-center mb-4">
+          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-center mb-5 bg-gradient-to-r from-bright via-accent to-bright bg-clip-text text-transparent">
             {content?.landing?.heading ?? "uConsole Cloud"}
           </h1>
-          <p className="text-sub text-base sm:text-lg text-center max-w-lg mb-10 leading-relaxed">
+          <p className="text-sub text-base sm:text-lg text-center max-w-lg mb-12 leading-relaxed">
             {content?.landing?.description ??
               "Monitor your uConsole from anywhere. Battery, CPU, memory, WiFi, and more — pushed every 5 minutes."}
           </p>
@@ -65,7 +65,7 @@ export default async function Home() {
           <div className="w-full max-w-lg mb-4">
             <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
           </div>
-          <p className="text-dim text-sm mb-10">
+          <p className="text-dim text-sm mb-14">
             and then <span className="font-mono text-sub">uconsole setup</span> to link your device
           </p>
 
@@ -75,7 +75,7 @@ export default async function Home() {
             <form action={signInAction}>
               <button
                 type="submit"
-                className="flex items-center gap-2 bg-[#24292f] text-white font-medium rounded-lg px-5 py-2.5 text-sm hover:bg-[#32383f] transition-colors cursor-pointer border border-[#3d444d]"
+                className="flex items-center gap-2 bg-[#24292f] text-white font-medium rounded-lg px-5 py-2.5 text-sm hover:bg-[#32383f] hover:shadow-[0_0_12px_rgba(88,166,255,0.15)] transition-all cursor-pointer border border-[#3d444d]"
               >
                 <Image src="/github-mark-white.svg" alt="" width={18} height={18} className="w-[18px] h-[18px]" />
                 {content?.landing?.signInButton ?? "Sign in with GitHub"}
@@ -87,19 +87,33 @@ export default async function Home() {
         {/* Features */}
         <div className="border-t border-border py-16 px-4">
           <div className="max-w-3xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
-            <div>
-              <div className="text-accent text-2xl font-bold mb-1">5 min</div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div className="text-accent text-2xl font-bold">5 min</div>
               <div className="text-sub text-sm">Status push interval</div>
             </div>
-            <div>
-              <div className="text-accent text-2xl font-bold mb-1">1 command</div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              </div>
+              <div className="text-accent text-2xl font-bold">1 command</div>
               <div className="text-sub text-sm">Install and setup</div>
             </div>
-            <div>
-              <div className="text-accent text-2xl font-bold mb-1">Zero config</div>
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <div className="text-accent text-2xl font-bold">Zero config</div>
               <div className="text-sub text-sm">Device code auth</div>
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-border py-6 px-4 text-center">
+          <p className="text-dim text-xs">Built for ClockworkPi uConsole</p>
         </div>
       </div>
     );
@@ -228,17 +242,17 @@ export default async function Home() {
   // ── Render dashboard ───────────────────────────────────
   return (
     <div className="min-h-screen overflow-x-hidden">
-      <header className="border-b border-border px-4 py-3">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-base font-bold text-bright">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md px-4 py-2">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-sm font-bold text-bright whitespace-nowrap">
               {content?.dashboard?.headerTitle ?? "uConsole Dashboard"}
             </h1>
-            <span className="text-xs text-sub font-mono bg-background border border-border rounded px-1.5 py-0.5">
+            <span className="text-[11px] text-accent font-mono bg-accent/10 border border-accent/20 rounded-md px-2 py-0.5 truncate max-w-[180px] sm:max-w-none">
               {settings.repo}
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 shrink-0">
             <UserAvatar session={session} />
             <form action={unlinkAction}>
               <ConfirmButton
@@ -260,7 +274,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-5">
         {!deviceStatus && (
           <section className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -321,7 +335,7 @@ export default async function Home() {
           content={content?.packageInventory}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0 opacity-90">
           <BrowserExtensions
             extensions={extensions}
             content={content?.browserExtensions}

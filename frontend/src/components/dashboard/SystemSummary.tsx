@@ -47,63 +47,87 @@ export function SystemSummary({
 
   const deviceOnline = deviceStatus !== null && deviceAgeMinutes < 10;
 
+  const readinessColor =
+    readiness >= 80
+      ? "var(--green)"
+      : readiness >= 50
+        ? "var(--yellow)"
+        : "var(--red)";
+
+  const backupColor =
+    daysSinceBackup === null
+      ? "var(--red)"
+      : daysSinceBackup < 3
+        ? "var(--green)"
+        : daysSinceBackup < 7
+          ? "var(--yellow)"
+          : "var(--red)";
+
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
       {/* Restore Readiness */}
-      <div className="bg-card border border-border rounded-xl px-3 py-2.5 text-center">
+      <div
+        className="relative overflow-hidden bg-card border border-border rounded-xl px-4 py-4 text-center"
+        style={{ borderBottomColor: readinessColor, borderBottomWidth: 2 }}
+      >
         <div
-          className="text-xl font-bold tabular-nums"
-          style={{
-            color:
-              readiness >= 80
-                ? "var(--green)"
-                : readiness >= 50
-                  ? "var(--yellow)"
-                  : "var(--red)",
-          }}
+          className="text-3xl font-bold tabular-nums tracking-tight"
+          style={{ color: readinessColor }}
         >
           {readiness}%
         </div>
-        <div className="text-[11px] text-dim mt-0.5">Restore Ready</div>
+        <div className="text-xs text-sub mt-1 font-medium uppercase tracking-wider">
+          Restore Ready
+        </div>
       </div>
 
       {/* Last Backup */}
-      <div className="bg-card border border-border rounded-xl px-3 py-2.5 text-center">
+      <div
+        className="relative overflow-hidden bg-card border border-border rounded-xl px-4 py-4 text-center"
+        style={{ borderBottomColor: backupColor, borderBottomWidth: 2 }}
+      >
         <div
-          className="text-xl font-bold tabular-nums"
-          style={{
-            color:
-              daysSinceBackup === null
-                ? "var(--red)"
-                : daysSinceBackup === 0
-                  ? "var(--green)"
-                  : daysSinceBackup < 3
-                    ? "var(--green)"
-                    : daysSinceBackup < 7
-                      ? "var(--yellow)"
-                      : "var(--red)",
-          }}
+          className="text-3xl font-bold tabular-nums tracking-tight"
+          style={{ color: backupColor }}
         >
           {daysSinceBackup === null
-            ? "—"
+            ? "\u2014"
             : daysSinceBackup === 0
               ? "Today"
               : `${daysSinceBackup}d`}
         </div>
-        <div className="text-[11px] text-dim mt-0.5">Last Backup</div>
+        <div className="text-xs text-sub mt-1 font-medium uppercase tracking-wider">
+          Last Backup
+        </div>
       </div>
 
       {/* Device Status */}
-      <div className="bg-card border border-border rounded-xl px-3 py-2.5 text-center">
-        <div className="flex items-center justify-center gap-1.5">
+      <div
+        className="relative overflow-hidden bg-card border border-border rounded-xl px-4 py-4 text-center"
+        style={{
+          borderBottomColor: deviceOnline ? "var(--green)" : "var(--dim)",
+          borderBottomWidth: 2,
+        }}
+      >
+        <div className="flex items-center justify-center gap-2">
           <span
-            className="w-2.5 h-2.5 rounded-full"
-            style={{
-              background: deviceOnline ? "var(--green)" : "var(--dim)",
-            }}
-          />
+            className="relative flex h-3 w-3"
+          >
+            {deviceOnline && (
+              <span
+                className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
+                style={{ background: "var(--green)" }}
+              />
+            )}
+            <span
+              className="relative inline-flex h-3 w-3 rounded-full"
+              style={{
+                background: deviceOnline ? "var(--green)" : "var(--dim)",
+              }}
+            />
+          </span>
           <span
-            className="text-lg font-bold"
+            className="text-2xl font-bold"
             style={{
               color: deviceOnline ? "var(--green)" : "var(--dim)",
             }}
@@ -111,19 +135,27 @@ export function SystemSummary({
             {deviceOnline ? "Online" : "Offline"}
           </span>
         </div>
-        <div className="text-[11px] text-dim mt-0.5">
+        <div className="text-xs text-sub mt-1.5 font-medium">
           {deviceStatus
-            ? `${deviceStatus.battery.capacity}% · ${deviceStatus.cpu.tempC.toFixed(0)}°C`
+            ? `${deviceStatus.battery.capacity}% \u00b7 ${deviceStatus.cpu.tempC.toFixed(0)}\u00b0C`
             : "No signal"}
         </div>
       </div>
 
       {/* Packages */}
-      <div className="bg-card border border-border rounded-xl px-3 py-2.5 text-center">
-        <div className="text-xl font-bold tabular-nums text-bright">
+      <div
+        className="relative overflow-hidden bg-card border border-border rounded-xl px-4 py-4 text-center"
+        style={{ borderBottomColor: "var(--accent)", borderBottomWidth: 2 }}
+      >
+        <div
+          className="text-3xl font-bold tabular-nums tracking-tight"
+          style={{ color: "var(--accent)" }}
+        >
           {totalPackages.toLocaleString()}
         </div>
-        <div className="text-[11px] text-dim mt-0.5">Packages Tracked</div>
+        <div className="text-xs text-sub mt-1 font-medium uppercase tracking-wider">
+          Packages Tracked
+        </div>
       </div>
     </div>
   );

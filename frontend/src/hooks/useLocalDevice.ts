@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 /**
- * Stats shape returned by the local webdash /api/stats endpoint.
+ * Stats shape returned by the local webdash /api/public/stats endpoint.
  * NOTE: The webdash nginx config must include
  *   Access-Control-Allow-Origin: https://uconsole.cloud
  * for this fetch to succeed from the browser.
@@ -73,7 +73,7 @@ async function tryFetch(url: string): Promise<LocalStats | null> {
 /**
  * Probes the local webdash to detect same-network access.
  * Tries the device WiFi IP first, then uconsole.local (mDNS).
- * When local, polls /api/stats every 5 seconds for live data.
+ * When local, polls /api/public/stats every 5 seconds for live data.
  * Re-probes every 30 seconds if not local.
  */
 export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
@@ -94,7 +94,7 @@ export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
     candidates.push("https://uconsole.local");
 
     for (const base of candidates) {
-      const stats = await tryFetch(`${base}/api/stats`);
+      const stats = await tryFetch(`${base}/api/public/stats`);
       if (stats) {
         baseUrlRef.current = base;
         setState({ isLocal: true, stats, baseUrl: base, probing: false });
@@ -137,7 +137,7 @@ export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
 
     const poll = setInterval(async () => {
       if (cancelled) return;
-      const stats = await tryFetch(`${base}/api/stats`);
+      const stats = await tryFetch(`${base}/api/public/stats`);
       if (cancelled) return;
 
       if (stats) {
