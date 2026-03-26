@@ -20,8 +20,8 @@ import { BrowserExtensions } from "@/components/dashboard/BrowserExtensions";
 import { ScriptsManifest } from "@/components/dashboard/ScriptsManifest";
 import { BackupCoverage } from "@/components/dashboard/BackupCoverage";
 import { RepoStructure } from "@/components/dashboard/RepoStructure";
-import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
 import { SystemSummary } from "@/components/dashboard/SystemSummary";
+import { LocalModeShell } from "@/components/dashboard/LocalModeShell";
 import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
@@ -306,8 +306,9 @@ export default async function Home() {
           )}
         </div>
 
-        <DeviceStatus
-          status={deviceStatus}
+        <LocalModeShell
+          deviceIp={deviceStatus?.wifi?.ip ?? null}
+          serverStatus={deviceStatus}
           ageMinutes={deviceAgeMinutes}
           lastKnownFallback={lastKnownFallback}
           content={content?.deviceStatus}
