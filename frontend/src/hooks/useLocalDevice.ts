@@ -44,29 +44,44 @@ export interface LocalStats {
   kernel: string;
 }
 
+export type ProbeResult = 'probing' | 'local' | 'unreachable' | 'cert_error';
+
 export interface LocalDeviceState {
   isLocal: boolean;
   stats: LocalStats | null;
   baseUrl: string | null;
   /** True during the initial probe (before first result) */
   probing: boolean;
+  /** Detailed probe result for downstream components like CertNudge */
+  probeResult: ProbeResult;
+  /** True when local mode is active but connection is unstable (1-2 consecutive failures) */
+  connectionUnstable: boolean;
 }
 
 const PROBE_TIMEOUT_MS = 3000;
 const REPROBE_INTERVAL_MS = 30_000;
 const POLL_INTERVAL_MS = 5_000;
 
-async function tryFetch(url: string): Promise<LocalStats | null> {
+type FetchResult =
+  | { ok: true; stats: LocalStats }
+  | { ok: false; reason: 'cert_error' | 'unreachable' };
+
+async function tryFetch(url: string): Promise<FetchResult> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
       // Self-signed cert will cause a network error in the browser —
       // that's fine, we catch it and stay in remote mode.
     });
-    if (!res.ok) return null;
-    return (await res.json()) as LocalStats;
-  } catch {
-    return null;
+    if (!res.ok) return { ok: false, reason: 'unreachable' };
+    const stats = (await res.json()) as LocalStats;
+    return { ok: true, stats };
+  } catch (err) {
+    // TypeError is typical for cert issues (mixed content / self-signed)
+    if (err instanceof TypeError) {
+      return { ok: false, reason: 'cert_error' };
+    }
+    return { ok: false, reason: 'unreachable' };
   }
 }
 
@@ -82,9 +97,14 @@ export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
     stats: null,
     baseUrl: null,
     probing: true,
+    probeResult: 'probing',
+    connectionUnstable: false,
   });
 
   const baseUrlRef = useRef<string | null>(null);
+  /** Track consecutive poll failures for hysteresis (require 3 before dropping to remote) */
+  const consecutiveFailuresRef = useRef(0);
+  const HYSTERESIS_THRESHOLD = 3;
 
   const probe = useCallback(async () => {
     const candidates: string[] = [];
@@ -93,17 +113,21 @@ export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
     }
     candidates.push("https://uconsole.local");
 
+    let lastReason: 'cert_error' | 'unreachable' = 'unreachable';
+
     for (const base of candidates) {
-      const stats = await tryFetch(`${base}/api/public/stats`);
-      if (stats) {
+      const result = await tryFetch(`${base}/api/public/stats`);
+      if (result.ok) {
         baseUrlRef.current = base;
-        setState({ isLocal: true, stats, baseUrl: base, probing: false });
+        consecutiveFailuresRef.current = 0;
+        setState({ isLocal: true, stats: result.stats, baseUrl: base, probing: false, probeResult: 'local', connectionUnstable: false });
         return true;
       }
+      lastReason = result.reason;
     }
 
     baseUrlRef.current = null;
-    setState((prev) => ({ ...prev, isLocal: false, stats: null, baseUrl: null, probing: false }));
+    setState((prev) => ({ ...prev, isLocal: false, stats: null, baseUrl: null, probing: false, probeResult: lastReason, connectionUnstable: false }));
     return false;
   }, [deviceIp]);
 
@@ -137,15 +161,23 @@ export function useLocalDevice(deviceIp: string | null): LocalDeviceState {
 
     const poll = setInterval(async () => {
       if (cancelled) return;
-      const stats = await tryFetch(`${base}/api/public/stats`);
+      const result = await tryFetch(`${base}/api/public/stats`);
       if (cancelled) return;
 
-      if (stats) {
-        setState((prev) => ({ ...prev, stats }));
+      if (result.ok) {
+        consecutiveFailuresRef.current = 0;
+        setState((prev) => ({ ...prev, stats: result.stats, connectionUnstable: false }));
       } else {
-        // Device went away — fall back to remote mode, start re-probing
-        baseUrlRef.current = null;
-        setState({ isLocal: false, stats: null, baseUrl: null, probing: false });
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= HYSTERESIS_THRESHOLD) {
+          // Device went away — fall back to remote mode, start re-probing
+          baseUrlRef.current = null;
+          consecutiveFailuresRef.current = 0;
+          setState({ isLocal: false, stats: null, baseUrl: null, probing: false, probeResult: result.reason, connectionUnstable: false });
+        } else {
+          // Grace period: keep last known stats, show unstable indicator
+          setState((prev) => ({ ...prev, connectionUnstable: true }));
+        }
       }
     }, POLL_INTERVAL_MS);
 
