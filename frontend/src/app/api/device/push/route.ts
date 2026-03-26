@@ -49,6 +49,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Capture the device's public IP (after NAT) for same-network detection
+  const forwarded = req.headers.get("x-forwarded-for");
+  const devicePublicIp = forwarded?.split(",")[0].trim() || null;
+  if (devicePublicIp) {
+    (body as Record<string, unknown>)._publicIp = devicePublicIp;
+  }
+
   // Write to Redis — server-side only
   await redis.set(`device:${device.repo}:status`, body, { ex: 900 });
 
