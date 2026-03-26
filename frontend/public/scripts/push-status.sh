@@ -149,6 +149,15 @@ if [ -d /sys/class/rtc/rtc0 ]; then
     fi
 fi
 
+# ── Webdash ────────────────────────────────────────────
+WEBDASH_RUNNING=false
+WEBDASH_PORT=8080
+if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
+    WEBDASH_RUNNING=true
+    WEBDASH_PORT=$(systemctl --user show webdash.service -p Environment 2>/dev/null \
+        | grep -oP 'WEBDASH_PORT=\K[0-9]+' || echo "8080")
+fi
+
 # ── Timestamp ───────────────────────────────────────────
 COLLECTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -198,6 +207,10 @@ JSON=$(cat <<ENDJSON
   "screen": {
     "brightness": $SCREEN_BRIGHTNESS,
     "maxBrightness": $SCREEN_MAX
+  },
+  "webdash": {
+    "running": $WEBDASH_RUNNING,
+    "port": $WEBDASH_PORT
   },
   "collectedAt": "$COLLECTED_AT"
 }

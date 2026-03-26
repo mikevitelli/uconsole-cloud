@@ -41,15 +41,15 @@ export default async function Home() {
       <div className="min-h-screen flex flex-col">
         {/* Hero */}
         <div className="flex-1 flex flex-col items-center justify-center px-4 py-16">
-          {/* 3D Model */}
-          <div className="w-full max-w-xs aspect-square rounded-2xl overflow-hidden border border-border mb-10">
-            <iframe
-              title="ClockworkPi uConsole"
-              className="w-full h-full"
-              frameBorder="0"
-              allowFullScreen
-              allow="autoplay; fullscreen; xr-spatial-tracking"
-              src="https://sketchfab.com/models/8c1124b60692407095fce5d9978e2528/embed?autostart=1&ui_theme=dark&ui_infos=0&ui_controls=1&ui_stop=0"
+          {/* Device Image */}
+          <div className="mb-10">
+            <Image
+              src="/uConsole-spin.gif"
+              alt="ClockworkPi uConsole"
+              width={320}
+              height={320}
+              unoptimized
+              priority
             />
           </div>
 

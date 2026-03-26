@@ -242,6 +242,27 @@ export function DeviceStatus({
           ]}
         />
       </div>
+
+      {/* Local Shell Hub */}
+      {status.webdash?.running && wifi.ip && wifi.ip !== "none" && (
+        <div className="mt-3 flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2">
+          <span className="w-2 h-2 rounded-full bg-[var(--green)] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <a
+              href="https://uconsole.local"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-bright hover:underline"
+            >
+              Local Shell Hub
+            </a>
+            <span className="text-xs text-dim ml-2">
+              {wifi.ip}
+            </span>
+          </div>
+          <span className="text-xs text-dim shrink-0">same network</span>
+        </div>
+      )}
     </section>
   );
 }
