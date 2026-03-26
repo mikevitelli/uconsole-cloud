@@ -65,18 +65,30 @@ DISK_AVAIL=$(echo "$DISK_LINE" | awk '{gsub("G",""); print $4}')
 DISK_PCT=$(echo "$DISK_LINE" | awk '{gsub("%",""); print $5}')
 
 # ── WiFi ────────────────────────────────────────────────
-WIFI_RAW=$(iwconfig wlan0 2>/dev/null || true)
-WIFI_SSID=$(echo "$WIFI_RAW" | grep -oP 'ESSID:"\K[^"]+' || echo "disconnected")
-WIFI_SIGNAL=$(echo "$WIFI_RAW" | grep -oP 'Signal level=\K-?[0-9]+' || echo "0")
-WIFI_QUALITY_RAW=$(echo "$WIFI_RAW" | grep -oP 'Link Quality=\K[0-9]+/[0-9]+' || echo "0/70")
-WIFI_QUALITY_NUM=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f1)
-WIFI_QUALITY_DEN=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f2)
-if [ "$WIFI_QUALITY_DEN" -gt 0 ] 2>/dev/null; then
-    WIFI_QUALITY=$((WIFI_QUALITY_NUM * 100 / WIFI_QUALITY_DEN))
+# Prefer nmcli (works with NetworkManager on Bookworm), fall back to iwconfig
+if command -v nmcli &>/dev/null; then
+    WIFI_SSID=$(nmcli -t -f active,ssid dev wifi 2>/dev/null | grep '^yes:' | cut -d: -f2 || echo "disconnected")
+    [ -z "$WIFI_SSID" ] && WIFI_SSID="disconnected"
+    WIFI_SIGNAL=$(nmcli -t -f active,signal dev wifi 2>/dev/null | grep '^yes:' | cut -d: -f2 || echo "0")
+    # Convert signal % to approximate dBm (100%=-30dBm, 0%=-90dBm)
+    WIFI_SIGNAL_DBM=$(( WIFI_SIGNAL * 60 / 100 - 90 ))
+    [ "$WIFI_SIGNAL" = "0" ] && WIFI_SIGNAL_DBM=0
+    WIFI_QUALITY=$WIFI_SIGNAL
+    WIFI_BITRATE=$(nmcli -f RATE dev wifi 2>/dev/null | grep -oP '[0-9]+' | head -1 || echo "0")
 else
-    WIFI_QUALITY=0
+    WIFI_RAW=$(iwconfig wlan0 2>/dev/null || true)
+    WIFI_SSID=$(echo "$WIFI_RAW" | grep -oP 'ESSID:"\K[^"]+' || echo "disconnected")
+    WIFI_SIGNAL_DBM=$(echo "$WIFI_RAW" | grep -oP 'Signal level=\K-?[0-9]+' || echo "0")
+    WIFI_QUALITY_RAW=$(echo "$WIFI_RAW" | grep -oP 'Link Quality=\K[0-9]+/[0-9]+' || echo "0/70")
+    WIFI_QUALITY_NUM=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f1)
+    WIFI_QUALITY_DEN=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f2)
+    if [ "$WIFI_QUALITY_DEN" -gt 0 ] 2>/dev/null; then
+        WIFI_QUALITY=$((WIFI_QUALITY_NUM * 100 / WIFI_QUALITY_DEN))
+    else
+        WIFI_QUALITY=0
+    fi
+    WIFI_BITRATE=$(echo "$WIFI_RAW" | grep -oP 'Bit Rate=\K[0-9.]+' || echo "0")
 fi
-WIFI_BITRATE=$(echo "$WIFI_RAW" | grep -oP 'Bit Rate=\K[0-9.]+' || echo "0")
 WIFI_IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP 'inet \K[0-9.]+' || echo "none")
 
 # ── Screen ──────────────────────────────────────────────
@@ -202,7 +214,7 @@ JSON=$(cat <<ENDJSON
   },
   "wifi": {
     "ssid": "$(json_escape "$WIFI_SSID")",
-    "signalDBm": $WIFI_SIGNAL,
+    "signalDBm": $WIFI_SIGNAL_DBM,
     "quality": $WIFI_QUALITY,
     "bitrateMbps": $WIFI_BITRATE,
     "ip": "$(json_escape "$WIFI_IP")"
