@@ -12,9 +12,9 @@ export function CopyCommand({ command }: { command: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2 bg-background border border-border rounded-lg px-4 py-3 font-mono text-sm">
-      <span className="text-dim select-none">$</span>
-      <code className="flex-1 text-foreground overflow-x-auto whitespace-nowrap">
+    <div className="flex items-center gap-2 bg-[#0d1117] border border-border rounded-lg px-4 py-3 font-mono text-sm shadow-[0_0_20px_rgba(88,166,255,0.06)] ring-1 ring-accent/5">
+      <span className="text-accent/60 select-none">$</span>
+      <code className="flex-1 text-green overflow-x-auto whitespace-nowrap">
         {command}
       </code>
       <button

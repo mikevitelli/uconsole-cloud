@@ -27,7 +27,7 @@ export function ScriptsManifest({ raw, content }: ScriptsManifestProps) {
                 {columns.map((col) => (
                   <th
                     key={col}
-                    className="text-left text-sub font-semibold px-2 py-1 border-b border-border whitespace-nowrap"
+                    className="text-left text-sub font-semibold px-2.5 py-1.5 border-b border-border whitespace-nowrap text-[11px] uppercase tracking-wide"
                   >
                     {col}
                   </th>
@@ -36,11 +36,11 @@ export function ScriptsManifest({ raw, content }: ScriptsManifestProps) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i}>
+                <tr key={i} className="hover:bg-background/50 transition-colors">
                   {row.map((cell, j) => (
                     <td
                       key={j}
-                      className="px-2 py-1 text-foreground border-b border-border last:border-b-0 whitespace-nowrap sm:whitespace-normal"
+                      className="px-2.5 py-1.5 text-foreground border-b border-border last:border-b-0 whitespace-nowrap sm:whitespace-normal"
                     >
                       {cell}
                     </td>
