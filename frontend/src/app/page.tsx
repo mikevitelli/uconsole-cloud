@@ -26,7 +26,6 @@ import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus, getLastKnownFallback } from "@/lib/deviceStatus";
-import { DeviceSetup } from "@/components/DeviceSetup";
 import { CopyCommand } from "@/components/CopyCommand";
 import { fetchSiteContent } from "@/lib/sanity";
 import { signInAction, signOutAction, unlinkAction } from "./actions";
@@ -262,14 +261,31 @@ export default async function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-4">
-        {settings.deviceToken && (
-          <DeviceSetup
-            deviceToken={settings.deviceToken}
-            repo={settings.repo}
-            apiUrl={process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL
-              ? `https://${process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL}`
-              : "https://uconsole.cloud"}
-          />
+        {!deviceStatus && (
+          <section className="bg-card border border-border rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: "var(--yellow)" }}
+              />
+              <h2 className="text-sm font-semibold text-bright">
+                Waiting for device
+              </h2>
+            </div>
+            <p className="text-xs text-sub mb-3">
+              Run these commands on your uConsole to start sending data:
+            </p>
+            <div className="space-y-2">
+              <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+              <CopyCommand command="uconsole setup" />
+            </div>
+            <p className="text-xs text-dim mt-3">
+              Then enter the code at{" "}
+              <a href="/link" className="text-accent hover:underline">
+                uconsole.cloud/link
+              </a>
+            </p>
+          </section>
         )}
         <SystemSummary
           backups={commits}
