@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 const INSTALL_SCRIPT = `#!/bin/bash
 # uconsole.cloud installer
 # Usage: curl -fsSL https://uconsole.cloud/install | bash
+# Self-hosted? Set UCONSOLE_URL before running:
+#   UCONSOLE_URL=https://your.server curl -fsSL your.server/install | bash
 set -euo pipefail
 
-BASE_URL="https://uconsole.cloud"
+BASE_URL="\${UCONSOLE_URL:-https://uconsole.cloud}"
 BIN_DIR="\${HOME}/.local/bin"
 SCRIPTS_DIR="\${HOME}/scripts"
 
@@ -23,7 +25,7 @@ curl -fsSL "\${BASE_URL}/api/scripts/push-status.sh" -o "\${SCRIPTS_DIR}/push-st
 chmod +x "\${SCRIPTS_DIR}/push-status.sh"
 
 # Add to PATH if needed
-if ! echo "\${PATH}" | grep -q "\${BIN_DIR}"; then
+if ! echo "\${PATH}" | tr ':' '\\n' | grep -qx "\${BIN_DIR}"; then
   SHELL_RC="\${HOME}/.bashrc"
   [ -f "\${HOME}/.zshrc" ] && SHELL_RC="\${HOME}/.zshrc"
   echo "export PATH=\\"\\\${HOME}/.local/bin:\\\${PATH}\\"" >> "\${SHELL_RC}"

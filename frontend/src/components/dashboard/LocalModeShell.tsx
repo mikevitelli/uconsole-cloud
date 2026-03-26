@@ -2,6 +2,7 @@
 
 import { LocalModeProvider } from "@/components/LocalModeProvider";
 import { LocalModeBanner } from "@/components/dashboard/LocalModeBanner";
+import { CertNudge } from "@/components/dashboard/CertNudge";
 import { DeviceStatusLive } from "@/components/dashboard/DeviceStatusLive";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import type { DeviceStatusPayload, WifiFallbackStatus } from "@/lib/deviceStatus";
@@ -34,6 +35,7 @@ export function LocalModeShell({
   return (
     <LocalModeProvider deviceIp={deviceIp}>
       <LocalModeBanner />
+      <CertNudge deviceIp={deviceIp} />
       <DeviceStatusLive
         serverStatus={serverStatus}
         ageMinutes={ageMinutes}

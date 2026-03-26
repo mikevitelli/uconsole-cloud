@@ -27,6 +27,7 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
 import { getDeviceStatus, getLastKnownFallback } from "@/lib/deviceStatus";
 import { CopyCommand } from "@/components/CopyCommand";
+import { WaitingForDevice } from "@/components/WaitingForDevice";
 import { fetchSiteContent } from "@/lib/sanity";
 import { signInAction, signOutAction, unlinkAction } from "./actions";
 
@@ -53,35 +54,57 @@ export default async function Home() {
           </div>
 
           {/* Heading */}
-          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-center mb-5 bg-gradient-to-r from-bright via-accent to-bright bg-clip-text text-transparent">
+          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight text-center mb-4 bg-gradient-to-r from-bright via-accent to-bright bg-clip-text text-transparent">
             {content?.landing?.heading ?? "uConsole Cloud"}
           </h1>
+          <p className="text-sub text-sm sm:text-base text-center max-w-md mb-3">
+            A cloud dashboard for the ClockworkPi uConsole — a handheld Linux terminal.
+          </p>
           <p className="text-sub text-base sm:text-lg text-center max-w-lg mb-12 leading-relaxed">
             {content?.landing?.description ??
               "Monitor your uConsole from anywhere. Battery, CPU, memory, WiFi, and more — pushed every 5 minutes."}
           </p>
 
-          {/* Install command */}
-          <div className="w-full max-w-lg mb-4">
-            <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+          {/* 3-step guide */}
+          <div className="w-full max-w-lg mb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent text-sm font-bold">1</div>
+                <p className="text-sub text-xs">Sign in with GitHub</p>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent text-sm font-bold">2</div>
+                <p className="text-sub text-xs">Install on your uConsole</p>
+                <code className="text-[10px] text-dim font-mono">curl ... | bash</code>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center text-accent text-sm font-bold">3</div>
+                <p className="text-sub text-xs">Link your device</p>
+                <code className="text-[10px] text-dim font-mono">uconsole setup</code>
+              </div>
+            </div>
           </div>
-          <p className="text-dim text-sm mb-14">
-            and then <span className="font-mono text-sub">uconsole setup</span> to link your device
-          </p>
 
           {/* Sign in */}
-          <div className="flex flex-col items-center gap-3">
-            <p className="text-dim text-xs">Already have an account?</p>
+          <div className="flex flex-col items-center gap-3 mb-10">
             <form action={signInAction}>
               <button
                 type="submit"
                 className="flex items-center gap-2 bg-[#24292f] text-white font-medium rounded-lg px-5 py-2.5 text-sm hover:bg-[#32383f] hover:shadow-[0_0_12px_rgba(88,166,255,0.15)] transition-all cursor-pointer border border-[#3d444d]"
               >
                 <Image src="/github-mark-white.svg" alt="" width={18} height={18} className="w-[18px] h-[18px]" />
-                {content?.landing?.signInButton ?? "Sign in with GitHub"}
+                {content?.landing?.signInButton ?? "Get Started"}
               </button>
             </form>
           </div>
+
+          {/* Install command reference */}
+          <div className="w-full max-w-lg mb-2">
+            <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+          </div>
+          <a href="/install" className="text-[11px] text-dim hover:text-sub transition-colors">
+            View install script source
+          </a>
         </div>
 
         {/* Features */}
@@ -275,32 +298,7 @@ export default async function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-5">
-        {!deviceStatus && (
-          <section className="bg-card border border-border rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ background: "var(--yellow)" }}
-              />
-              <h2 className="text-sm font-semibold text-bright">
-                Waiting for device
-              </h2>
-            </div>
-            <p className="text-xs text-sub mb-3">
-              Run these commands on your uConsole to start sending data:
-            </p>
-            <div className="space-y-2">
-              <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
-              <CopyCommand command="uconsole setup" />
-            </div>
-            <p className="text-xs text-dim mt-3">
-              Then enter the code at{" "}
-              <a href="/link" className="text-accent hover:underline">
-                uconsole.cloud/link
-              </a>
-            </p>
-          </section>
-        )}
+        {!deviceStatus && <WaitingForDevice />}
         <SystemSummary
           backups={commits}
           deviceStatus={deviceStatus}
@@ -328,22 +326,28 @@ export default async function Home() {
           content={content?.deviceStatus}
         />
 
-        <BackupHistory backups={commits} content={content?.backupHistory} />
+        {deviceStatus && (
+          <BackupHistory backups={commits} content={content?.backupHistory} />
+        )}
         <PackageInventory
           packages={packages}
           aptCategories={aptCategories}
           content={content?.packageInventory}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0 opacity-90">
-          <BrowserExtensions
-            extensions={extensions}
-            content={content?.browserExtensions}
-          />
-          <ScriptsManifest raw={scriptsRaw} content={content?.scriptsManifest} />
-        </div>
+        {deviceStatus && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 [&>section]:mb-0 opacity-90">
+              <BrowserExtensions
+                extensions={extensions}
+                content={content?.browserExtensions}
+              />
+              <ScriptsManifest raw={scriptsRaw} content={content?.scriptsManifest} />
+            </div>
 
-        <RepoStructure tree={tree} content={content?.repoStructure} />
+            <RepoStructure tree={tree} content={content?.repoStructure} />
+          </>
+        )}
       </main>
     </div>
   );

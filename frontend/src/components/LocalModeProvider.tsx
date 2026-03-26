@@ -8,6 +8,8 @@ const LocalModeContext = createContext<LocalDeviceState>({
   stats: null,
   baseUrl: null,
   probing: true,
+  probeResult: 'probing',
+  connectionUnstable: false,
 });
 
 export function useLocalMode() {
