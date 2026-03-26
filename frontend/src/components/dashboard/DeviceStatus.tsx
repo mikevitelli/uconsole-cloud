@@ -13,6 +13,9 @@ interface DeviceStatusProps {
   ageMinutes: number;
   lastKnownFallback?: WifiFallbackStatus | null;
   content?: DeviceStatusContent;
+  /** When true, the same-network banner is already showing the webdash link */
+  isSameNetwork?: boolean;
+  deviceLocalIp?: string | null;
 }
 
 function batteryColor(capacity: number): string {
@@ -46,6 +49,8 @@ export function DeviceStatus({
   ageMinutes,
   lastKnownFallback,
   content,
+  isSameNetwork = false,
+  deviceLocalIp,
 }: DeviceStatusProps) {
   const heading = content?.heading ?? "Device Status";
 
@@ -271,8 +276,8 @@ export function DeviceStatus({
         />
       </div>
 
-      {/* Local Shell Hub */}
-      {status.webdash?.running && wifi.ip && wifi.ip !== "none" && (
+      {/* Local Shell Hub — subtle link when not on same network (banner handles it otherwise) */}
+      {!isSameNetwork && status.webdash?.running && wifi.ip && wifi.ip !== "none" && (
         <div className="mt-3 flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2">
           <span className="w-2 h-2 rounded-full bg-[var(--green)] shrink-0" />
           <div className="flex-1 min-w-0">
@@ -288,7 +293,7 @@ export function DeviceStatus({
               {wifi.ip}
             </span>
           </div>
-          <span className="text-xs text-dim shrink-0">same network</span>
+          <span className="text-xs text-dim shrink-0">webdash running</span>
         </div>
       )}
     </section>
