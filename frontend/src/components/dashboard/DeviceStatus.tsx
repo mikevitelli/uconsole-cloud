@@ -277,14 +277,14 @@ export function DeviceStatus({
           <span className="w-2 h-2 rounded-full bg-[var(--green)] shrink-0" />
           <div className="flex-1 min-w-0">
             <a
-              href="https://uconsole.local"
+              href={`https://${wifi.ip}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs font-medium text-bright hover:underline"
             >
               Local Shell Hub
             </a>
-            <span className="text-xs text-dim ml-2">
+            <span className="text-xs text-dim font-mono ml-2">
               {wifi.ip}
             </span>
           </div>
