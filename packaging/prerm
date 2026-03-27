@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    remove|purge)
+        # Stop services
+        systemctl stop uconsole-webdash.service 2>/dev/null || true
+        systemctl stop uconsole-status.timer 2>/dev/null || true
+        systemctl stop uconsole-status.service 2>/dev/null || true
+        systemctl stop uconsole-backup.timer 2>/dev/null || true
+        systemctl stop uconsole-backup.service 2>/dev/null || true
+        systemctl stop uconsole-update.timer 2>/dev/null || true
+        systemctl stop uconsole-update.service 2>/dev/null || true
+
+        # Disable services
+        systemctl disable uconsole-webdash.service 2>/dev/null || true
+        systemctl disable uconsole-status.timer 2>/dev/null || true
+        systemctl disable uconsole-backup.timer 2>/dev/null || true
+        systemctl disable uconsole-update.timer 2>/dev/null || true
+
+        # Remove nginx site
+        rm -f /etc/nginx/sites-enabled/uconsole-webdash
+        nginx -t 2>/dev/null && systemctl reload nginx || true
+
+        systemctl daemon-reload
+        ;;
+esac

@@ -16,13 +16,13 @@ Remote monitoring dashboard for ClockworkPi uConsole devices. Deployed at https:
 ```
 Phone (Safari PWA)
   → uconsole.cloud (Vercel, HTTPS)
-    → Upstash Redis (device telemetry, 15-min TTL)
+    → Upstash Redis (device telemetry, persistent — no TTL)
     → GitHub API (backup repo: commits, packages, tree)
 
 uConsole (every 5 min)
   → push-status.sh (systemd timer)
     → POST /api/device/push (Bearer token)
-      → Redis: device:{repo}:status
+      → Redis: device:{repo}:status (overwritten each push, persists indefinitely)
 ```
 
 ## Key Directories
@@ -32,6 +32,7 @@ uConsole (every 5 min)
 - `frontend/src/components/viz/` — 7 visualization components (CalendarGrid, Donut, Sparkline, etc.)
 - `frontend/src/lib/` — auth, redis, deviceCode, deviceToken, deviceStatus, github, rateLimit, utils
 - `frontend/public/scripts/` — install-time copies of uconsole CLI and push-status.sh
+- `packaging/` — .deb build system (build-deb.sh, DEBIAN files, systemd units, nginx, avahi)
 - `studio/` — Sanity CMS workspace
 
 ## Branches
@@ -44,8 +45,8 @@ uConsole (every 5 min)
 
 ## Data Flow
 
-- **Device → Cloud:** push-status.sh → POST /api/device/push (Bearer token) → Redis (15-min TTL)
-- **Cloud → Browser:** Server Component reads Redis + GitHub API → renders dashboard
+- **Device → Cloud:** push-status.sh → POST /api/device/push (Bearer token) → Redis (persistent, no TTL)
+- **Cloud → Browser:** Server Component reads Redis + GitHub API → renders dashboard (shows "offline" banner if data >15 min stale)
 - **Setup:** uconsole setup → POST /api/device/code → user enters code at /link → device polls /api/device/poll/{secret} → gets token
 - **Install:** curl -fsSL uconsole.cloud/install | bash → downloads CLI + push-status.sh
 
@@ -96,14 +97,13 @@ Both must produce identical JSON schema. Edit canonical first, sync to install c
 
 ## Known Issues
 
-- CLI creates cron job but device uses systemd timer (misaligned, fix in Phase 2)
 - Vercel Deployment Protection blocks public device endpoints on preview URLs
 - Preview OAuth needs separate GitHub app (uconsole-cloud-preview)
 - fetchCommits limited to 50 (sufficient for now, bump when repo grows)
 
 ## Roadmap
 
-- **Phase 2:** mDNS/avahi, uconsole doctor, wifi-fallback telemetry
-- **Phase 3:** GitHub Device Flow (terminal-only auth + unified restore)
-- **Phase 4:** .deb packaging
+- ~~Phase 2: mDNS/avahi, uconsole doctor, wifi-fallback telemetry~~ (done)
+- ~~Phase 3: GitHub Device Flow (terminal-only auth + unified restore)~~ (done)
+- ~~Phase 4: .deb packaging~~ (done — see `packaging/`)
 - **Phase 5:** Client-side polling, alerts, device history, Tailscale

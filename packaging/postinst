@@ -1,0 +1,55 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    configure)
+        # Generate self-signed SSL cert if not present
+        CERT_DIR="/etc/ssl/uconsole"
+        if [ ! -f "$CERT_DIR/uconsole.crt" ]; then
+            mkdir -p "$CERT_DIR"
+            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                -keyout "$CERT_DIR/uconsole.key" \
+                -out "$CERT_DIR/uconsole.crt" \
+                -subj "/CN=uconsole.local" 2>/dev/null
+            chmod 600 "$CERT_DIR/uconsole.key"
+        fi
+
+        # Enable nginx site
+        ln -sfn /etc/nginx/sites-available/uconsole-webdash /etc/nginx/sites-enabled/
+        nginx -t 2>/dev/null && systemctl reload nginx || true
+
+        # Enable and start services
+        systemctl daemon-reload
+        systemctl enable uconsole-webdash.service
+        systemctl enable uconsole-status.timer
+        systemctl enable uconsole-backup.timer
+        systemctl enable uconsole-update.timer
+        systemctl start uconsole-webdash.service || true
+        systemctl start uconsole-status.timer || true
+
+        # Enable avahi if installed
+        if systemctl is-enabled avahi-daemon &>/dev/null; then
+            systemctl restart avahi-daemon || true
+        fi
+
+        # Create runtime data directory
+        mkdir -p /var/lib/uconsole
+        chmod 700 /var/lib/uconsole
+
+        # Make all scripts executable
+        chmod +x /opt/uconsole/scripts/*.sh /opt/uconsole/scripts/*.py /opt/uconsole/scripts/uconsole 2>/dev/null || true
+
+        echo ""
+        echo "========================================"
+        echo "  uconsole-cloud-tools installed!"
+        echo ""
+        echo "  Next steps:"
+        echo "    uconsole setup    Link to uconsole.cloud"
+        echo "    uconsole doctor   Check system health"
+        echo "    uconsole help     See all commands"
+        echo ""
+        echo "  Local dashboard: https://uconsole.local"
+        echo "========================================"
+        echo ""
+        ;;
+esac

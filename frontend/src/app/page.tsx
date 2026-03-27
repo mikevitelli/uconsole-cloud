@@ -25,7 +25,7 @@ import { LocalModeShell } from "@/components/dashboard/LocalModeShell";
 import { RepoLinker } from "@/components/RepoLinker";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { UserAvatar } from "@/components/UserWidget";
-import { getDeviceStatus, getLastKnownFallback } from "@/lib/deviceStatus";
+import { getDeviceStatus, getLastKnownFallback, formatAge, type DeviceStatusResult } from "@/lib/deviceStatus";
 import { checkSameNetwork } from "@/lib/network";
 import { headers } from "next/headers";
 import { CopyCommand } from "@/components/CopyCommand";
@@ -203,9 +203,9 @@ export default async function Home() {
   }
 
   // ── Fetch dashboard data ───────────────────────────────
-  let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus, lastKnownFallback;
+  let repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceResult: DeviceStatusResult | null, lastKnownFallback;
   try {
-    [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceStatus, lastKnownFallback] =
+    [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceResult, lastKnownFallback] =
       await Promise.all([
         fetchRepoInfo(session.accessToken, settings.repo),
         fetchCommits(session.accessToken, settings.repo),
@@ -256,13 +256,9 @@ export default async function Home() {
     0
   );
   const aptCategories = categorizeAptPackages(packages["APT"] || []);
-  // eslint-disable-next-line react-hooks/purity -- Server Component: Date.now() is safe here
-  const now = Date.now();
-  const deviceAgeMinutes = deviceStatus
-    ? Math.floor(
-        (now - new Date(deviceStatus.collectedAt).getTime()) / 60000
-      )
-    : 0;
+  const deviceStatus = deviceResult?.status ?? null;
+  const isDeviceOnline = deviceResult?.isOnline ?? false;
+  const deviceAgeMinutes = deviceResult?.ageMinutes ?? 0;
 
   // ── Same-network detection ──────────────────────────────
   const hdrs = await headers();
@@ -307,6 +303,12 @@ export default async function Home() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 overflow-hidden space-y-5">
         {!deviceStatus && <WaitingForDevice />}
+        {deviceStatus && !isDeviceOnline && (
+          <div className="flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-2.5 text-sm text-yellow-400">
+            <span className="shrink-0">&#9679;</span>
+            <span>Device offline — last seen {formatAge(deviceAgeMinutes)}</span>
+          </div>
+        )}
         <SystemSummary
           backups={commits}
           deviceStatus={deviceStatus}

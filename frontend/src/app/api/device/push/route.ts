@@ -56,8 +56,9 @@ export async function POST(req: NextRequest) {
     (body as Record<string, unknown>)._publicIp = devicePublicIp;
   }
 
-  // Write to Redis — server-side only
-  await redis.set(`device:${device.repo}:status`, body, { ex: 900 });
+  // Write to Redis — no TTL, persists until next push.
+  // "Online" status is derived from collectedAt age.
+  await redis.set(`device:${device.repo}:status`, body);
 
   return NextResponse.json({ ok: true });
 }
