@@ -1,0 +1,9 @@
+[Unit]
+Description=uConsole backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/uconsole/scripts/backup.sh
+WorkingDirectory=/opt/uconsole/scripts
