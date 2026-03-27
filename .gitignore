@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# claude code project memory
+CLAUDE.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
