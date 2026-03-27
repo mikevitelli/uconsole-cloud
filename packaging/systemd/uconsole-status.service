@@ -1,0 +1,9 @@
+[Unit]
+Description=Push uConsole status to uconsole.cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/uconsole/scripts/push-status.sh
+EnvironmentFile=/var/lib/uconsole/status.env

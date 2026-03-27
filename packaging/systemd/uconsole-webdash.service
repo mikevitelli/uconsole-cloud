@@ -1,0 +1,15 @@
+[Unit]
+Description=uConsole Web Dashboard
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/uconsole/scripts/webdash.py
+Environment=WEBDASH_PORT=8080
+WorkingDirectory=/opt/uconsole/scripts
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

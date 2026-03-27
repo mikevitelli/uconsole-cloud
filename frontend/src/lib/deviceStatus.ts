@@ -83,20 +83,36 @@ export interface DeviceStatusPayload {
 
 // ── Redis fetch ────────────────────────────────────────
 
+const ONLINE_THRESHOLD_MIN = 15;
+
+export interface DeviceStatusResult {
+  status: DeviceStatusPayload;
+  isOnline: boolean;
+  ageMinutes: number;
+}
+
 export async function getDeviceStatus(
   repo: string
-): Promise<DeviceStatusPayload | null> {
+): Promise<DeviceStatusResult | null> {
   const status = await redis.get<DeviceStatusPayload>(`device:${repo}:status`);
+  if (!status) return null;
 
-  // Persist wifi-fallback state with longer TTL so we can show
-  // smart offline messaging after the status TTL expires
-  if (status?.wifiFallback) {
+  if (status.wifiFallback) {
     await redis.set(`device:${repo}:fallback`, status.wifiFallback, {
-      ex: 60 * 60 * 24, // 24 hours
+      ex: 60 * 60 * 24,
     });
   }
 
-  return status;
+  const ageMinutes = Math.floor(
+    (Date.now() - new Date(status.collectedAt).getTime()) / 60000
+  );
+  return { status, isOnline: ageMinutes < ONLINE_THRESHOLD_MIN, ageMinutes };
+}
+
+export function formatAge(minutes: number): string {
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / 1440)}d ago`;
 }
 
 export async function getLastKnownFallback(

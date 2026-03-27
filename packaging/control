@@ -1,0 +1,15 @@
+Package: uconsole-cloud-tools
+Version: 0.1.0
+Architecture: arm64
+Maintainer: Mike Vitelli <mike@uconsole.cloud>
+Installed-Size: 600
+Depends: python3 (>= 3.9), python3-flask (>= 2.2), curl (>= 7.64), nginx (>= 1.18), systemd, bash (>= 4.0), qrencode (>= 4.0)
+Recommends: avahi-daemon, network-manager
+Suggests: gh
+Section: utils
+Priority: optional
+Homepage: https://uconsole.cloud
+Description: Cloud dashboard and local management tools for ClockworkPi uConsole
+ Provides remote monitoring via uconsole.cloud and a local web dashboard
+ accessible at https://uconsole.local. Includes 15+ system management
+ scripts for battery, network, storage, backup, and more.

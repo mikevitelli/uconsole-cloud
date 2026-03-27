@@ -14,16 +14,13 @@ export async function GET() {
     return NextResponse.json({ error: "No repo linked" }, { status: 400 });
   }
 
-  const status = await getDeviceStatus(settings.repo);
-  if (!status) {
+  const result = await getDeviceStatus(settings.repo);
+  if (!result) {
     return NextResponse.json({ online: false, status: null });
   }
 
-  const collectedAt = new Date(status.collectedAt).getTime();
-  const ageMinutes = Math.floor((Date.now() - collectedAt) / 60000);
-
   return NextResponse.json(
-    { online: true, ageMinutes, status },
+    { online: result.isOnline, ageMinutes: result.ageMinutes, status: result.status },
     {
       headers: {
         "Cache-Control": "s-maxage=30, stale-while-revalidate=120",
