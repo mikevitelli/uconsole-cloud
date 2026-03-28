@@ -116,7 +116,7 @@ uConsole (arm64, Debian)                 Cloud (Vercel)
 │  │   ├── radio/          │         │  │ Server Components  │  │
 │  │   └── util/           │         │  │ + GitHub API proxy │  │
 │  ├── webdash/            │         │  └────────────────────┘  │
-│  │   └── webdash.py ◄──┐│         │         │                │
+│  │   └── app.py    ◄──┐│         │         │                │
 │  └── lib/               ││         │         ▼                │
 │                    nginx ││         │    HTML stream           │
 │                    :443  ││         │                          │
@@ -157,12 +157,14 @@ uConsole (arm64, Debian)                 Cloud (Vercel)
 
 ```
 uconsole setup     Interactive setup wizard (hardware detect, passwords, cloud link)
+uconsole link      Link device to uconsole.cloud (code auth only, no wizard)
 uconsole push      Push status now
 uconsole status    Show config, timer status, last push
 uconsole doctor    Diagnose services, SSL, nginx, connectivity
 uconsole restore   Run restore.sh from backup repo
 uconsole unlink    Remove cloud config and stop timer
 uconsole update    Update via APT (or re-download scripts for curl installs)
+uconsole version   Show installed version
 uconsole help      Show all commands
 ```
 
@@ -193,8 +195,7 @@ uconsole-cloud_0.1.0_arm64.deb
 ├── /etc/systemd/system/        7 unit files (not auto-enabled)
 ├── /etc/nginx/sites-available/ uconsole-webdash (not auto-enabled)
 ├── /etc/avahi/services/        mDNS advertisement
-├── /usr/bin/uconsole           symlink → /opt/uconsole/bin/uconsole
-└── /var/lib/uconsole/          runtime data (status.env, tokens)
+└── /usr/bin/uconsole           symlink → /opt/uconsole/bin/uconsole
 ```
 
 Services are **not** auto-started on install — `uconsole setup` handles that after the interactive configuration wizard.
@@ -226,6 +227,7 @@ make release            # bump version, build, publish, commit + tag
 | `/install` | GET | No | APT bootstrap script |
 | `/apt/*` | GET | No | APT repository (Packages, Release, .deb files) |
 | `/link` | Page | No | Device code entry (accepts `?code=` for QR) |
+| `/docs` | Page | No | Documentation (install, CLI, architecture, troubleshooting) |
 
 See [docs/DEVICE-LINKING.md](docs/DEVICE-LINKING.md) for the full device auth flow.
 
@@ -253,8 +255,9 @@ uconsole-cloud/
 │   ├── public/
 │   │   ├── scripts/                Install-time copies of CLI + push-status.sh
 │   │   ├── install.sh              APT bootstrap installer
-│   │   └── apt/                    APT repository (generated, gitignored pool/dists)
+│   │   └── apt/                    GPG-signed APT repository (Packages, Release, .deb)
 │   └── next.config.ts              Security headers, image config
+├── example-device/                 Scrubbed pkg/ for contributors (builds without private repo)
 ├── packaging/                      .deb build system
 │   ├── build-deb.sh                Build script (reads VERSION, organized layout)
 │   ├── control                     Package metadata + dependencies
@@ -288,7 +291,7 @@ uconsole-cloud/
 | Error handling | Typed GitHubError (401/403 surfaced), error boundary hides internals |
 | Data isolation | Redis keys scoped by repo, device tokens scoped by user |
 | Local TLS | Self-signed cert at `/etc/uconsole/ssl/` (generated at install) |
-| Secrets | `status.env` is chmod 600, `/var/lib/uconsole/` is chmod 700 |
+| Secrets | `status.env` is chmod 600, owned by device user |
 | APT repo | GPG-signed Release files, key distributed via HTTPS |
 
 ---
