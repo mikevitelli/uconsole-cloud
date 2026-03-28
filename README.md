@@ -86,7 +86,7 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 curl -s https://uconsole.cloud/install | sudo bash
 ```
 
-That's it. This adds the APT repo and runs `apt install uconsole-tools`. Then:
+That's it. This adds the APT repo and runs `apt install uconsole-cloud`. Then:
 
 ```bash
 uconsole setup
@@ -171,13 +171,13 @@ uconsole help      Show all commands
 ## .deb package
 
 ```
-apt install uconsole-tools
+apt install uconsole-cloud
 ```
 
 Installs to `/opt/uconsole/` with organized subdirectories:
 
 ```
-uconsole-tools_0.1.0_arm64.deb
+uconsole-cloud_0.1.0_arm64.deb
 ├── /opt/uconsole/
 │   ├── bin/                    uconsole CLI, console TUI launcher
 │   ├── lib/                    tui_lib.py, lib.sh, shared modules
@@ -202,7 +202,7 @@ Services are **not** auto-started on install — `uconsole setup` handles that a
 ### Building
 
 ```bash
-make build-deb          # → dist/uconsole-tools_0.1.0_arm64.deb
+make build-deb          # → dist/uconsole-cloud_0.1.0_arm64.deb
 make publish-apt        # update APT repo in frontend/public/apt/
 make release            # bump version, build, publish, commit + tag
 ```

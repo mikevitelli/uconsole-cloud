@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Generate APT repository metadata from a .deb file.
-# Usage: bash packaging/scripts/generate-repo.sh dist/uconsole-tools_X.Y.Z_arm64.deb
+# Usage: bash packaging/scripts/generate-repo.sh dist/uconsole-cloud_X.Y.Z_arm64.deb
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APT_DIR="${REPO_ROOT}/frontend/public/apt"
@@ -23,7 +23,7 @@ DEB_BASENAME="$(basename "$DEB_FILE")"
 echo "Publishing ${DEB_BASENAME} to APT repository..."
 
 # Create directory structure
-POOL_DIR="${APT_DIR}/pool/main/u/uconsole-tools"
+POOL_DIR="${APT_DIR}/pool/main/u/uconsole-cloud"
 DIST_DIR="${APT_DIR}/dists/stable"
 BINARY_DIR="${DIST_DIR}/main/binary-arm64"
 
@@ -52,7 +52,7 @@ else
 
     cat > "${BINARY_DIR}/Packages" <<PKGEOF
 ${CONTROL}
-Filename: pool/main/u/uconsole-tools/${DEB_BASENAME}
+Filename: pool/main/u/uconsole-cloud/${DEB_BASENAME}
 Size: ${PKG_SIZE}
 SHA256: ${PKG_SHA256}
 PKGEOF
@@ -102,7 +102,7 @@ cd "${REPO_ROOT}"
 
 echo ""
 echo "APT repository updated at: frontend/public/apt/"
-echo "  Pool: pool/main/u/uconsole-tools/${DEB_BASENAME}"
+echo "  Pool: pool/main/u/uconsole-cloud/${DEB_BASENAME}"
 echo "  Index: dists/stable/main/binary-arm64/Packages"
 echo ""
 echo "Deploy to Vercel to make the repo live."
