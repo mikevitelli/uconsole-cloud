@@ -1,4 +1,5 @@
 import { StatusGrid } from "@/components/viz/StatusGrid";
+import { COVERAGE_ITEMS } from "@/lib/backup-config";
 import type { BackupEntry } from "@/lib/types";
 import { ageLabel, freshnessColor, getLastBackupByCategory } from "@/lib/utils";
 
@@ -13,24 +14,6 @@ interface BackupCoverageProps {
   hasScripts: boolean;
   content?: BackupCoverageContent;
 }
-
-// Map backup categories to coverage items
-// Some coverage items map directly to backup categories,
-// others are derived from file existence checks
-export const COVERAGE_ITEMS: {
-  name: string;
-  backupCategory: string; // matches against backup commit categories
-  fileCheck?: "packages" | "extensions" | "scripts"; // also derived from file data
-}[] = [
-  { name: "Shell configs", backupCategory: "dotfiles" },
-  { name: "System configs", backupCategory: "system" },
-  { name: "Package manifests", backupCategory: "packages", fileCheck: "packages" },
-  { name: "Browser", backupCategory: "browser", fileCheck: "extensions" },
-  { name: "Scripts", backupCategory: "scripts", fileCheck: "scripts" },
-  { name: "Desktop (dconf)", backupCategory: "desktop" },
-  { name: "Git/SSH config", backupCategory: "git" },
-  { name: "GitHub CLI", backupCategory: "gh" },
-];
 
 
 export function BackupCoverage({

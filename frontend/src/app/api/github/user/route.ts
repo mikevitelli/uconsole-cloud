@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAuthWithToken } from "@/lib/api-helpers";
 import { fetchGitHubUser } from "@/lib/github";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.accessToken || !session?.user?.id) {
+  const session = await requireAuthWithToken();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

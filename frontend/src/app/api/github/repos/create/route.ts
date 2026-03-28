@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAuthWithToken } from "@/lib/api-helpers";
 import { setUserSettings } from "@/lib/redis";
 import { generateDeviceToken } from "@/lib/deviceToken";
 import { createBootstrapRepo } from "@/lib/github";
@@ -7,8 +7,8 @@ import { createBootstrapRepo } from "@/lib/github";
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/;
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken || !session?.user?.id) {
+  const session = await requireAuthWithToken();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

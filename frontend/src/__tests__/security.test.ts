@@ -158,20 +158,23 @@ describe("API route auth guards", () => {
     it(`${route} should check auth`, async () => {
       const fs = await import("fs");
       const source = fs.readFileSync(route, "utf-8");
-      // Every route must call auth() and check the session
-      expect(source).toContain("auth()");
+      // Every route must call auth() directly or via requireAuth()/requireAuthWithToken()
+      const hasAuth = source.includes("auth()") ||
+        source.includes("requireAuth()") ||
+        source.includes("requireAuthWithToken()");
+      expect(hasAuth).toBe(true);
       expect(source).toMatch(/Unauthorized/);
     });
   }
 
-  it("repos route should check user.id not just accessToken", async () => {
+  it("repos route should check accessToken via requireAuthWithToken", async () => {
     const fs = await import("fs");
     const source = fs.readFileSync(
       "src/app/api/github/repos/route.ts",
       "utf-8"
     );
-    // Should check both accessToken AND user.id for consistency
-    expect(source).toMatch(/session\?\.accessToken/);
+    // Should use requireAuthWithToken to ensure both user.id and accessToken
+    expect(source).toContain("requireAuthWithToken");
   });
 });
 
@@ -253,7 +256,10 @@ describe("Device push endpoint", () => {
       "src/app/api/device/code/confirm/route.ts",
       "utf-8"
     );
-    expect(source).toContain("auth()");
+    const hasAuth = source.includes("auth()") ||
+      source.includes("requireAuth()") ||
+      source.includes("requireAuthWithToken()");
+    expect(hasAuth).toBe(true);
     expect(source).toMatch(/Unauthorized/);
   });
 
