@@ -33,10 +33,12 @@ case "$1" in
         find /opt/uconsole/ -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
         chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 
-        # Inject actual username into webdash service unit
+        # Inject actual username into all service units
         REAL_USER="${SUDO_USER:-$(whoami)}"
-        if [ "$REAL_USER" != "root" ] && [ -f /etc/systemd/system/uconsole-webdash.service ]; then
-            sed -i "s/UCONSOLE_USER/${REAL_USER}/g" /etc/systemd/system/uconsole-webdash.service
+        if [ "$REAL_USER" != "root" ]; then
+            for unit in /etc/systemd/system/uconsole-*.service; do
+                [ -f "$unit" ] && sed -i "s/UCONSOLE_USER/${REAL_USER}/g" "$unit"
+            done
         fi
 
         # Enable nginx site
