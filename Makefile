@@ -37,7 +37,7 @@ publish-apt:
 
 release: bump-patch build-deb publish-apt
 	@NEW_VERSION=$$(cat $(VERSION_FILE) | tr -d '[:space:]'); \
-	git add VERSION dist/ frontend/public/apt/ packaging/; \
+	git add VERSION frontend/public/apt/ packaging/ .gitignore; \
 	git commit -m "release: v$$NEW_VERSION"; \
 	git tag "v$$NEW_VERSION"
 	@echo ""

@@ -1,0 +1,21 @@
+Package: uconsole-cloud
+Version: 0.1.0
+Architecture: arm64
+Maintainer: Mike Vitelli <mike@uconsole.cloud>
+Installed-Size: 600
+Depends: python3 (>= 3.9), python3-flask (>= 2.2), python3-bcrypt, python3-socketio, curl (>= 7.64), nginx (>= 1.18), systemd, bash (>= 4.0), qrencode (>= 4.0)
+Recommends: avahi-daemon, network-manager
+Suggests: gpsd, rtl-sdr, gh
+Filename: pool/main/u/uconsole-cloud/uconsole-cloud_0.1.0_arm64.deb
+Size: 864196
+MD5sum: 5ee3ad1e78aa6224baa2224cc7695949
+SHA1: eb5d4fe88d9e568081410db3e426d2b622fa4418
+SHA256: 47a85a6d7b0c81e30b4526c35e44cd49ca8e0dbe6e495e94fdd022dbbaf29364
+Section: utils
+Priority: optional
+Homepage: https://uconsole.cloud
+Description: Device management tools for ClockworkPi uConsole
+ Provides a TUI (console), local web dashboard (uconsole.local),
+ cloud telemetry push to uconsole.cloud, and 40+ system management
+ scripts for battery, network, storage, radio, and backup.
+
