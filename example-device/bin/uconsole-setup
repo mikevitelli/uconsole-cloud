@@ -443,13 +443,18 @@ if ([ -f "$CERT" ] || [ -f "$SSL_DIR/uconsole.pem" ]) && [ -f "$KEY" ]; then
 else
     info "Generating self-signed SSL certificate..."
     sudo mkdir -p "$SSL_DIR" 2>/dev/null || mkdir -p "$SSL_DIR"
+    LAN_IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+    SAN="DNS:uconsole.local,DNS:uconsole,IP:127.0.0.1"
+    [ -n "$LAN_IP" ] && SAN="$SAN,IP:$LAN_IP"
     sudo openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout "$KEY" -out "$CERT" \
         -days 3650 -subj "/CN=uconsole.local" \
-        -addext "subjectAltName=DNS:uconsole.local,DNS:uconsole,IP:127.0.0.1" \
-        2>/dev/null && ok "SSL certificate generated" || warn "Failed to generate SSL cert (openssl not installed?)"
+        -addext "subjectAltName=$SAN" \
+        2>/dev/null && ok "SSL certificate generated (SANs: $SAN)" || warn "Failed to generate SSL cert (openssl not installed?)"
     sudo chmod 640 "$KEY" 2>/dev/null
     sudo chgrp www-data "$KEY" 2>/dev/null
+    # copy for download endpoint
+    sudo cp "$CERT" "$PKG_BASE/webdash/uconsole.crt" 2>/dev/null || true
 fi
 
 # nginx config check
