@@ -102,7 +102,7 @@ export default async function Home() {
 
           {/* Install command reference */}
           <div className="w-full max-w-lg mb-2">
-            <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+            <CopyCommand command="curl -s https://uconsole.cloud/install | sudo bash" />
           </div>
           <a href="/install" className="text-[11px] text-dim hover:text-sub transition-colors">
             View install script source

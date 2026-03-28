@@ -2,8 +2,8 @@ server {
     listen 443 ssl;
     server_name uconsole.local _;
 
-    ssl_certificate /etc/ssl/uconsole/uconsole.crt;
-    ssl_certificate_key /etc/ssl/uconsole/uconsole.key;
+    ssl_certificate /etc/uconsole/ssl/uconsole.crt;
+    ssl_certificate_key /etc/uconsole/ssl/uconsole.key;
     ssl_protocols TLSv1.2 TLSv1.3;
 
     # CORS for uconsole.cloud

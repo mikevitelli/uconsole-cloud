@@ -62,7 +62,7 @@ export function WaitingForDevice() {
         <li className="flex items-start gap-2">
           <span className="text-xs font-mono text-accent bg-accent/10 border border-accent/20 rounded px-1.5 py-0.5 shrink-0">1</span>
           <div className="flex-1">
-            <CopyCommand command="curl -fsSL https://uconsole.cloud/install | bash" />
+            <CopyCommand command="curl -s https://uconsole.cloud/install | sudo bash" />
           </div>
         </li>
         <li className="flex items-start gap-2">

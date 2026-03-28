@@ -1,4 +1,5 @@
 import { redis } from "./redis";
+import type { HardwareManifest } from "./device-config-schema";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -78,6 +79,8 @@ export interface DeviceStatusPayload {
   screen: { brightness: number; maxBrightness: number };
   webdash?: WebdashStatus;
   wifiFallback?: WifiFallbackStatus;
+  /** Hardware manifest from /etc/uconsole/hardware.json — present on devices with uconsole-tools ≥0.1.0 */
+  hardware?: HardwareManifest;
   collectedAt: string;
 }
 
