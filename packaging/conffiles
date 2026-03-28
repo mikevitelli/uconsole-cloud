@@ -1,2 +1,3 @@
+/etc/uconsole/uconsole.conf
 /etc/nginx/sites-available/uconsole-webdash
 /etc/avahi/services/uconsole-webdash.service
