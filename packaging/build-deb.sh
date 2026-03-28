@@ -12,14 +12,17 @@ VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 
 PKG="uconsole-cloud"
 BUILD_DIR="${REPO_ROOT}/dist/${PKG}_${VERSION}_arm64"
-DEVICE_PKG="${HOME}/uconsole/pkg"
+DEVICE_PKG="${UCONSOLE_DEVICE_PKG:-${HOME}/uconsole/pkg}"
 CLI_SRC="${REPO_ROOT}/frontend/public/scripts/uconsole"
 
-# Validate sources exist
+# Validate sources exist — fall back to bundled example-device/
 if [ ! -d "$DEVICE_PKG" ]; then
-    echo "ERROR: Device repo pkg/ not found at ${DEVICE_PKG}." >&2
-    echo "  Clone mikevitelli/uconsole and ensure pkg/ exists." >&2
-    exit 1
+    DEVICE_PKG="${REPO_ROOT}/example-device"
+    if [ ! -d "$DEVICE_PKG" ]; then
+        echo "ERROR: Device pkg/ not found. Set UCONSOLE_DEVICE_PKG or clone the device repo." >&2
+        exit 1
+    fi
+    echo "Using bundled example-device/ (no device repo found at ~/uconsole/pkg)"
 fi
 if [ ! -f "$CLI_SRC" ]; then
     echo "ERROR: CLI source not found at ${CLI_SRC}" >&2
