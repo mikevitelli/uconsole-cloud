@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireAuth, requireAuthWithToken } from "@/lib/api-helpers";
 import {
   getUserSettings,
   setUserSettings,
@@ -9,8 +9,8 @@ import { validateUconsoleRepo } from "@/lib/github";
 import { generateDeviceToken, revokeDeviceToken } from "@/lib/deviceToken";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const session = await requireAuth();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const settings = await getUserSettings(session.user.id);
@@ -18,8 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.accessToken || !session?.user?.id) {
+  const session = await requireAuthWithToken();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const session = await requireAuth();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   await revokeDeviceToken(session.user.id);

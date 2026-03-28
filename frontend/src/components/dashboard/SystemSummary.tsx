@@ -1,7 +1,7 @@
 import type { BackupEntry } from "@/lib/types";
 import type { DeviceStatusPayload } from "@/lib/deviceStatus";
 import { daysSince, getLastBackupByCategory } from "@/lib/utils";
-import { COVERAGE_ITEMS } from "@/components/dashboard/BackupCoverage";
+import { COVERAGE_ITEMS } from "@/lib/backup-config";
 
 interface SystemSummaryProps {
   backups: BackupEntry[];

@@ -205,18 +205,6 @@ export function CalendarGrid({ data }: CalendarGridProps) {
         </div>
       )}
 
-      {/* Legend */}
-      <div className="flex items-center justify-end gap-1.5 mt-1.5 text-[10px] text-dim">
-        <span>Less</span>
-        {COLORS.map((color) => (
-          <span
-            key={color}
-            className="w-[10px] h-[10px] rounded-[2px] inline-block"
-            style={{ background: color }}
-          />
-        ))}
-        <span>More</span>
-      </div>
     </div>
   );
 }
