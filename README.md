@@ -39,7 +39,7 @@ A three-tier platform for managing the ClockworkPi uConsole — a modular ARM ha
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │ Battery: 100% │  │ CPU: 34.0°C  │  │ WiFi: Big Parma    │ │
+│  │ Battery: 100% │  │ CPU: 34.0°C  │  │ WiFi: MyNetwork    │ │
 │  │ Charging      │  │ Load: 0.18   │  │ Signal: -57 dBm    │ │
 │  └──────────────┘  └──────────────┘  └────────────────────┘ │
 │                                                              │

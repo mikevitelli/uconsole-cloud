@@ -13,7 +13,7 @@ Wait for green LED to stop. Swap micro SD on CM4 carrier board.
 
 ## 3. First boot
 - Set your username (e.g. `your-user`)
-- Connect to wifi: `Big Parma - 2.4GHz`
+- Connect to wifi: `MyNetwork - 2.4GHz`
 
 ## 4. SSH in from other machine
 ```bash

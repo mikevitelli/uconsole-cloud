@@ -572,7 +572,7 @@ def run_esp32_monitor(scr):
         tui.put(scr, y, lx + 2, f"last update: {age_str}", pw_l - 4, dim)
         y += 1
         tui.panel_side(scr, y, lx, pw_l)
-        tui.put(scr, y, lx + 2, "WiFi: Big Parma - 2.4GHz", pw_l - 4, dim)
+        tui.put(scr, y, lx + 2, "WiFi: MyNetwork - 2.4GHz", pw_l - 4, dim)
         y += 1
         tui.panel_bot(scr, y, lx, pw_l)
 
