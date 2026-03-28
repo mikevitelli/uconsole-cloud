@@ -48,7 +48,7 @@ export function HardwarePanel({ hardware }: HardwarePanelProps) {
           <span>&#x2699;</span> Hardware
         </h2>
         <p className="text-sm text-sub mt-2">
-          No hardware manifest available. Install uconsole-tools ≥0.1.0 and run{" "}
+          No hardware manifest available. Install uconsole-cloud ≥0.1.0 and run{" "}
           <code className="bg-background px-1 rounded text-xs">uconsole setup</code>{" "}
           to generate hardware.json.
         </p>

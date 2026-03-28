@@ -80,26 +80,21 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 ---
 
-## Getting started
-
-### Install on your uConsole
+## Install
 
 ```bash
 curl -s https://uconsole.cloud/install | sudo bash
+```
+
+That's it. This adds the APT repo and runs `apt install uconsole-cloud`. Then:
+
+```bash
 uconsole setup
 ```
 
-This adds the APT repository, installs `uconsole-tools`, and walks you through hardware detection and cloud linking. Future updates arrive via `sudo apt upgrade`.
+The setup wizard detects your hardware, generates SSL certs, sets passwords, and optionally links to uconsole.cloud. After that, `sudo apt upgrade` handles future updates.
 
-### What happens
-
-1. **APT repo added** — GPG key + source list for `uconsole.cloud/apt`
-2. **Package installed** — CLI, scripts, systemd services, nginx config, avahi mDNS
-3. **`uconsole setup`** — detects hardware, generates SSL cert, sets passwords, optionally links to uconsole.cloud via device code auth
-4. **Telemetry starts** — `push-status.sh` runs every 5 minutes via systemd timer
-5. **Webdash starts** — Flask app at `:8080`, nginx reverse proxy at `:443`
-
-Cloud linking is optional. Everything works 100% offline — the local webdash, TUI, and all management scripts run without internet.
+Cloud is optional — everything works offline.
 
 ---
 
@@ -175,10 +170,14 @@ uconsole help      Show all commands
 
 ## .deb package
 
-The `uconsole-tools` package installs to `/opt/uconsole/` with organized subdirectories:
+```
+apt install uconsole-cloud
+```
+
+Installs to `/opt/uconsole/` with organized subdirectories:
 
 ```
-uconsole-tools_0.1.0_arm64.deb
+uconsole-cloud_0.1.0_arm64.deb
 ├── /opt/uconsole/
 │   ├── bin/                    uconsole CLI, console TUI launcher
 │   ├── lib/                    tui_lib.py, lib.sh, shared modules
@@ -203,7 +202,7 @@ Services are **not** auto-started on install — `uconsole setup` handles that a
 ### Building
 
 ```bash
-make build-deb          # → dist/uconsole-tools_0.1.0_arm64.deb
+make build-deb          # → dist/uconsole-cloud_0.1.0_arm64.deb
 make publish-apt        # update APT repo in frontend/public/apt/
 make release            # bump version, build, publish, commit + tag
 ```
