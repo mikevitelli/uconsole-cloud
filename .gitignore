@@ -19,6 +19,13 @@ out/
 build/
 dist/
 
+# APT repo generated artifacts (pool has .deb binaries, dists has indexes)
+frontend/public/apt/pool/
+frontend/public/apt/dists/
+
+# GPG private keys (NEVER commit)
+*-private.gpg
+
 # misc
 .DS_Store
 *.pem

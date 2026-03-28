@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/uconsole/scripts/webdash.py
+ExecStart=/usr/bin/python3 /opt/uconsole/webdash/webdash.py
 Environment=WEBDASH_PORT=8080
-WorkingDirectory=/opt/uconsole/scripts
+WorkingDirectory=/opt/uconsole/webdash
 Restart=always
 RestartSec=3
 
