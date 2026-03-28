@@ -1,4 +1,4 @@
-Package: uconsole-cloud
+Package: uconsole-tools
 Version: 0.1.0
 Architecture: arm64
 Maintainer: Mike Vitelli <mike@uconsole.cloud>

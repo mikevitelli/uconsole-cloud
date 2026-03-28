@@ -42,7 +42,7 @@ case "$1" in
 
         echo ""
         echo "========================================"
-        echo "  uconsole-cloud installed!"
+        echo "  uconsole-tools installed!"
         echo ""
         echo "  Run 'uconsole setup' to configure"
         echo "  your device."

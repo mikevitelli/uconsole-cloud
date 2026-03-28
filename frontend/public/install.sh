@@ -1,8 +1,8 @@
 #!/bin/bash
-# uconsole-cloud installer
+# uconsole-tools installer
 # Usage: curl -s https://uconsole.cloud/install | sudo bash
 #
-# Adds the uconsole APT repository and installs uconsole-cloud.
+# Adds the uconsole APT repository and installs uconsole-tools.
 # Safe to run multiple times (idempotent).
 set -euo pipefail
 
@@ -17,7 +17,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-echo "Installing uconsole-cloud from ${BASE_URL}..."
+echo "Installing uconsole-tools from ${BASE_URL}..."
 echo ""
 
 # Create keyrings directory if needed
@@ -39,8 +39,8 @@ EOF
 echo "Updating package lists..."
 apt-get update -qq
 
-echo "Installing uconsole-cloud..."
-apt-get install -y uconsole-cloud
+echo "Installing uconsole-tools..."
+apt-get install -y uconsole-tools
 
 echo ""
 echo "Installation complete. Run 'uconsole setup' to configure your device."
