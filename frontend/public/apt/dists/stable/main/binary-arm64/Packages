@@ -7,10 +7,10 @@ Depends: python3 (>= 3.9), python3-flask (>= 2.2), python3-bcrypt, python3-socke
 Recommends: avahi-daemon, network-manager
 Suggests: gpsd, rtl-sdr, gh
 Filename: pool/main/u/uconsole-cloud/uconsole-cloud_0.1.0_arm64.deb
-Size: 864196
-MD5sum: 5ee3ad1e78aa6224baa2224cc7695949
-SHA1: eb5d4fe88d9e568081410db3e426d2b622fa4418
-SHA256: 47a85a6d7b0c81e30b4526c35e44cd49ca8e0dbe6e495e94fdd022dbbaf29364
+Size: 801156
+MD5sum: 418da21fa60cb135080f5b19229c8e5e
+SHA1: 0ab227b6a28e787e0396ec9c4e474a2937cc3ff2
+SHA256: ca0c7f4374a8aed118a06b754b6dd09abb89a70bbdc3f229e22027ec53db8421
 Section: utils
 Priority: optional
 Homepage: https://uconsole.cloud
@@ -19,3 +19,6 @@ Description: Device management tools for ClockworkPi uConsole
  cloud telemetry push to uconsole.cloud, and 40+ system management
  scripts for battery, network, storage, radio, and backup.
 
+dpkg-scanpackages: warning: Packages in archive but missing from override file:
+dpkg-scanpackages: warning:   uconsole-cloud
+dpkg-scanpackages: info: Wrote 1 entries to output Packages file.
