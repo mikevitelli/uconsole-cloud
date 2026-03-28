@@ -15,8 +15,8 @@ exec 200>"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wifi.sh.lock"
 flock -n 200 || { err "Another wifi.sh instance is running"; exit 1; }
 
 IFACE="wlan0"
-IPHONE_CON="PhoneHotspot"
-HOME_CON="HomeWiFi"
+IPHONE_CON="MyHotspot"
+HOME_CON="MyNetwork"
 OFFICE_CON="OfficeWiFi"
 
 # ── helpers ──
