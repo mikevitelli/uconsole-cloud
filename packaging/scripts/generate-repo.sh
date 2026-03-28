@@ -87,9 +87,10 @@ EOF
 # Sign Release → InRelease (if GPG key is available)
 if gpg --list-keys "${KEY_EMAIL}" &>/dev/null; then
     echo "Signing Release with GPG key..."
-    gpg --default-key "${KEY_EMAIL}" --armor --detach-sign \
+    rm -f "${DIST_DIR}/Release.gpg" "${DIST_DIR}/InRelease"
+    gpg --batch --yes --pinentry-mode loopback --default-key "${KEY_EMAIL}" --armor --detach-sign \
         --output "${DIST_DIR}/Release.gpg" "${DIST_DIR}/Release"
-    gpg --default-key "${KEY_EMAIL}" --armor --clearsign \
+    gpg --batch --yes --pinentry-mode loopback --default-key "${KEY_EMAIL}" --armor --clearsign \
         --output "${DIST_DIR}/InRelease" "${DIST_DIR}/Release"
     echo "Repository signed."
 else
