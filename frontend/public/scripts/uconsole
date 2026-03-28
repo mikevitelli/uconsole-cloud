@@ -64,9 +64,16 @@ cmd_setup() {
 
 cmd_link() {
   # Check for existing config
-  if [ -f "${ENV_FILE}" ]; then
+  local env_readable=false
+  if [ "$INSTALL_MODE" = "package" ] && sudo test -f "${ENV_FILE}" 2>/dev/null; then
+    env_readable=true
+    eval "$(sudo cat "${ENV_FILE}" 2>/dev/null)"
+  elif [ -f "${ENV_FILE}" ]; then
+    env_readable=true
     # shellcheck source=/dev/null
     source "${ENV_FILE}"
+  fi
+  if [ "$env_readable" = true ]; then
     echo "This device is already linked."
     echo "  Repo:  ${DEVICE_REPO:-unknown}"
     echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
@@ -345,10 +352,16 @@ cmd_doctor() {
   local pass=0 fail=0
 
   # Config
-  if [ -f "${ENV_FILE}" ]; then
+  local env_exists=false
+  if [ "$INSTALL_MODE" = "package" ]; then
+    sudo test -f "${ENV_FILE}" 2>/dev/null && env_exists=true
+  else
+    [ -f "${ENV_FILE}" ] && env_exists=true
+  fi
+  if [ "$env_exists" = true ]; then
     echo "  [OK] Config file exists (${ENV_FILE})"
     pass=$((pass + 1))
-    PERMS=$(stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FILE}" 2>/dev/null)
+    PERMS=$(sudo stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FILE}" 2>/dev/null)
     if [ "$PERMS" = "600" ]; then
       echo "  [OK] Config permissions (600)"
       pass=$((pass + 1))
@@ -362,8 +375,10 @@ cmd_doctor() {
   fi
 
   # Push script
-  if [ -x "${SCRIPTS_DIR}/push-status.sh" ]; then
-    echo "  [OK] push-status.sh found (${SCRIPTS_DIR}/push-status.sh)"
+  local push_script="${SCRIPTS_DIR}/push-status.sh"
+  [ "$INSTALL_MODE" = "package" ] && push_script="${SCRIPTS_DIR}/system/push-status.sh"
+  if [ -x "$push_script" ]; then
+    echo "  [OK] push-status.sh found ($push_script)"
     pass=$((pass + 1))
   elif [ "$INSTALL_MODE" = "standalone" ] && [ -x "${HOME}/uconsole/scripts/push-status.sh" ]; then
     echo "  [OK] push-status.sh found (${HOME}/uconsole/scripts/push-status.sh)"
