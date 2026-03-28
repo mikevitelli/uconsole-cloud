@@ -1,0 +1,27 @@
+[device]
+hostname = uconsole
+expansion_module = auto
+wifi_method = auto
+
+[webdash]
+enabled = true
+port = 8080
+bind = 127.0.0.1
+ssl_cert = /etc/uconsole/ssl/uconsole.crt
+ssl_key = /etc/uconsole/ssl/uconsole.key
+
+[cloud]
+enabled = false
+push_interval = 300
+api_url = https://uconsole.cloud
+
+[backup]
+enabled = false
+schedule = daily
+time = 03:00
+categories = shell,system,packages,browser,desktop,git,scripts
+
+[power]
+cpu_freq_cap = 0
+low_battery_shutdown = 3200
+charge_current = 1000

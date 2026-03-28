@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    purge)
+        # Only remove config and data on purge (dpkg --purge)
+        rm -rf /etc/uconsole/
+        rm -rf /opt/uconsole/
+        rm -rf /var/lib/uconsole/
+        echo "Purged uconsole-tools config and data."
+        ;;
+esac

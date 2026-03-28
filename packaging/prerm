@@ -3,7 +3,7 @@ set -e
 
 case "$1" in
     remove|purge)
-        # Stop services
+        # Stop all uconsole services
         systemctl stop uconsole-webdash.service 2>/dev/null || true
         systemctl stop uconsole-status.timer 2>/dev/null || true
         systemctl stop uconsole-status.service 2>/dev/null || true
@@ -18,7 +18,7 @@ case "$1" in
         systemctl disable uconsole-backup.timer 2>/dev/null || true
         systemctl disable uconsole-update.timer 2>/dev/null || true
 
-        # Remove nginx site
+        # Disable nginx site
         rm -f /etc/nginx/sites-enabled/uconsole-webdash
         nginx -t 2>/dev/null && systemctl reload nginx || true
 
