@@ -110,8 +110,13 @@ export async function getDeviceStatus(
 }
 
 export function formatAge(minutes: number): string {
+  if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  if (minutes < 1440) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
+  }
   return `${Math.floor(minutes / 1440)}d ago`;
 }
 
