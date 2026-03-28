@@ -7,3 +7,5 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/opt/uconsole/scripts/system/update.sh
 WorkingDirectory=/opt/uconsole/scripts/system
+User=UCONSOLE_USER
+Group=UCONSOLE_USER
