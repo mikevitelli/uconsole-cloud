@@ -7,6 +7,6 @@ case "$1" in
         rm -rf /etc/uconsole/
         rm -rf /opt/uconsole/
         rm -rf /var/lib/uconsole/
-        echo "Purged uconsole-cloud config and data."
+        echo "Purged uconsole-tools config and data."
         ;;
 esac
