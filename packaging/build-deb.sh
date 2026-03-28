@@ -59,6 +59,9 @@ chmod +x "${BUILD_DIR}/opt/uconsole/bin/uconsole"
 mkdir -p "${BUILD_DIR}/opt/uconsole/share/defaults"
 cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/opt/uconsole/share/defaults/"
 
+# Ship uconsole.conf as a dpkg conffile (postinst won't overwrite user edits)
+cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/etc/uconsole/uconsole.conf"
+
 # Make all scripts executable
 find "${BUILD_DIR}/opt/uconsole/" -name "*.sh" -exec chmod +x {} \;
 find "${BUILD_DIR}/opt/uconsole/" -name "*.py" -exec chmod +x {} \;
