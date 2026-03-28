@@ -65,6 +65,7 @@ case "$1" in
             OLD_ENV="${REAL_HOME}/.config/uconsole/status.env"
             if [ -f "$OLD_ENV" ] && [ ! -f /etc/uconsole/status.env ]; then
                 cp "$OLD_ENV" /etc/uconsole/status.env
+                chown "$REAL_USER":"$(id -gn "$REAL_USER")" /etc/uconsole/status.env
                 chmod 600 /etc/uconsole/status.env
                 echo "Migrated cloud config from ${OLD_ENV} to /etc/uconsole/status.env"
             fi
