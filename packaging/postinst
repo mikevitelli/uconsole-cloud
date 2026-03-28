@@ -25,7 +25,8 @@ case "$1" in
                 -keyout /etc/uconsole/ssl/uconsole.key \
                 -out /etc/uconsole/ssl/uconsole.crt \
                 -subj "/CN=uconsole.local" 2>/dev/null
-            chmod 600 /etc/uconsole/ssl/uconsole.key
+            chgrp www-data /etc/uconsole/ssl/uconsole.key
+            chmod 640 /etc/uconsole/ssl/uconsole.key
         fi
 
         # Make all scripts executable
