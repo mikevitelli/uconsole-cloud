@@ -28,10 +28,6 @@ case "$1" in
             chmod 600 /etc/uconsole/ssl/uconsole.key
         fi
 
-        # Create runtime data directory
-        mkdir -p /var/lib/uconsole
-        chmod 700 /var/lib/uconsole
-
         # Make all scripts executable
         find /opt/uconsole/ -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
         find /opt/uconsole/ -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
@@ -39,6 +35,26 @@ case "$1" in
 
         # Reload systemd to pick up new unit files (but do NOT enable or start)
         systemctl daemon-reload
+
+        # Detect and stop old user-level webdash service
+        REAL_USER="${SUDO_USER:-$(whoami)}"
+        REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+        if [ -n "$REAL_HOME" ]; then
+            OLD_SVC="${REAL_HOME}/.config/systemd/user/webdash.service"
+            if [ -f "$OLD_SVC" ]; then
+                echo "Migrating from user-level webdash to system service..."
+                su - "$REAL_USER" -c "systemctl --user stop webdash.service 2>/dev/null; systemctl --user disable webdash.service 2>/dev/null" || true
+                echo "Old user-level webdash.service stopped and disabled."
+            fi
+
+            # Migrate status.env from old location if needed
+            OLD_ENV="${REAL_HOME}/.config/uconsole/status.env"
+            if [ -f "$OLD_ENV" ] && [ ! -f /etc/uconsole/status.env ]; then
+                cp "$OLD_ENV" /etc/uconsole/status.env
+                chmod 600 /etc/uconsole/status.env
+                echo "Migrated cloud config from ${OLD_ENV} to /etc/uconsole/status.env"
+            fi
+        fi
 
         echo ""
         echo "========================================"
