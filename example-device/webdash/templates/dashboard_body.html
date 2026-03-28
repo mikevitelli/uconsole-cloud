@@ -1,0 +1,532 @@
+<div class="nav-bar">
+  <div class="nav-bar-inner">
+    <div style="display:flex;align-items:center;gap:6px"><span class="conn-dot" id="conn-dot"></span><span class="nav-title">uConsole</span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:13px;color:var(--dim)" id="subtitle">connecting...</span>
+      <div class="refresh-btn" id="refresh-btn" onclick="manualRefresh()">&#x21bb;</div>
+    </div>
+  </div>
+</div>
+<div class="container">
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="header">
+<pre class="ascii-title" role="img" aria-label="uConsole.local">{{ ascii_title|e }}</pre>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">Battery</div>
+    <div class="stat-value"><span id="bat-pct">--</span><span class="unit">%</span></div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="bat-bar"></div></div>
+    <div class="stat-detail">
+      <b id="bat-status">--</b> · <b id="bat-source">--</b><br>
+      <b id="bat-voltage">--</b>V · <b id="bat-current">--</b>mA · <b id="bat-power">--</b>mW<br>
+      Charge <b id="bat-rate">--</b>/<b id="bat-max">--</b>mA · <b id="bat-health">--</b>
+    </div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">CPU</div>
+    <div class="stat-value"><span id="cpu-usage">--</span><span class="unit">%</span></div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="cpu-bar"></div></div>
+    <div class="stat-detail">
+      <b id="cpu-temp">--</b> C · <b id="cpu-freq">--</b>MHz<br>
+      Gov: <b id="cpu-gov">--</b>
+    </div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">Memory</div>
+    <div class="stat-value"><span id="mem-pct">--</span><span class="unit">%</span></div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="mem-bar"></div></div>
+    <div class="stat-detail"><b id="mem-used">--</b> / <b id="mem-total">--</b> MB</div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">Disk</div>
+    <div class="stat-value"><span id="disk-pct">--</span><span class="unit">%</span></div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="disk-bar"></div></div>
+    <div class="stat-detail"><b id="disk-used">--</b> / <b id="disk-total">--</b> GB · <b id="disk-free">--</b> free</div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">WiFi</div>
+    <div class="stat-value"><span id="wifi-signal">--</span><span class="unit">dBm</span></div>
+    <div class="stat-bar"><div class="stat-bar-fill" id="wifi-bar"></div></div>
+    <div class="stat-detail">
+      <b id="wifi-ssid">--</b> · <b id="wifi-rate">--</b> Mb/s<br>
+      Quality <b id="wifi-quality">--</b> · <b id="wifi-ip">--</b>
+    </div>
+  </div>
+
+  <div class="stat">
+    <div class="stat-label">Uptime</div>
+    <div class="stat-value" style="font-size:1.2em"><span id="uptime">--</span></div>
+  </div>
+</div>
+
+<div id="output-box">
+  <div id="output-header">
+    <span id="output-title">Output</span>
+    <div class="hdr-btns">
+      <button id="raw-toggle" onclick="toggleRaw()">Raw</button>
+      <button onclick="closeOutput()">Close</button>
+    </div>
+  </div>
+  <div id="output-content"></div>
+</div>
+
+<!-- Battery & Charge -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F50B;</span> Battery</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three">
+      <button onclick="run('battery')">Snapshot</button>
+      <button onclick="run('battery-log')">Log Entry</button>
+      <button onclick="run('charge-status')">Charge Rate</button>
+      <button onclick="run('charge-300')">300mA</button>
+      <button onclick="run('charge-500')">500mA</button>
+      <button onclick="run('charge-900')">900mA</button>
+    </div>
+  </div>
+</div>
+
+<!-- Battery Test -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F50D;</span> Battery Test</span>
+    <span id="battest-badge" class="panel-badge">--</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input id="battest-label" type="text" placeholder="Label (e.g. nitecore-3400)" style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:14px">
+      <button onclick="startBatTest()" style="white-space:nowrap">Start</button>
+    </div>
+    <canvas id="battest-chart" width="600" height="250" style="width:100%;height:auto;background:var(--card2);border-radius:8px"></canvas>
+    <div id="battest-legend" style="margin-top:6px;font-size:11px;color:var(--dim)"></div>
+    <div class="btn-grid three" style="margin-top:10px">
+      <button onclick="run('battest-status')">Status</button>
+      <button onclick="run('battest-stop')">Stop</button>
+      <button onclick="run('battest-compare')">Compare</button>
+      <button onclick="run('battest-list')">List</button>
+      <button onclick="loadBatChart()">Refresh Chart</button>
+    </div>
+  </div>
+</div>
+
+<!-- Network -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4F6;</span> Network</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three">
+      <button onclick="run('network-overview')">Overview</button>
+      <button onclick="run('network-speed')">Speed Test</button>
+      <button onclick="run('network-scan')">WiFi Scan</button>
+      <button onclick="run('network-ping')">Ping</button>
+      <button onclick="run('network-trace')">Traceroute</button>
+      <button onclick="run('network-log')">Log Entry</button>
+      <button onclick="openWifiPicker()" style="grid-column: span 3; background:var(--accent); color:var(--bg);">Switch WiFi Network</button>
+      <button onclick="run('hotspot-status')">Hotspot Status</button>
+      <button onclick="run('hotspot-start')">Start Hotspot</button>
+      <button onclick="run('hotspot-stop')">Stop Hotspot</button>
+    </div>
+  </div>
+</div>
+
+<!-- Storage -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4BE;</span> Storage</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three">
+      <button onclick="run('storage')">Overview</button>
+      <button onclick="run('storage-devices')">Devices</button>
+      <button onclick="run('storage-smart')">Health</button>
+      <button onclick="run('storage-usb')">USB</button>
+      <button onclick="run('storage-mount')">Mounts</button>
+      <button onclick="run('storage-temp')">Temps</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disk Usage -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4CA;</span> Disk Usage</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid">
+      <button onclick="run('disk-usage')">Overview</button>
+      <button onclick="run('disk-big')">Big Files</button>
+      <button onclick="run('disk-dirs')">Top Dirs</button>
+      <button onclick="run('disk-clean')">Cleanup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Audit -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F50D;</span> Audit</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid">
+      <button onclick="run('audit-overview')">Overview</button>
+      <button onclick="run('audit-junk')">Junk Scan</button>
+      <button onclick="run('audit-untracked')">Untracked</button>
+      <button onclick="run('audit-categories')">Categories</button>
+    </div>
+  </div>
+</div>
+
+<!-- Backup -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4E6;</span> Backup</span>
+    <span class="panel-badge">gather + sync</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three">
+      <button onclick="run('backup-all')" class="full">Backup All (gather + sync)</button>
+      <button onclick="run('backup-status')">Status</button>
+      <button onclick="run('backup-sync')" class="warn">Sync to GitHub</button>
+      <button onclick="run('backup-gather-git')">Git</button>
+      <button onclick="run('backup-gather-gh')">GitHub</button>
+      <button onclick="run('backup-gather-system')">System</button>
+      <button onclick="run('backup-gather-pkgs')">Packages</button>
+      <button onclick="run('backup-gather-desktop')">Desktop</button>
+      <button onclick="run('backup-gather-browser')">Browser</button>
+      <button onclick="run('backup-gather-scripts')">Scripts</button>
+    </div>
+  </div>
+</div>
+
+<!-- Updates -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x2B06;</span> Updates</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three">
+      <button onclick="run('update-all')" class="full">Update All</button>
+      <button onclick="run('update-status')">Status</button>
+      <button onclick="run('update-apt')">APT</button>
+      <button onclick="run('update-flatpak')">Flatpak</button>
+      <button onclick="run('update-firmware')">Firmware</button>
+      <button onclick="run('update-repo')">Commit &amp; Push</button>
+      <button onclick="run('update-snapshot')">Snapshot</button>
+      <button onclick="run('update-log')">History</button>
+    </div>
+  </div>
+</div>
+
+<!-- Debug -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F41B;</span> Debug</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid three" style="margin-bottom:10px">
+      <button onclick="showProcs('cpu')">Top CPU</button>
+      <button onclick="showProcs('mem')">Top Mem</button>
+      <button onclick="showConns()">Net Conns</button>
+      <button onclick="showServices()">Services</button>
+      <button onclick="showFailedUnits()">Failed</button>
+      <button onclick="run('power-status')">Power</button>
+    </div>
+    <div style="font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 6px;font-weight:600">Logs</div>
+    <div class="seg-control" id="log-seg">
+      <div class="seg-slider"></div>
+      <button class="seg" onclick="segLog(this,0,'journal')">Journal</button>
+      <button class="seg" onclick="segLog(this,1,'journal-errors')">Errors</button>
+      <button class="seg" onclick="segLog(this,2,'dmesg')">dmesg</button>
+      <button class="seg" onclick="segLog(this,3,'syslog')">syslog</button>
+    </div>
+    <div style="margin-top:8px">
+      <button onclick="run('dashboard-status')" class="full">Dashboard Status</button>
+    </div>
+    <div id="svc-container"></div>
+    <div id="proc-container"></div>
+  </div>
+</div>
+
+<!-- Terminal -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4BB;</span> Terminal</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid">
+      <button onclick="termOpen()" class="accent">Open Terminal</button>
+      <button onclick="termDestroy()" class="danger">Kill Session</button>
+      <button onclick="termOpen('console')">Console TUI</button>
+      <button onclick="termOpen('htop')">htop</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen terminal overlay -->
+<div id="term-overlay" onclick="if(event.target===this)termHide()">
+  <div id="term-sheet">
+    <div id="term-bar" style="position:relative">
+      <span id="term-title">Terminal</span>
+      <button id="term-close-btn" onclick="termHide()">&#x2715;</button>
+    </div>
+    <div id="terminal-container"></div>
+  </div>
+</div>
+
+<!-- Wiki -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4D6;</span> Wiki</span>
+    <span class="panel-badge" id="wiki-count">...</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="wiki-toolbar">
+      <input type="text" id="wiki-new-slug" placeholder="new-doc-name">
+      <button onclick="wikiNew()">New</button>
+    </div>
+    <div id="wiki-list" class="wiki-list"></div>
+    <div id="wiki-viewer" class="wiki-viewer">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:0.7em;font-weight:600;color:var(--accent)" id="wiki-view-title"></span>
+        <div style="display:flex;gap:4px">
+          <button style="font-size:0.65em;padding:4px 8px" onclick="wikiEdit()">Edit</button>
+          <button style="font-size:0.65em;padding:4px 8px" onclick="wikiClose()">Close</button>
+        </div>
+      </div>
+      <div id="wiki-view-content" class="wiki-viewer-content"></div>
+    </div>
+    <div id="wiki-editor" class="wiki-editor">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:0.7em;font-weight:600;color:var(--accent)" id="wiki-edit-title"></span>
+        <div style="display:flex;gap:4px">
+          <button style="font-size:0.65em;padding:4px 8px" onclick="wikiSave()">Save</button>
+          <button style="font-size:0.65em;padding:4px 8px;color:var(--red)" onclick="wikiDelete()">Delete</button>
+          <button style="font-size:0.65em;padding:4px 8px" onclick="wikiClose()">Cancel</button>
+        </div>
+      </div>
+      <textarea id="wiki-textarea"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- Config -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x2699;</span> Config</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div id="config-sections">
+      <!-- Timers -->
+      <div class="config-group">
+        <div class="config-group-title">Scheduled Timers</div>
+        <div id="timer-backup" class="timer-row">
+          <span class="timer-name">Backup</span>
+          <select class="timer-select" id="timer-backup-select" onchange="setTimerSchedule('backup',this.value)"></select>
+          <span class="timer-next" id="timer-backup-next"></span>
+          <button class="timer-toggle" id="timer-backup-btn" onclick="toggleTimer('backup')">...</button>
+        </div>
+        <div id="timer-update" class="timer-row">
+          <span class="timer-name">Update</span>
+          <select class="timer-select" id="timer-update-select" onchange="setTimerSchedule('update',this.value)"></select>
+          <span class="timer-next" id="timer-update-next"></span>
+          <button class="timer-toggle" id="timer-update-btn" onclick="toggleTimer('update')">...</button>
+        </div>
+      </div>
+      <!-- Brightness -->
+      <div class="config-group">
+        <div class="config-group-title">Display Brightness</div>
+        <div class="config-row">
+          <span style="color:var(--dim)">&#x1F505;</span>
+          <input type="range" id="brightness-slider" min="0" max="9" step="1" class="config-slider" oninput="setBrightness(this.value)">
+          <span id="brightness-val" style="min-width:20px;text-align:center">-</span>
+        </div>
+      </div>
+      <!-- Git Remote -->
+      <div class="config-group">
+        <div class="config-group-title">Git Remote</div>
+        <div class="config-row">
+          <input type="text" id="git-remote-input" class="config-input" placeholder="git@github.com:..." spellcheck="false">
+          <button class="config-save-btn" onclick="saveGitRemote()">Save</button>
+        </div>
+      </div>
+      <!-- Timezone -->
+      <div class="config-group">
+        <div class="config-group-title">Timezone</div>
+        <div class="config-row">
+          <input type="text" id="timezone-input" class="config-input" placeholder="America/New_York" spellcheck="false">
+          <button class="config-save-btn" onclick="saveTimezone()">Save</button>
+        </div>
+      </div>
+      <!-- Port -->
+      <div class="config-group">
+        <div class="config-group-title">Webdash Port</div>
+        <div class="config-row">
+          <input type="number" id="port-input" class="config-input" min="1024" max="65535" style="max-width:100px">
+          <button class="config-save-btn" onclick="savePort()">Save</button>
+          <span style="color:var(--dim);font-size:0.75em;margin-left:4px">requires restart</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ESP32 Sensor -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4E1;</span> ESP32 Sensor</span>
+    <span id="esp32-status" class="panel-badge">--</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Temp</span><span class="stat-val"><span id="esp32-temp">--</span>&deg;C</span></div>
+      <div class="stat-item"><span class="stat-label">Free RAM</span><span class="stat-val"><span id="esp32-free">--</span> KB</span></div>
+      <div class="stat-item"><span class="stat-label">IP</span><span class="stat-val" id="esp32-ip">--</span></div>
+    </div>
+    <div style="margin-top:10px">
+      <span class="stat-label">Touch Pins</span>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:6px">
+          <div style="font-size:11px;color:var(--dim)">T0</div>
+          <div id="esp32-t0" style="font-size:18px;font-weight:600">--</div>
+        </div>
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:6px">
+          <div style="font-size:11px;color:var(--dim)">T3</div>
+          <div id="esp32-t3" style="font-size:18px;font-weight:600">--</div>
+        </div>
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:6px">
+          <div style="font-size:11px;color:var(--dim)">T4</div>
+          <div id="esp32-t4" style="font-size:18px;font-weight:600">--</div>
+        </div>
+        <div style="text-align:center;background:var(--card2);border-radius:8px;padding:6px">
+          <div style="font-size:11px;color:var(--dim)">T7</div>
+          <div id="esp32-t7" style="font-size:18px;font-weight:600">--</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--dim)">Updated <span id="esp32-age">--</span>s ago</div>
+    <div class="btn-grid three" style="margin-top:10px">
+      <button onclick="run('esp32-status')">Status</button>
+      <button onclick="run('esp32-log')">Log</button>
+      <button onclick="run('esp32-info')">Chip Info</button>
+      <button onclick="run('esp32-flash')">Flash</button>
+      <button onclick="run('esp32-reset')">Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- GPS Receiver -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F6F0;</span> GPS Receiver</span>
+    <span id="gps-status" class="panel-badge">--</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Lat</span><span class="stat-val" id="gps-lat">--</span></div>
+      <div class="stat-item"><span class="stat-label">Lon</span><span class="stat-val" id="gps-lon">--</span></div>
+      <div class="stat-item"><span class="stat-label">Alt</span><span class="stat-val"><span id="gps-alt">--</span> m</span></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Speed</span><span class="stat-val"><span id="gps-speed">--</span> km/h</span></div>
+      <div class="stat-item"><span class="stat-label">Sats</span><span class="stat-val" id="gps-sats">--</span></div>
+      <div class="stat-item"><span class="stat-label">Fix</span><span class="stat-val" id="gps-fix">--</span></div>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--dim)">Updated <span id="gps-age">--</span>s ago</div>
+    <div class="btn-grid three" style="margin-top:10px">
+      <button onclick="run('gps-status')">Status</button>
+      <button onclick="run('gps-log')">Log</button>
+      <button onclick="run('gps-fix')">Fix Info</button>
+      <button onclick="run('gps-time')">Time</button>
+      <button onclick="run('gps-track')">Track</button>
+      <button onclick="run('gps-stop')">Stop</button>
+    </div>
+  </div>
+</div>
+
+<!-- SDR Radio -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4FB;</span> SDR Radio</span>
+    <span id="sdr-status" class="panel-badge">--</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Device</span><span class="stat-val" id="sdr-device">RTL2838</span></div>
+      <div class="stat-item"><span class="stat-label">Tuner</span><span class="stat-val" id="sdr-tuner">--</span></div>
+    </div>
+    <div class="btn-grid three" style="margin-top:10px">
+      <button onclick="run('sdr-status')">Status</button>
+      <button onclick="run('sdr-test')">Test</button>
+      <button onclick="run('sdr-info')">Info</button>
+      <button onclick="run('sdr-scan')">Scan</button>
+    </div>
+  </div>
+</div>
+
+<!-- LoRa Radio -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x1F4E1;</span> LoRa Radio</span>
+    <span id="lora-status" class="panel-badge">--</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Freq</span><span class="stat-val"><span id="lora-freq">915.0</span> MHz</span></div>
+      <div class="stat-item"><span class="stat-label">SF</span><span class="stat-val" id="lora-sf">7</span></div>
+      <div class="stat-item"><span class="stat-label">BW</span><span class="stat-val"><span id="lora-bw">125</span> kHz</span></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-item"><span class="stat-label">Last Msg</span><span class="stat-val" id="lora-msg">--</span></div>
+      <div class="stat-item"><span class="stat-label">RSSI</span><span class="stat-val"><span id="lora-rssi">--</span> dBm</span></div>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--dim)">Updated <span id="lora-age">--</span>s ago</div>
+    <div class="btn-grid three" style="margin-top:10px">
+      <button onclick="run('lora-status')">Status</button>
+      <button onclick="run('lora-config')">Config</button>
+      <button onclick="run('lora-send')">Send Test</button>
+    </div>
+  </div>
+</div>
+
+<!-- Power -->
+<div class="panel" onclick="togglePanel(this, event)">
+  <div class="panel-header">
+    <span class="panel-label"><span class="icon">&#x26A1;</span> Power</span>
+    <span class="panel-arrow">&#x25B6;</span>
+  </div>
+  <div class="panel-body">
+    <div class="btn-grid">
+      <button class="warn" onclick="showModal('Reboot','Reboot the uConsole? This will end all running sessions.','power-reboot','warn')">Reboot</button>
+      <button class="danger" onclick="showModal('Shutdown','Shut down the uConsole? You will need physical access to power it back on.','power-shutdown','danger')">Shutdown</button>
+    </div>
+  </div>
+</div>
+
+</div>
+<div id="modal-root"></div>

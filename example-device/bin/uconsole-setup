@@ -1,0 +1,508 @@
+#!/bin/bash
+# uconsole-setup — interactive setup wizard for uConsole
+# Usage: uconsole-setup [--yes --password "pass"]
+#
+# Re-runnable: existing values become defaults on second run.
+
+set -euo pipefail
+
+# ── paths ──
+CONF_DIR="/etc/uconsole"
+CONF_FILE="$CONF_DIR/uconsole.conf"
+CONF_DEFAULT="$CONF_DIR/uconsole.conf.default"
+USER_CONF_DIR="$HOME/.config/uconsole"
+USER_CONF="$USER_CONF_DIR/config.json"
+USER_CONF_DEFAULT="$USER_CONF_DIR/config.json.default"
+STATUS_ENV="$CONF_DIR/status.env"
+HW_JSON="$CONF_DIR/hardware.json"
+HW_DETECT="/opt/uconsole/scripts/util/hardware-detect.sh"
+PASSWD_BIN="/opt/uconsole/bin/uconsole-passwd"
+SSL_DIR="$CONF_DIR/ssl"
+
+# ── source lib.sh for colors ──
+for libpath in /opt/uconsole/lib/lib.sh "$HOME/scripts/lib.sh"; do
+    if [ -f "$libpath" ]; then
+        source "$libpath" 2>/dev/null || true
+        break
+    fi
+done
+type ok      &>/dev/null || ok()      { printf "  \033[32m✓\033[0m %s\n" "$1"; }
+type warn    &>/dev/null || warn()    { printf "  \033[33m!\033[0m %s\n" "$1"; }
+type err     &>/dev/null || err()     { printf "  \033[31m✗\033[0m %s\n" "$1"; }
+type info    &>/dev/null || info()    { printf "  \033[2m%s\033[0m\n" "$1"; }
+type section &>/dev/null || section() { echo ""; printf "\033[1m\033[36m── %s ──\033[0m\n\n" "$1"; }
+
+BOLD="\033[1m"
+DIM="\033[2m"
+GREEN="\033[32m"
+CYAN="\033[36m"
+YELLOW="\033[33m"
+RESET="\033[0m"
+
+# ── args ──
+UNATTENDED=false
+CLI_PASSWORD=""
+for arg in "$@"; do
+    case "$arg" in
+        --yes) UNATTENDED=true ;;
+        --password) : ;; # value grabbed below
+    esac
+done
+# grab --password value
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --password) CLI_PASSWORD="${2:-}"; shift 2 || break ;;
+        *) shift ;;
+    esac
+done
+
+# ── helpers ──
+
+ask() {
+    local prompt="$1" default="$2" var="$3"
+    if [ "$UNATTENDED" = true ]; then
+        eval "$var=\"$default\""
+        return
+    fi
+    local input
+    if [ -n "$default" ]; then
+        read -rp "  $prompt [$default]: " input
+    else
+        read -rp "  $prompt: " input
+    fi
+    eval "$var=\"${input:-$default}\""
+}
+
+ask_yn() {
+    local prompt="$1" default="$2"
+    if [ "$UNATTENDED" = true ]; then
+        [ "$default" = "y" ] && return 0 || return 1
+    fi
+    local input
+    read -rp "  $prompt [${default}]: " input
+    input="${input:-$default}"
+    [[ "$input" =~ ^[Yy] ]]
+}
+
+ini_get() {
+    local file="$1" section="$2" key="$3" default="${4:-}"
+    local in_section=0
+    [ -f "$file" ] || { printf '%s' "$default"; return; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"
+        [[ "$line" =~ ^\[([^]]+)\]$ ]] && { [ "${BASH_REMATCH[1]}" = "$section" ] && in_section=1 || in_section=0; continue; }
+        if [ "$in_section" -eq 1 ] && [[ "$line" =~ ^[[:space:]]*([^=]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            local k="${BASH_REMATCH[1]}" v="${BASH_REMATCH[2]}"
+            k="${k%%[[:space:]]}" v="${v%%[[:space:]]}"
+            [ "$k" = "$key" ] && { printf '%s' "$v"; return; }
+        fi
+    done < "$file"
+    printf '%s' "$default"
+}
+
+ini_set() {
+    local file="$1" section="$2" key="$3" value="$4"
+    if [ ! -f "$file" ]; then
+        sudo cp "$CONF_DEFAULT" "$file" 2>/dev/null || sudo sh -c "printf '[%s]\n%s = %s\n' '$section' '$key' '$value' > '$file'"
+        sudo chown "$(whoami)" "$file"
+        return
+    fi
+    # ensure we can write
+    [ ! -w "$file" ] && sudo chown "$(whoami)" "$file"
+    python3 -c "
+import configparser, sys
+cp = configparser.ConfigParser()
+cp.read(sys.argv[1])
+if not cp.has_section(sys.argv[2]):
+    cp.add_section(sys.argv[2])
+cp.set(sys.argv[2], sys.argv[3], sys.argv[4])
+with open(sys.argv[1], 'w') as f:
+    cp.write(f)
+" "$file" "$section" "$key" "$value"
+}
+
+json_get() {
+    python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    v = data.get(sys.argv[2])
+    print(v if v is not None else sys.argv[3])
+except Exception:
+    print(sys.argv[3])
+" "$1" "$2" "${3:-}"
+}
+
+# ── ensure directories ──
+mkdir -p "$USER_CONF_DIR"
+[ -f "$USER_CONF" ] || { [ -f "$USER_CONF_DEFAULT" ] && cp "$USER_CONF_DEFAULT" "$USER_CONF" || echo '{}' > "$USER_CONF"; }
+
+echo ""
+printf "${BOLD}${CYAN}"
+cat << 'BANNER'
+        _____                       _
+       / ____|                     | |
+ _   _| |     ___  _ __  ___  ___ | | ___
+| | | | |    / _ \| '_ \/ __|/ _ \| |/ _ \
+| |_| | |___| (_) | | | \__ \ (_) | |  __/
+ \__,_|\_____\___/|_| |_|___/\___/|_|\___|
+BANNER
+printf "${RESET}\n"
+printf "  ${DIM}Setup Wizard${RESET}\n"
+echo ""
+
+# ════════════════════════════════════════════
+# STEP 1 — Hardware Detection
+# ════════════════════════════════════════════
+section "Step 1: Hardware Detection"
+
+if [ -x "$HW_DETECT" ]; then
+    sudo "$HW_DETECT" --quiet
+    if [ -f "$HW_JSON" ]; then
+        ok "Hardware detection complete"
+        module=$(python3 -c "import json; d=json.load(open('$HW_JSON')); print(d.get('expansion_module','none'))" 2>/dev/null || echo "none")
+        wifi_m=$(python3 -c "import json; d=json.load(open('$HW_JSON')); print(d.get('wifi_method','unknown'))" 2>/dev/null || echo "unknown")
+
+        case "$module" in
+            aio-v1) ok "AIO Board V1 detected" ;;
+            aio-v2) ok "AIO Board V2 detected (GPIO power control)" ;;
+            4g)     ok "4G LTE modem detected" ;;
+            none)   info "No expansion module detected" ;;
+        esac
+        info "WiFi method: $wifi_m"
+
+        # show component checkmarks if AIO
+        if [[ "$module" == aio-* ]]; then
+            for comp in sdr lora gps rtc esp32; do
+                status=$(python3 -c "import json; d=json.load(open('$HW_JSON')); print(d.get('components',{}).get('$comp','not_detected'))" 2>/dev/null || echo "not_detected")
+                if [ "$status" = "detected" ]; then
+                    ok "$comp"
+                else
+                    info "$comp: not detected"
+                fi
+            done
+        fi
+    else
+        warn "hardware.json not written (permissions?)"
+    fi
+else
+    warn "hardware-detect.sh not found at $HW_DETECT"
+    info "Skipping hardware detection"
+fi
+
+# ════════════════════════════════════════════
+# STEP 2 — System Config
+# ════════════════════════════════════════════
+section "Step 2: System Configuration"
+
+# ensure config exists (we own /etc/uconsole, no sudo needed)
+if [ ! -f "$CONF_FILE" ] && [ -f "$CONF_DEFAULT" ]; then
+    cp "$CONF_DEFAULT" "$CONF_FILE"
+fi
+
+current_freq=$(ini_get "$CONF_FILE" "power" "cpu_freq_cap" "1200")
+current_shutdown=$(ini_get "$CONF_FILE" "power" "low_battery_shutdown" "3.05")
+
+ask "CPU frequency cap (MHz, 0=no cap)" "$current_freq" freq_cap
+ask "Low battery shutdown voltage" "$current_shutdown" shutdown_v
+
+if [ -f "$CONF_FILE" ] || [ -f "$CONF_DEFAULT" ]; then
+    [ ! -f "$CONF_FILE" ] && cp "$CONF_DEFAULT" "$CONF_FILE"
+    ini_set "$CONF_FILE" "power" "cpu_freq_cap" "$freq_cap"
+    ini_set "$CONF_FILE" "power" "low_battery_shutdown" "$shutdown_v"
+    ok "System config saved"
+else
+    warn "No config file available — skipping"
+fi
+
+# ════════════════════════════════════════════
+# STEP 3 — Webdash Password (REQUIRED)
+# ════════════════════════════════════════════
+section "Step 3: Webdash Password"
+
+if python3 -c "
+import json
+with open('$USER_CONF') as f:
+    d = json.load(f)
+h = d.get('webdash_password_hash')
+exit(0 if h else 1)
+" 2>/dev/null; then
+    info "Password already set"
+    if [ "$UNATTENDED" = false ]; then
+        if ask_yn "Change password?" "n"; then
+            "$PASSWD_BIN"
+        else
+            ok "Keeping existing password"
+        fi
+    fi
+else
+    info "No password set — this is required for webdash access."
+    if [ -n "$CLI_PASSWORD" ]; then
+        "$PASSWD_BIN" --password "$CLI_PASSWORD"
+    elif [ "$UNATTENDED" = true ]; then
+        err "Password required: use --password flag with --yes"
+        exit 1
+    else
+        "$PASSWD_BIN"
+    fi
+fi
+
+# ════════════════════════════════════════════
+# STEP 4 — Hotspot Config
+# ════════════════════════════════════════════
+section "Step 4: Hotspot Configuration (optional)"
+
+current_ssid=$(json_get "$USER_CONF" "hotspot_ssid" "uConsole")
+
+if [ "$UNATTENDED" = true ]; then
+    info "Using defaults: SSID=$current_ssid"
+else
+    if ask_yn "Configure WiFi hotspot?" "y"; then
+        ask "Hotspot SSID" "$current_ssid" hotspot_ssid
+        python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+data['hotspot_ssid'] = sys.argv[2]
+with open(sys.argv[1], 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$USER_CONF" "$hotspot_ssid"
+        ok "Hotspot config saved"
+    else
+        info "Skipped"
+    fi
+fi
+
+# ════════════════════════════════════════════
+# STEP 5 — Cloud Link (OPTIONAL)
+# ════════════════════════════════════════════
+section "Step 5: Cloud Link (optional)"
+
+if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
+    info "Cloud already linked"
+    token=$(sudo grep "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null | cut -d'"' -f2)
+    info "Token: ${token:0:8}..."
+    ok "Cloud integration active"
+else
+    if [ "$UNATTENDED" = true ]; then
+        info "Skipping cloud setup (use interactive mode to link)"
+    else
+        if ask_yn "Link to uconsole.cloud for remote monitoring?" "n"; then
+            # generate device code
+            DEVICE_CODE=$(python3 -c "import secrets; print(secrets.token_hex(3).upper())")
+            echo ""
+            printf "  ${BOLD}Your device code: ${GREEN}${DEVICE_CODE}${RESET}\n"
+            echo ""
+            printf "  Go to ${CYAN}https://uconsole.cloud/link${RESET} and enter this code.\n"
+            echo ""
+
+            API_URL="https://uconsole.cloud"
+            info "Waiting for confirmation (Ctrl+C to skip)..."
+
+            # poll for confirmation (up to 5 min)
+            LINKED=false
+            for i in $(seq 1 60); do
+                RESP=$(curl -sf "${API_URL}/api/device/claim" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"code\": \"$DEVICE_CODE\"}" 2>/dev/null || echo "")
+                if echo "$RESP" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+if d.get('token'):
+    print(d['token'])
+    sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+                    TOKEN=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+                    REPO=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('repo',''))" 2>/dev/null || echo "")
+
+                    sudo mkdir -p "$(dirname "$STATUS_ENV")"
+                    sudo tee "$STATUS_ENV" > /dev/null <<EOF
+DEVICE_API_URL="${API_URL}/api/device/push"
+DEVICE_TOKEN="$TOKEN"
+DEVICE_REPO="$REPO"
+EOF
+                    sudo chmod 600 "$STATUS_ENV"
+
+                    python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+data['cloud_token'] = sys.argv[2]
+data['cloud_repo'] = sys.argv[3]
+with open(sys.argv[1], 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$USER_CONF" "$TOKEN" "$REPO"
+
+                    LINKED=true
+                    break
+                fi
+                sleep 5
+            done
+
+            if [ "$LINKED" = true ]; then
+                ok "Cloud linked successfully"
+            else
+                warn "Timed out waiting for confirmation. Run 'uconsole setup' again to retry."
+            fi
+        else
+            info "Skipped"
+        fi
+    fi
+fi
+
+# ════════════════════════════════════════════
+# STEP 6 — Backup Config
+# ════════════════════════════════════════════
+section "Step 6: Backup Configuration"
+
+current_backup=$(ini_get "$CONF_FILE" "backup" "enabled" "true")
+
+if [ "$UNATTENDED" = true ]; then
+    info "Backups: $current_backup"
+else
+    if ask_yn "Enable automatic backups?" "y"; then
+        current_schedule=$(ini_get "$CONF_FILE" "backup" "schedule" "daily")
+        current_time=$(ini_get "$CONF_FILE" "backup" "time" "03:00")
+
+        ask "Schedule (daily/weekly/manual)" "$current_schedule" backup_schedule
+        ask "Time" "$current_time" backup_time
+
+        ini_set "$CONF_FILE" "backup" "enabled" "true"
+        ini_set "$CONF_FILE" "backup" "schedule" "$backup_schedule"
+        ini_set "$CONF_FILE" "backup" "time" "$backup_time"
+        ok "Backup config saved"
+    else
+        ini_set "$CONF_FILE" "backup" "enabled" "false"
+        info "Backups disabled"
+    fi
+fi
+
+# ════════════════════════════════════════════
+# STEP 7 — Enable Services
+# ════════════════════════════════════════════
+section "Step 7: Enable Services"
+
+# webdash — always enable if password is set
+if python3 -c "import json; d=json.load(open('$USER_CONF')); exit(0 if d.get('webdash_password_hash') else 1)" 2>/dev/null; then
+    if systemctl list-unit-files uconsole-webdash.service &>/dev/null; then
+        sudo systemctl enable uconsole-webdash.service 2>/dev/null && ok "uconsole-webdash.service enabled" || info "uconsole-webdash.service already enabled"
+    else
+        info "uconsole-webdash.service not installed — install uconsole-cloud package"
+    fi
+fi
+
+# status timer — if cloud linked
+if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
+    if systemctl list-unit-files uconsole-status.timer &>/dev/null; then
+        sudo systemctl enable uconsole-status.timer 2>/dev/null && ok "uconsole-status.timer enabled" || info "status timer already enabled"
+    else
+        info "uconsole-status.timer not installed — install uconsole-cloud package"
+    fi
+fi
+
+# backup timer
+backup_enabled=$(ini_get "$CONF_FILE" "backup" "enabled" "true")
+if [ "$backup_enabled" = "true" ]; then
+    if systemctl list-unit-files uconsole-backup.timer &>/dev/null; then
+        sudo systemctl enable uconsole-backup.timer 2>/dev/null && ok "uconsole-backup.timer enabled" || info "backup timer already enabled"
+    else
+        info "uconsole-backup.timer not installed — install uconsole-cloud package"
+    fi
+fi
+
+# auto-updates
+if [ "$UNATTENDED" = true ]; then
+    info "Auto-updates: keeping current setting"
+else
+    if ask_yn "Enable weekly auto-updates?" "y"; then
+        if systemctl list-unit-files uconsole-update.timer &>/dev/null; then
+            sudo systemctl enable uconsole-update.timer 2>/dev/null && ok "uconsole-update.timer enabled" || info "update timer already enabled"
+        else
+            info "uconsole-update.timer not installed — install uconsole-cloud package"
+        fi
+    fi
+fi
+
+sudo systemctl daemon-reload 2>/dev/null || true
+
+# ════════════════════════════════════════════
+# STEP 8 — SSL Certificate
+# ════════════════════════════════════════════
+section "Step 8: SSL Certificate"
+
+CERT="$SSL_DIR/uconsole.crt"
+KEY="$SSL_DIR/uconsole.key"
+
+if ([ -f "$CERT" ] || [ -f "$SSL_DIR/uconsole.pem" ]) && [ -f "$KEY" ]; then
+    info "SSL certificate already exists"
+    ok "Certificate: $CERT"
+else
+    info "Generating self-signed SSL certificate..."
+    sudo mkdir -p "$SSL_DIR" 2>/dev/null || mkdir -p "$SSL_DIR"
+    sudo openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$KEY" -out "$CERT" \
+        -days 3650 -subj "/CN=uconsole.local" \
+        -addext "subjectAltName=DNS:uconsole.local,DNS:uconsole,IP:127.0.0.1" \
+        2>/dev/null && ok "SSL certificate generated" || warn "Failed to generate SSL cert (openssl not installed?)"
+    sudo chmod 640 "$KEY" 2>/dev/null
+    sudo chgrp www-data "$KEY" 2>/dev/null
+fi
+
+# nginx config check
+if command -v nginx &>/dev/null; then
+    if sudo nginx -t 2>/dev/null; then
+        ok "nginx config valid"
+    else
+        warn "nginx config has errors — check /etc/nginx/"
+    fi
+else
+    info "nginx not installed — webdash will be available on port 8080 only"
+fi
+
+# ════════════════════════════════════════════
+# STEP 9 — Summary
+# ════════════════════════════════════════════
+section "Setup Complete"
+
+echo ""
+printf "  ${BOLD}Your uConsole is configured:${RESET}\n\n"
+
+# system
+freq_cap=$(ini_get "$CONF_FILE" "power" "cpu_freq_cap" "1200")
+printf "  CPU freq cap:     ${freq_cap} MHz\n"
+
+# expansion
+if [ -f "$HW_JSON" ]; then
+    module=$(python3 -c "import json; print(json.load(open('$HW_JSON')).get('expansion_module','none'))" 2>/dev/null || echo "none")
+    printf "  Expansion:        ${module}\n"
+fi
+
+# webdash
+printf "  Webdash:          ${GREEN}password set${RESET}\n"
+
+# cloud
+if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
+    printf "  Cloud:            ${GREEN}linked${RESET}\n"
+else
+    printf "  Cloud:            ${DIM}not linked${RESET}\n"
+fi
+
+# backups
+backup_enabled=$(ini_get "$CONF_FILE" "backup" "enabled" "true")
+printf "  Backups:          ${backup_enabled}\n"
+
+echo ""
+printf "  ${BOLD}Access:${RESET}\n"
+printf "    TUI:      ${CYAN}console${RESET}\n"
+printf "    Web:      ${CYAN}https://uconsole.local${RESET}\n"
+if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
+    printf "    Cloud:    ${CYAN}https://uconsole.cloud${RESET}\n"
+fi
+echo ""
+printf "  ${DIM}You'll see a certificate warning on first visit to uconsole.local —${RESET}\n"
+printf "  ${DIM}that's normal for self-signed certs. Tap Advanced and accept it.${RESET}\n"
+echo ""

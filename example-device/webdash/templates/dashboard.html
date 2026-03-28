@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+{% endblock %}
+{% block inline_style %}
+{% include "css/style.css" %}
+{% endblock %}
+{% block body %}
+<body>
+{% include "dashboard_body.html" %}
+<script>
+{% include "js/dashboard.js" %}
+</script>
+</body>
+{% endblock %}

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Launch the uConsole web dashboard
+cd /opt/uconsole/webdash
+exec python3 app.py "$@"

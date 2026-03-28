@@ -1,0 +1,11 @@
+{
+  "theme": "default",
+  "view_mode": "list",
+  "battery_gauge": "smart",
+  "show_aio_panels": "auto",
+  "webdash_password_hash": null,
+  "hotspot_password_hash": null,
+  "hotspot_ssid": "uConsole",
+  "cloud_token": null,
+  "cloud_repo": null
+}

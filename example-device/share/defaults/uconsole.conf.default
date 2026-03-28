@@ -1,0 +1,39 @@
+# uconsole.conf — system-level configuration
+# Copy to /etc/uconsole/uconsole.conf to customize.
+# Values here are defaults; uconsole.conf overrides them.
+
+[device]
+hostname = uconsole
+# auto | none | 4g | aio-v1 | aio-v2
+expansion_module = auto
+# auto | networkmanager | dhcpcd
+wifi_method = auto
+
+[webdash]
+enabled = true
+port = 8080
+# localhost only — nginx fronts it on 443
+bind = 127.0.0.1
+ssl_cert = /etc/uconsole/ssl/uconsole.pem
+ssl_key = /etc/uconsole/ssl/uconsole.key
+
+[cloud]
+enabled = false
+# seconds between telemetry pushes
+push_interval = 300
+api_url = https://uconsole.cloud
+
+[backup]
+enabled = true
+# daily | weekly | manual
+schedule = daily
+time = 03:00
+categories = shell,system,packages,browser,scripts,desktop,git,screenshots
+
+[power]
+# MHz, 0 = no cap
+cpu_freq_cap = 1200
+# voltage threshold for emergency shutdown
+low_battery_shutdown = 3.05
+# charge current in mA
+charge_current = 1000
