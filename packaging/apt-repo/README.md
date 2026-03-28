@@ -17,8 +17,8 @@ frontend/public/apt/
 └── pool/
     └── main/
         └── u/
-            └── uconsole-tools/
-                └── uconsole-tools_X.Y.Z_arm64.deb
+            └── uconsole-cloud/
+                └── uconsole-cloud_X.Y.Z_arm64.deb
 ```
 
 ## How It Works
@@ -54,5 +54,5 @@ This creates a GPG key for signing the repository. The public key is exported to
 ## Manual Repo Generation
 
 ```bash
-bash packaging/scripts/generate-repo.sh dist/uconsole-tools_0.1.0_arm64.deb
+bash packaging/scripts/generate-repo.sh dist/uconsole-cloud_0.1.0_arm64.deb
 ```

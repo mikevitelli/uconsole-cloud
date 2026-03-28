@@ -300,7 +300,7 @@ cmd_unlink() {
 cmd_update() {
   if [ "$INSTALL_MODE" = "package" ]; then
     echo "Installed via .deb package. Update with:"
-    echo "  sudo apt update && sudo apt upgrade uconsole-tools"
+    echo "  sudo apt update && sudo apt upgrade uconsole-cloud"
     return 0
   fi
 

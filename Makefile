@@ -28,7 +28,7 @@ build-deb:
 	bash packaging/build-deb.sh
 
 publish-apt:
-	@DEB=$$(ls -t dist/uconsole-tools_*_arm64.deb 2>/dev/null | head -1); \
+	@DEB=$$(ls -t dist/uconsole-cloud_*_arm64.deb 2>/dev/null | head -1); \
 	if [ -z "$$DEB" ]; then \
 		echo "ERROR: No .deb found in dist/. Run 'make build-deb' first." >&2; \
 		exit 1; \

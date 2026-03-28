@@ -10,7 +10,7 @@ if [ ! -f "$VERSION_FILE" ]; then
 fi
 VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 
-PKG="uconsole-tools"
+PKG="uconsole-cloud"
 BUILD_DIR="${REPO_ROOT}/dist/${PKG}_${VERSION}_arm64"
 DEVICE_PKG="${HOME}/uconsole/pkg"
 CLI_SRC="${REPO_ROOT}/frontend/public/scripts/uconsole"
