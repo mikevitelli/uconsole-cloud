@@ -8,6 +8,8 @@ Type=simple
 ExecStart=/usr/bin/python3 /opt/uconsole/webdash/app.py
 Environment=WEBDASH_PORT=8080
 WorkingDirectory=/opt/uconsole/webdash
+User=UCONSOLE_USER
+Group=UCONSOLE_USER
 Restart=always
 RestartSec=3
 
