@@ -104,9 +104,15 @@ export default async function Home() {
           <div className="w-full max-w-lg mb-2">
             <CopyCommand command="curl -s https://uconsole.cloud/install | sudo bash" />
           </div>
-          <a href="/install" className="text-[11px] text-dim hover:text-sub transition-colors">
-            View install script source
-          </a>
+          <div className="flex gap-3">
+            <a href="/install" className="text-[11px] text-dim hover:text-sub transition-colors">
+              View install script
+            </a>
+            <span className="text-[11px] text-dim">|</span>
+            <a href="/docs" className="text-[11px] text-dim hover:text-sub transition-colors">
+              Documentation
+            </a>
+          </div>
         </div>
 
         {/* Features */}
@@ -137,8 +143,13 @@ export default async function Home() {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border py-6 px-4 text-center">
+        <div className="border-t border-border py-6 px-4 text-center space-y-1">
           <p className="text-dim text-xs">Built for ClockworkPi uConsole</p>
+          <p className="text-dim text-xs">
+            <a href="/docs" className="hover:text-sub transition-colors">Docs</a>
+            {" · "}
+            <a href="https://github.com/mikevitelli/uconsole-cloud" className="hover:text-sub transition-colors">GitHub</a>
+          </p>
         </div>
       </div>
     );
