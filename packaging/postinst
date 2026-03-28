@@ -3,33 +3,29 @@ set -e
 
 case "$1" in
     configure)
-        # Generate self-signed SSL cert if not present
-        CERT_DIR="/etc/ssl/uconsole"
-        if [ ! -f "$CERT_DIR/uconsole.crt" ]; then
-            mkdir -p "$CERT_DIR"
-            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-                -keyout "$CERT_DIR/uconsole.key" \
-                -out "$CERT_DIR/uconsole.crt" \
-                -subj "/CN=uconsole.local" 2>/dev/null
-            chmod 600 "$CERT_DIR/uconsole.key"
+        # Create system config directory
+        mkdir -p /etc/uconsole/ssl
+
+        # Copy default config if user config doesn't exist (never overwrite)
+        if [ ! -f /etc/uconsole/uconsole.conf ]; then
+            cp /opt/uconsole/share/defaults/uconsole.conf.default /etc/uconsole/uconsole.conf
         fi
 
-        # Enable nginx site
-        ln -sfn /etc/nginx/sites-available/uconsole-webdash /etc/nginx/sites-enabled/
-        nginx -t 2>/dev/null && systemctl reload nginx || true
+        # Create user config directory for the installing user
+        REAL_USER="${SUDO_USER:-$(whoami)}"
+        REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+        if [ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ]; then
+            mkdir -p "${REAL_HOME}/.config/uconsole"
+            chown "$REAL_USER":"$(id -gn "$REAL_USER")" "${REAL_HOME}/.config/uconsole"
+        fi
 
-        # Enable and start services
-        systemctl daemon-reload
-        systemctl enable uconsole-webdash.service
-        systemctl enable uconsole-status.timer
-        systemctl enable uconsole-backup.timer
-        systemctl enable uconsole-update.timer
-        systemctl start uconsole-webdash.service || true
-        systemctl start uconsole-status.timer || true
-
-        # Enable avahi if installed
-        if systemctl is-enabled avahi-daemon &>/dev/null; then
-            systemctl restart avahi-daemon || true
+        # Generate self-signed SSL cert if not present
+        if [ ! -f /etc/uconsole/ssl/uconsole.crt ]; then
+            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                -keyout /etc/uconsole/ssl/uconsole.key \
+                -out /etc/uconsole/ssl/uconsole.crt \
+                -subj "/CN=uconsole.local" 2>/dev/null
+            chmod 600 /etc/uconsole/ssl/uconsole.key
         fi
 
         # Create runtime data directory
@@ -37,18 +33,24 @@ case "$1" in
         chmod 700 /var/lib/uconsole
 
         # Make all scripts executable
-        chmod +x /opt/uconsole/scripts/*.sh /opt/uconsole/scripts/*.py /opt/uconsole/scripts/uconsole 2>/dev/null || true
+        find /opt/uconsole/ -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+        find /opt/uconsole/ -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
+        chmod +x /opt/uconsole/bin/* 2>/dev/null || true
+
+        # Reload systemd to pick up new unit files (but do NOT enable or start)
+        systemctl daemon-reload
 
         echo ""
         echo "========================================"
-        echo "  uconsole-cloud-tools installed!"
+        echo "  uconsole-tools installed!"
         echo ""
-        echo "  Next steps:"
-        echo "    uconsole setup    Link to uconsole.cloud"
+        echo "  Run 'uconsole setup' to configure"
+        echo "  your device."
+        echo ""
+        echo "  Commands:"
+        echo "    uconsole setup    Configure device"
         echo "    uconsole doctor   Check system health"
         echo "    uconsole help     See all commands"
-        echo ""
-        echo "  Local dashboard: https://uconsole.local"
         echo "========================================"
         echo ""
         ;;
