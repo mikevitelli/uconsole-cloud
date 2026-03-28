@@ -1,0 +1,69 @@
+#!/bin/bash
+# uconsole-passwd — set webdash password (bcrypt hash saved to config.json)
+# Usage: uconsole-passwd [--password "newpass"]
+
+set -euo pipefail
+
+CONF_DIR="$HOME/.config/uconsole"
+CONF_FILE="$CONF_DIR/config.json"
+CONF_DEFAULT="$CONF_DIR/config.json.default"
+
+die() { echo "Error: $1" >&2; exit 1; }
+
+# ensure config exists
+mkdir -p "$CONF_DIR"
+if [ ! -f "$CONF_FILE" ]; then
+    if [ -f "$CONF_DEFAULT" ]; then
+        cp "$CONF_DEFAULT" "$CONF_FILE"
+    else
+        echo '{}' > "$CONF_FILE"
+    fi
+fi
+
+# check bcrypt available
+python3 -c "import bcrypt" 2>/dev/null || die "bcrypt not installed — run: pip3 install bcrypt"
+
+# get password
+PASSWORD=""
+if [ "${1:-}" = "--password" ] && [ -n "${2:-}" ]; then
+    PASSWORD="$2"
+else
+    # interactive prompt
+    while true; do
+        read -rsp "New webdash password: " PASSWORD
+        echo
+        [ ${#PASSWORD} -ge 4 ] && break
+        echo "Password must be at least 4 characters."
+    done
+    read -rsp "Confirm password: " CONFIRM
+    echo
+    [ "$PASSWORD" = "$CONFIRM" ] || die "Passwords do not match"
+fi
+
+[ ${#PASSWORD} -ge 4 ] || die "Password must be at least 4 characters"
+
+# hash and save
+HASH=$(python3 -c "
+import bcrypt, json, sys
+pw = sys.argv[1].encode('utf-8')
+h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode('utf-8')
+print(h)
+" "$PASSWORD")
+
+# update config.json
+python3 -c "
+import json, sys
+path = sys.argv[1]
+h = sys.argv[2]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+data['webdash_password_hash'] = h
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$CONF_FILE" "$HASH"
+
+echo "Password updated."
