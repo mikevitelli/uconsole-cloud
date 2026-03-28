@@ -39,7 +39,6 @@ mkdir -p "${BUILD_DIR}/etc/uconsole/ssl"
 mkdir -p "${BUILD_DIR}/etc/systemd/system"
 mkdir -p "${BUILD_DIR}/etc/nginx/sites-available"
 mkdir -p "${BUILD_DIR}/etc/avahi/services"
-mkdir -p "${BUILD_DIR}/var/lib/uconsole"
 
 # ── Copy from device repo pkg/ tree ──
 
@@ -61,6 +60,9 @@ cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/opt/uco
 
 # Ship uconsole.conf as a dpkg conffile (postinst won't overwrite user edits)
 cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/etc/uconsole/uconsole.conf"
+
+# Write VERSION file for uconsole --version
+echo "${VERSION}" > "${BUILD_DIR}/opt/uconsole/VERSION"
 
 # Make all scripts executable
 find "${BUILD_DIR}/opt/uconsole/" -name "*.sh" -exec chmod +x {} \;

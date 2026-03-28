@@ -6,4 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/opt/uconsole/scripts/system/push-status.sh
-EnvironmentFile=/var/lib/uconsole/status.env
+EnvironmentFile=/etc/uconsole/status.env

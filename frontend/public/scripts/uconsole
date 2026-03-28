@@ -9,8 +9,8 @@ BASE_URL="${BASE_URL:-https://uconsole.cloud}"
 # .deb package installs to /opt/uconsole; curl install uses ~/
 if [ -d /opt/uconsole/scripts ]; then
   INSTALL_MODE="package"
-  CONFIG_DIR="/var/lib/uconsole"
-  ENV_FILE="/var/lib/uconsole/status.env"
+  CONFIG_DIR="/etc/uconsole"
+  ENV_FILE="/etc/uconsole/status.env"
   SCRIPTS_DIR="/opt/uconsole/scripts"
 else
   INSTALL_MODE="standalone"
@@ -49,6 +49,20 @@ show_qr() {
 # ── Commands ─────────────────────────────────────────────
 
 cmd_setup() {
+  if [ "$INSTALL_MODE" = "package" ]; then
+    if [ -x /opt/uconsole/bin/uconsole-setup ]; then
+      exec /opt/uconsole/bin/uconsole-setup "$@"
+    else
+      echo "Setup wizard not found. Run 'uconsole link' for cloud linking only."
+      return 1
+    fi
+  else
+    # Standalone mode: no wizard available, do cloud linking
+    cmd_link "$@"
+  fi
+}
+
+cmd_link() {
   # Check for existing config
   if [ -f "${ENV_FILE}" ]; then
     # shellcheck source=/dev/null
@@ -109,19 +123,28 @@ cmd_setup() {
       echo "Linked to ${REPO}"
 
       # Write config
-      mkdir -p "${CONFIG_DIR}"
-      cat > "${ENV_FILE}" << EOF
+      if [ "$INSTALL_MODE" = "package" ]; then
+        sudo tee "${ENV_FILE}" > /dev/null << EOF
 DEVICE_API_URL="${BASE_URL}/api/device/push"
 DEVICE_TOKEN="${DEVICE_TOKEN}"
 DEVICE_REPO="${REPO}"
 EOF
-      chmod 600 "${ENV_FILE}"
+        sudo chmod 600 "${ENV_FILE}"
+      else
+        mkdir -p "${CONFIG_DIR}"
+        cat > "${ENV_FILE}" << EOF
+DEVICE_API_URL="${BASE_URL}/api/device/push"
+DEVICE_TOKEN="${DEVICE_TOKEN}"
+DEVICE_REPO="${REPO}"
+EOF
+        chmod 600 "${ENV_FILE}"
+      fi
       echo "Config written to ${ENV_FILE}"
 
       if [ "$INSTALL_MODE" = "package" ]; then
         # Package mode: system services are already installed by postinst.
         # Just restart the timer so it picks up the new env file.
-        systemctl restart uconsole-status.timer 2>/dev/null || true
+        sudo systemctl restart uconsole-status.timer 2>/dev/null || true
         echo "Status timer restarted"
       else
         # Standalone mode: create user services or cron
@@ -201,7 +224,7 @@ TMREOF
   done
 
   echo ""
-  die "Code expired. Run 'uconsole setup' to try again."
+  die "Code expired. Run 'uconsole link' to try again."
 }
 
 cmd_push() {
@@ -267,11 +290,11 @@ cmd_unlink() {
   if [ "$INSTALL_MODE" = "package" ]; then
     # Package mode: don't touch system services, just remove config
     if [ -f "${ENV_FILE}" ]; then
-      rm -f "${ENV_FILE}"
+      sudo rm -f "${ENV_FILE}"
       echo "Removed device config"
     fi
     echo "Device unlinked. Services still installed (managed by package)."
-    echo "Run 'uconsole setup' to reconnect."
+    echo "Run 'uconsole link' to reconnect."
   else
     # Standalone mode: stop user services and clean up
     if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
@@ -293,7 +316,7 @@ cmd_unlink() {
       echo "Removed config"
     fi
 
-    echo "Device unlinked. Run 'uconsole setup' to reconnect."
+    echo "Device unlinked. Run 'uconsole link' to reconnect."
   fi
 }
 
@@ -400,7 +423,7 @@ cmd_doctor() {
       fail=$((fail + 1))
     fi
 
-    if [ -f /etc/ssl/uconsole/uconsole.crt ]; then
+    if [ -f /etc/uconsole/ssl/uconsole.crt ]; then
       echo "  [OK] SSL certificate exists"
       pass=$((pass + 1))
     else
@@ -430,6 +453,20 @@ cmd_doctor() {
   else
     echo "  [!!] Cannot reach uconsole.cloud"
     fail=$((fail + 1))
+  fi
+
+  # Migration checks (package mode)
+  if [ "$INSTALL_MODE" = "package" ]; then
+    OLD_ENV="${HOME}/.config/uconsole/status.env"
+    if [ -f "$OLD_ENV" ] && [ ! -f "${ENV_FILE}" ]; then
+      echo "  [!!] Found old config at ${OLD_ENV} — run 'sudo cp ${OLD_ENV} ${ENV_FILE} && sudo chmod 600 ${ENV_FILE}' to migrate"
+      fail=$((fail + 1))
+    fi
+    # Check for old user-level services
+    if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
+      echo "  [!!] Old user-level webdash.service still running — run 'systemctl --user stop webdash && systemctl --user disable webdash'"
+      fail=$((fail + 1))
+    fi
   fi
 
   echo ""
@@ -466,9 +503,17 @@ cmd_restore() {
   echo ""
   if [ ! -f "${ENV_FILE}" ]; then
     echo "Restore complete. To connect to uconsole.cloud:"
-    echo "  uconsole setup"
+    echo "  uconsole link"
   else
     echo "Restore complete. Cloud connection already configured."
+  fi
+}
+
+cmd_version() {
+  if [ -f /opt/uconsole/VERSION ]; then
+    echo "uconsole-cloud $(cat /opt/uconsole/VERSION)"
+  else
+    echo "uconsole-cloud (dev — standalone mode)"
   fi
 }
 
@@ -476,13 +521,15 @@ cmd_help() {
   echo "uconsole — manage your uconsole.cloud device"
   echo ""
   echo "Commands:"
-  echo "  setup    Link this device via code authentication"
+  echo "  setup    Configure device (full wizard)"
+  echo "  link     Link device to uconsole.cloud"
   echo "  push     Push status now"
   echo "  status   Show current config and last push"
   echo "  doctor   Diagnose connectivity and configuration"
   echo "  restore  Run restore.sh from backup repo"
   echo "  unlink   Remove config and stop timer"
   echo "  update   Re-download latest scripts (or upgrade .deb)"
+  echo "  version  Show version"
   echo "  help     Show this help"
   echo ""
   echo "Install mode: ${INSTALL_MODE}"
@@ -496,12 +543,14 @@ COMMAND="${1:-help}"
 
 case "$COMMAND" in
   setup)   cmd_setup ;;
+  link)    cmd_link ;;
   push)    cmd_push ;;
   status)  cmd_status ;;
   doctor)  cmd_doctor ;;
   restore) cmd_restore ;;
   unlink)  cmd_unlink ;;
   update)  cmd_update ;;
+  version|--version|-v) cmd_version ;;
   help|--help|-h) cmd_help ;;
   *) echo "Unknown command: ${COMMAND}"; cmd_help; exit 1 ;;
 esac
