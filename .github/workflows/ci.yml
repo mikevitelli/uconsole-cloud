@@ -9,9 +9,6 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v4
@@ -25,15 +22,15 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -w @uconsole/frontend
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npx -w @uconsole/frontend tsc --noEmit
 
       - name: Test
-        run: npm test
+        run: npm test -w @uconsole/frontend
 
       - name: Build
-        run: npm run build
+        run: npm run build -w @uconsole/frontend
         env:
-          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_SANITY_PROJECT_ID }}
+          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID }}
