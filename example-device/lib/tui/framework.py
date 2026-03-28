@@ -231,7 +231,21 @@ CATEGORIES = [
             ("Quick Notes",      "_notes",              "scratchpad — view and add notes",        "action"),
             ("Calculator",       "_calc",               "math expression evaluator",              "action"),
             ("Stopwatch",        "_stopwatch",          "start, stop, reset timer",               "action"),
+            ("Pomodoro",         "_pomodoro",           "focus timer with work/break cycles",     "action"),
+            ("Weather",          "_weather",            "local forecast and conditions",          "action"),
+            ("Hacker News",      "_hackernews",         "top stories from HN",                    "action"),
+            ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action"),
             ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action"),
+        ],
+    },
+    {
+        "name": "GAMES",
+        "items": [
+            ("Minesweeper",      "_minesweeper",        "classic mine-clearing game",             "action"),
+            ("Snake",            "_snake",              "eat food, grow, don't hit walls",        "action"),
+            ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action"),
+            ("2048",             "_2048",               "slide and merge number tiles",           "action"),
+            ("ROM Launcher",     "_romlauncher",        "launch Game Boy / N64 ROMs",             "action"),
         ],
     },
     {
@@ -632,10 +646,20 @@ SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 def _resolve_cmd(script_name):
     """Resolve 'script.sh arg1 arg2' into (path, [cmd_list]) or (None, None)."""
     parts = script_name.split()
-    path = os.path.join(SCRIPT_DIR, parts[0])
-    if not os.path.isfile(path):
-        return None, None
-    return path, ["bash", path] + parts[1:]
+    name = parts[0]
+    # Search: SCRIPT_DIR flat, then subdirectories, then /opt/uconsole/scripts/ tree
+    search_dirs = [SCRIPT_DIR]
+    for base in [SCRIPT_DIR, '/opt/uconsole/scripts']:
+        if os.path.isdir(base):
+            for sub in ['system', 'power', 'network', 'radio', 'util']:
+                d = os.path.join(base, sub)
+                if os.path.isdir(d):
+                    search_dirs.append(d)
+    for d in search_dirs:
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            return path, ["bash", path] + parts[1:]
+    return None, None
 
 
 def _colorize_line(scr, y, x, line, w, is_border, is_header, is_separator):
@@ -1329,6 +1353,7 @@ CAT_ICONS = {
     "NETWORK": "\u25ce",
     "HARDWARE": "\u2301",
     "TOOLS": "\u2605",
+    "GAMES": "\u265f",
     "CONFIG": "\u2630",
 }
 
@@ -1339,7 +1364,8 @@ CAT_DESCS = {
     "POWER": "battery, cell health, charging, PMU",
     "NETWORK": "WiFi, Bluetooth, SSH, diagnostics",
     "HARDWARE": "AIO board, GPS, SDR, LoRa, ESP32",
-    "TOOLS": "git, notes, calculator, stopwatch",
+    "TOOLS": "git, notes, pomodoro, weather, HN",
+    "GAMES": "minesweeper, snake, tetris, 2048, ROMs",
     "CONFIG": "theme, view mode, keybinds",
 }
 
@@ -1688,7 +1714,9 @@ def _get_native_tools():
     """Lazy-load native tools from submodules to avoid circular imports."""
     from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle
     from tui.tools import (run_keybinds, run_git_panel, run_notes, run_calculator,
-                           run_stopwatch, run_screenshot, run_syslog_viewer, run_ssh_bookmarks)
+                           run_stopwatch, run_screenshot, run_syslog_viewer, run_ssh_bookmarks,
+                           run_pomodoro, run_weather, run_hackernews, run_mdviewer)
+    from tui.games import (run_minesweeper, run_snake, run_tetris, run_2048, run_romlauncher)
     from tui.monitor import run_live_monitor, run_esp32_monitor
     from tui.files import run_file_browser
     from tui.network import (run_wifi_switcher, run_hotspot_toggle, run_hotspot_config,
@@ -1716,8 +1744,17 @@ def _get_native_tools():
         "_notes":       lambda scr: run_notes(scr),
         "_calc":        lambda scr: run_calculator(scr),
         "_stopwatch":   lambda scr: run_stopwatch(scr),
+        "_pomodoro":    lambda scr: run_pomodoro(scr),
+        "_weather":     lambda scr: run_weather(scr),
+        "_hackernews":  lambda scr: run_hackernews(scr),
+        "_mdviewer":    lambda scr: run_mdviewer(scr),
         "_cron":        lambda scr: run_cron_viewer(scr),
         "_screenshot":  lambda scr: run_screenshot(scr),
+        "_minesweeper": lambda scr: run_minesweeper(scr),
+        "_snake":       lambda scr: run_snake(scr),
+        "_tetris":      lambda scr: run_tetris(scr),
+        "_2048":        lambda scr: run_2048(scr),
+        "_romlauncher": lambda scr: run_romlauncher(scr),
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),

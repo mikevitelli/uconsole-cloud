@@ -375,6 +375,29 @@ def compress_response(response):
     return response
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Script path resolution — search categorized subdirs and legacy flat dir
+_SCRIPT_SEARCH = []
+for _base in ['/opt/uconsole/scripts', os.path.expanduser('~/scripts')]:
+    if os.path.isdir(_base):
+        _SCRIPT_SEARCH.append(_base)
+        for _sub in ['system', 'power', 'network', 'radio', 'util']:
+            _d = os.path.join(_base, _sub)
+            if os.path.isdir(_d):
+                _SCRIPT_SEARCH.append(_d)
+
+def _find_script(name):
+    """Find a script by name across all search dirs."""
+    for d in _SCRIPT_SEARCH:
+        p = os.path.join(d, name)
+        if os.path.isfile(p):
+            return p
+    # fallback to SCRIPTS_DIR for backward compat
+    return os.path.join(SCRIPTS_DIR, name)
+
+def _s(name):
+    """Shorthand for script path in ALLOWED_SCRIPTS."""
+    return _find_script(name)
+
 # previous CPU sample for delta calculation
 _prev_cpu = None
 _prev_cpu_time = 0
@@ -609,103 +632,103 @@ def get_failed_units():
 
 ALLOWED_SCRIPTS = {
     # battery
-    'battery':          ['bash', os.path.join(SCRIPTS_DIR, 'battery.sh')],
-    'battery-log':      ['bash', os.path.join(SCRIPTS_DIR, 'battery.sh'), 'log'],
+    'battery':          ['bash', _s('battery.sh')],
+    'battery-log':      ['bash', _s('battery.sh'), 'log'],
     # charge
-    'charge-status':    ['bash', os.path.join(SCRIPTS_DIR, 'charge.sh')],
-    'charge-300':       ['bash', os.path.join(SCRIPTS_DIR, 'charge.sh'), '300'],
-    'charge-500':       ['bash', os.path.join(SCRIPTS_DIR, 'charge.sh'), '500'],
-    'charge-900':       ['bash', os.path.join(SCRIPTS_DIR, 'charge.sh'), '900'],
+    'charge-status':    ['bash', _s('charge.sh')],
+    'charge-300':       ['bash', _s('charge.sh'), '300'],
+    'charge-500':       ['bash', _s('charge.sh'), '500'],
+    'charge-900':       ['bash', _s('charge.sh'), '900'],
     # network
-    'network-overview': ['bash', os.path.join(SCRIPTS_DIR, 'network.sh')],
-    'network-speed':    ['bash', os.path.join(SCRIPTS_DIR, 'network.sh'), 'speed'],
-    'network-scan':     ['bash', os.path.join(SCRIPTS_DIR, 'network.sh'), 'scan'],
-    'network-ping':     ['bash', os.path.join(SCRIPTS_DIR, 'network.sh'), 'ping'],
-    'network-trace':    ['bash', os.path.join(SCRIPTS_DIR, 'network.sh'), 'trace'],
-    'network-log':      ['bash', os.path.join(SCRIPTS_DIR, 'network.sh'), 'log'],
-    'hotspot-status':   ['bash', os.path.join(SCRIPTS_DIR, 'hotspot.sh'), 'status'],
-    'hotspot-start':    ['bash', os.path.join(SCRIPTS_DIR, 'hotspot.sh'), 'on'],
-    'hotspot-stop':     ['bash', os.path.join(SCRIPTS_DIR, 'hotspot.sh'), 'off'],
+    'network-overview': ['bash', _s('network.sh')],
+    'network-speed':    ['bash', _s('network.sh'), 'speed'],
+    'network-scan':     ['bash', _s('network.sh'), 'scan'],
+    'network-ping':     ['bash', _s('network.sh'), 'ping'],
+    'network-trace':    ['bash', _s('network.sh'), 'trace'],
+    'network-log':      ['bash', _s('network.sh'), 'log'],
+    'hotspot-status':   ['bash', _s('hotspot.sh'), 'status'],
+    'hotspot-start':    ['bash', _s('hotspot.sh'), 'on'],
+    'hotspot-stop':     ['bash', _s('hotspot.sh'), 'off'],
     # storage
-    'storage':          ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh')],
-    'storage-devices':  ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh'), 'devices'],
-    'storage-smart':    ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh'), 'smart'],
-    'storage-usb':      ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh'), 'usb'],
-    'storage-mount':    ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh'), 'mount'],
-    'storage-temp':     ['bash', os.path.join(SCRIPTS_DIR, 'storage.sh'), 'temp'],
+    'storage':          ['bash', _s('storage.sh')],
+    'storage-devices':  ['bash', _s('storage.sh'), 'devices'],
+    'storage-smart':    ['bash', _s('storage.sh'), 'smart'],
+    'storage-usb':      ['bash', _s('storage.sh'), 'usb'],
+    'storage-mount':    ['bash', _s('storage.sh'), 'mount'],
+    'storage-temp':     ['bash', _s('storage.sh'), 'temp'],
     # disk usage
-    'disk-usage':       ['bash', os.path.join(SCRIPTS_DIR, 'diskusage.sh')],
-    'disk-big':         ['bash', os.path.join(SCRIPTS_DIR, 'diskusage.sh'), 'big'],
-    'disk-dirs':        ['bash', os.path.join(SCRIPTS_DIR, 'diskusage.sh'), 'dirs'],
-    'disk-clean':       ['bash', os.path.join(SCRIPTS_DIR, 'diskusage.sh'), 'clean'],
+    'disk-usage':       ['bash', _s('diskusage.sh')],
+    'disk-big':         ['bash', _s('diskusage.sh'), 'big'],
+    'disk-dirs':        ['bash', _s('diskusage.sh'), 'dirs'],
+    'disk-clean':       ['bash', _s('diskusage.sh'), 'clean'],
     # audit
-    'audit-overview':   ['bash', os.path.join(SCRIPTS_DIR, 'audit.sh')],
-    'audit-junk':       ['bash', os.path.join(SCRIPTS_DIR, 'audit.sh'), 'junk'],
-    'audit-untracked':  ['bash', os.path.join(SCRIPTS_DIR, 'audit.sh'), 'untracked'],
-    'audit-categories': ['bash', os.path.join(SCRIPTS_DIR, 'audit.sh'), 'categories'],
+    'audit-overview':   ['bash', _s('audit.sh')],
+    'audit-junk':       ['bash', _s('audit.sh'), 'junk'],
+    'audit-untracked':  ['bash', _s('audit.sh'), 'untracked'],
+    'audit-categories': ['bash', _s('audit.sh'), 'categories'],
     # backup (gather + sync = backward compat, same as before)
-    'backup-all':       ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'all'],
-    'backup-git':       ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'git'],
-    'backup-gh':        ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gh'],
-    'backup-system':    ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'system'],
-    'backup-pkgs':      ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'packages'],
-    'backup-desktop':   ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'desktop'],
-    'backup-browser':   ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'browser'],
-    'backup-scripts':   ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'scripts'],
-    'backup-status':    ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'status'],
+    'backup-all':       ['bash', _s('backup.sh'), 'all'],
+    'backup-git':       ['bash', _s('backup.sh'), 'git'],
+    'backup-gh':        ['bash', _s('backup.sh'), 'gh'],
+    'backup-system':    ['bash', _s('backup.sh'), 'system'],
+    'backup-pkgs':      ['bash', _s('backup.sh'), 'packages'],
+    'backup-desktop':   ['bash', _s('backup.sh'), 'desktop'],
+    'backup-browser':   ['bash', _s('backup.sh'), 'browser'],
+    'backup-scripts':   ['bash', _s('backup.sh'), 'scripts'],
+    'backup-status':    ['bash', _s('backup.sh'), 'status'],
     # backup (new: gather-only + explicit sync)
-    'backup-gather-all':     ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'all'],
-    'backup-gather-git':     ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'git'],
-    'backup-gather-gh':      ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'gh'],
-    'backup-gather-system':  ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'system'],
-    'backup-gather-pkgs':    ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'packages'],
-    'backup-gather-desktop': ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'desktop'],
-    'backup-gather-browser': ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'browser'],
-    'backup-gather-scripts': ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'gather', 'scripts'],
-    'backup-sync':           ['bash', os.path.join(SCRIPTS_DIR, 'backup.sh'), 'sync'],
+    'backup-gather-all':     ['bash', _s('backup.sh'), 'gather', 'all'],
+    'backup-gather-git':     ['bash', _s('backup.sh'), 'gather', 'git'],
+    'backup-gather-gh':      ['bash', _s('backup.sh'), 'gather', 'gh'],
+    'backup-gather-system':  ['bash', _s('backup.sh'), 'gather', 'system'],
+    'backup-gather-pkgs':    ['bash', _s('backup.sh'), 'gather', 'packages'],
+    'backup-gather-desktop': ['bash', _s('backup.sh'), 'gather', 'desktop'],
+    'backup-gather-browser': ['bash', _s('backup.sh'), 'gather', 'browser'],
+    'backup-gather-scripts': ['bash', _s('backup.sh'), 'gather', 'scripts'],
+    'backup-sync':           ['bash', _s('backup.sh'), 'sync'],
     # update
-    'update-all':       ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'all'],
-    'update-apt':       ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'apt'],
-    'update-flatpak':   ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'flatpak'],
-    'update-firmware':  ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'firmware'],
-    'update-repo':      ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'repo'],
-    'update-status':    ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'status'],
-    'update-log':       ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'log'],
-    'update-snapshot':  ['bash', os.path.join(SCRIPTS_DIR, 'update.sh'), 'snapshot'],
+    'update-all':       ['bash', _s('update.sh'), 'all'],
+    'update-apt':       ['bash', _s('update.sh'), 'apt'],
+    'update-flatpak':   ['bash', _s('update.sh'), 'flatpak'],
+    'update-firmware':  ['bash', _s('update.sh'), 'firmware'],
+    'update-repo':      ['bash', _s('update.sh'), 'repo'],
+    'update-status':    ['bash', _s('update.sh'), 'status'],
+    'update-log':       ['bash', _s('update.sh'), 'log'],
+    'update-snapshot':  ['bash', _s('update.sh'), 'snapshot'],
     # power
-    'power-status':     ['bash', os.path.join(SCRIPTS_DIR, 'power.sh'), 'status'],
-    'power-reboot':     ['bash', os.path.join(SCRIPTS_DIR, 'power.sh'), 'reboot'],
-    'power-shutdown':   ['bash', os.path.join(SCRIPTS_DIR, 'power.sh'), 'shutdown'],
+    'power-status':     ['bash', _s('power.sh'), 'status'],
+    'power-reboot':     ['bash', _s('power.sh'), 'reboot'],
+    'power-shutdown':   ['bash', _s('power.sh'), 'shutdown'],
     # dashboard (terminal)
-    'dashboard-status': ['bash', os.path.join(SCRIPTS_DIR, 'dashboard.sh'), 'status'],
+    'dashboard-status': ['bash', _s('dashboard.sh'), 'status'],
     # esp32
-    'esp32-status':     ['bash', os.path.join(SCRIPTS_DIR, 'esp32.sh'), 'status'],
-    'esp32-log':        ['bash', os.path.join(SCRIPTS_DIR, 'esp32.sh'), 'log'],
-    'esp32-flash':      ['bash', os.path.join(SCRIPTS_DIR, 'esp32.sh'), 'flash'],
-    'esp32-reset':      ['bash', os.path.join(SCRIPTS_DIR, 'esp32.sh'), 'reset'],
-    'esp32-info':       ['bash', os.path.join(SCRIPTS_DIR, 'esp32.sh'), 'info'],
+    'esp32-status':     ['bash', _s('esp32.sh'), 'status'],
+    'esp32-log':        ['bash', _s('esp32.sh'), 'log'],
+    'esp32-flash':      ['bash', _s('esp32.sh'), 'flash'],
+    'esp32-reset':      ['bash', _s('esp32.sh'), 'reset'],
+    'esp32-info':       ['bash', _s('esp32.sh'), 'info'],
     # gps
-    'gps-status':       ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'status'],
-    'gps-log':          ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'log'],
-    'gps-fix':          ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'fix'],
-    'gps-time':         ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'time'],
-    'gps-track':        ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'track'],
-    'gps-stop':         ['bash', os.path.join(SCRIPTS_DIR, 'gps.sh'), 'stop'],
+    'gps-status':       ['bash', _s('gps.sh'), 'status'],
+    'gps-log':          ['bash', _s('gps.sh'), 'log'],
+    'gps-fix':          ['bash', _s('gps.sh'), 'fix'],
+    'gps-time':         ['bash', _s('gps.sh'), 'time'],
+    'gps-track':        ['bash', _s('gps.sh'), 'track'],
+    'gps-stop':         ['bash', _s('gps.sh'), 'stop'],
     # sdr
-    'sdr-status':       ['bash', os.path.join(SCRIPTS_DIR, 'sdr.sh'), 'status'],
-    'sdr-test':         ['bash', os.path.join(SCRIPTS_DIR, 'sdr.sh'), 'test'],
-    'sdr-info':         ['bash', os.path.join(SCRIPTS_DIR, 'sdr.sh'), 'info'],
-    'sdr-scan':         ['bash', os.path.join(SCRIPTS_DIR, 'sdr.sh'), 'scan'],
+    'sdr-status':       ['bash', _s('sdr.sh'), 'status'],
+    'sdr-test':         ['bash', _s('sdr.sh'), 'test'],
+    'sdr-info':         ['bash', _s('sdr.sh'), 'info'],
+    'sdr-scan':         ['bash', _s('sdr.sh'), 'scan'],
     # lora
-    'lora-status':      ['bash', os.path.join(SCRIPTS_DIR, 'lora.sh'), 'status'],
-    'lora-config':      ['bash', os.path.join(SCRIPTS_DIR, 'lora.sh'), 'config'],
-    'lora-listen':      ['bash', os.path.join(SCRIPTS_DIR, 'lora.sh'), 'listen'],
-    'lora-send':        ['bash', os.path.join(SCRIPTS_DIR, 'lora.sh'), 'send', 'test'],
+    'lora-status':      ['bash', _s('lora.sh'), 'status'],
+    'lora-config':      ['bash', _s('lora.sh'), 'config'],
+    'lora-listen':      ['bash', _s('lora.sh'), 'listen'],
+    'lora-send':        ['bash', _s('lora.sh'), 'send', 'test'],
     # battery test
-    'battest-status':   ['bash', os.path.join(SCRIPTS_DIR, 'battery-test.sh'), 'status'],
-    'battest-stop':     ['bash', os.path.join(SCRIPTS_DIR, 'battery-test.sh'), 'stop'],
-    'battest-list':     ['bash', os.path.join(SCRIPTS_DIR, 'battery-test.sh'), 'list'],
-    'battest-compare':  ['bash', os.path.join(SCRIPTS_DIR, 'battery-test.sh'), 'compare'],
+    'battest-status':   ['bash', _s('battery-test.sh'), 'status'],
+    'battest-stop':     ['bash', _s('battery-test.sh'), 'stop'],
+    'battest-list':     ['bash', _s('battery-test.sh'), 'list'],
+    'battest-compare':  ['bash', _s('battery-test.sh'), 'compare'],
     # config / timers
     'timer-enable-backup':  ['systemctl', '--user', 'enable', '--now', 'uconsole-backup.timer'],
     'timer-disable-backup': ['systemctl', '--user', 'disable', '--now', 'uconsole-backup.timer'],
@@ -1379,7 +1402,7 @@ def api_battest_start():
         return jsonify({'error': 'Invalid label (alphanumeric, hyphens, underscores only)'}), 400
     interval = str(data.get('interval', 5))
     subprocess.Popen(
-        ['bash', os.path.join(SCRIPTS_DIR, 'battery-test.sh'), 'start', label, interval],
+        ['bash', _s('battery-test.sh'), 'start', label, interval],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
         start_new_session=True
     )
