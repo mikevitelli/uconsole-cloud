@@ -8,7 +8,7 @@ Implement a feature from the uconsole ecosystem. The feature description is: $AR
 ## Process
 
 ### Step 1: Locate in Feature Map
-Read `/Users/mikevitelli/code/uconsole-cloud/FEATURES.md` and find the feature. Identify:
+Read `FEATURES.md` at the repo root and find the feature. Identify:
 - Which phase it belongs to
 - What dependencies it has (are prerequisite features done?)
 - Which repo(s) it touches (uconsole-cloud, uconsole backup, or both)
