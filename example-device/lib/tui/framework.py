@@ -123,6 +123,10 @@ SUBMENUS = {
         ("Live View",             "battery-test.sh live",                 "tail active test log",        "fullscreen"),
         ("List Tests",            "battery-test.sh list",                 "all completed tests",         "panel"),
         ("Compare",               "battery-test.sh compare",             "side-by-side comparison",     "panel"),
+        ("Discharge: Nitecore",   "discharge-test.sh nitecore-3400",     "overnight 30s log + git push","stream"),
+        ("Discharge: Samsung-35E","discharge-test.sh samsung-35e",       "overnight 30s log + git push","stream"),
+        ("Discharge: Samsung-30Q","discharge-test.sh samsung-30q",       "overnight 30s log + git push","stream"),
+        ("Discharge: Panasonic",  "discharge-test.sh panasonic-ga",      "overnight 30s log + git push","stream"),
     ],
     "sub:esp32": [
         ("Status",           "esp32.sh status",     "latest sensor reading",                  "panel"),
@@ -234,6 +238,7 @@ CATEGORIES = [
             ("Pomodoro",         "_pomodoro",           "focus timer with work/break cycles",     "action"),
             ("Weather",          "_weather",            "local forecast and conditions",          "action"),
             ("Hacker News",      "_hackernews",         "top stories from HN",                    "action"),
+            ("uConsole Forum",   "_forum",              "ClockworkPi community topics",           "action"),
             ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action"),
             ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action"),
         ],
@@ -255,6 +260,7 @@ CATEGORIES = [
             ("View Mode",        "_viewmode",           "switch between list and tile view",      "action"),
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action"),
+            ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action"),
         ],
     },
 ]
@@ -281,6 +287,28 @@ GP_B = 2       # Back (previous category)
 GP_X = 0       # Refresh
 GP_Y = 3       # Quit
 
+# Claim file: whichever instance last received keyboard input owns the gamepad.
+# js0 broadcasts events to all readers; non-owners drain and discard.
+_GP_CLAIM = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid())), "console-gamepad-owner")
+_MY_PID = str(os.getpid())
+
+
+def _claim_gamepad():
+    """Mark this process as the active gamepad owner."""
+    try:
+        with open(_GP_CLAIM, "w") as f:
+            f.write(_MY_PID)
+    except OSError:
+        pass
+
+
+def _is_gamepad_owner():
+    """Check if this process owns the gamepad."""
+    try:
+        with open(_GP_CLAIM, "r") as f:
+            return f.read().strip() == _MY_PID
+    except (OSError, ValueError):
+        return True  # no claim file = single instance, allow
 
 
 def open_gamepad():
@@ -293,8 +321,17 @@ def open_gamepad():
         return None
 
 
+def close_gamepad(js=None):
+    """Close gamepad file descriptor."""
+    if js is not None:
+        try:
+            js.close()
+        except OSError:
+            pass
+
+
 def read_gamepad(js):
-    """Read pending button presses from js0. Returns list of button numbers pressed."""
+    """Read pending button presses. Returns [] if not the active owner."""
     pressed = []
     if js is None:
         return pressed
@@ -306,11 +343,22 @@ def read_gamepad(js):
             _ts, val, typ, num = struct.unpack(JS_FMT, data)
             if typ & 0x80:
                 continue  # skip init events
-            if typ == 1 and val == 1:  # button press only
+            if typ == 1 and val == 1:
                 pressed.append(num)
     except (OSError, BlockingIOError):
         pass
+    # Only return presses if this instance is the active owner
+    if not _is_gamepad_owner():
+        return []
     return pressed
+
+
+def get_key(scr):
+    """Wrapper around getch() that claims gamepad on keyboard input."""
+    key = scr.getch()
+    if key > 0:
+        _claim_gamepad()
+    return key
 
 # ── Color themes ──────────────────────────────────────────────────────────
 C_HEADER   = 1
@@ -607,14 +655,13 @@ def wait_for_input():
     """Block until a keyboard key or gamepad button is pressed."""
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    js = None
-    try:
-        js = open(JS_PATH, "rb")
-        os.set_blocking(js.fileno(), False)
-        while js.read(JS_SIZE):
-            pass  # drain
-    except (OSError, FileNotFoundError):
-        pass
+    js = open_gamepad()
+    if js:
+        try:
+            while js.read(JS_SIZE):
+                pass  # drain
+        except (OSError, BlockingIOError):
+            pass
     try:
         tty.setraw(fd)
         fds = [fd]
@@ -626,7 +673,7 @@ def wait_for_input():
                 if r == fd:
                     sys.stdin.read(1)
                     return
-                else:
+                elif js and r == js.fileno():
                     data = js.read(JS_SIZE)
                     if data and len(data) >= JS_SIZE:
                         _ts, val, typ, num = struct.unpack(JS_FMT, data)
@@ -634,8 +681,7 @@ def wait_for_input():
                             return
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        if js:
-            js.close()
+        close_gamepad(js)
 
 
 # ── Script execution modes ─────────────────────────────────────────────────
@@ -806,7 +852,7 @@ def run_panel(scr, script_name, title):
 
         # Input
         try:
-            key = scr.getch()
+            key = get_key(scr)
         except curses.error:
             key = -1
 
@@ -842,7 +888,7 @@ def run_panel(scr, script_name, title):
             break
 
     if js:
-        js.close()
+        close_gamepad()
 
 
 def run_stream(scr, script_name, title):
@@ -926,7 +972,7 @@ def run_stream(scr, script_name, title):
 
         # Input
         try:
-            key = scr.getch()
+            key = get_key(scr)
         except curses.error:
             key = -1
 
@@ -967,7 +1013,7 @@ def run_stream(scr, script_name, title):
 
     t.join(timeout=2)
     if js:
-        js.close()
+        close_gamepad()
     scr.timeout(100)
 
 
@@ -1059,7 +1105,7 @@ def run_confirm(scr, title):
         # Poll for cancel input over ~1 second (5 × 200ms)
         for _ in range(5):
             try:
-                key = scr.getch()
+                key = get_key(scr)
             except curses.error:
                 key = -1
 
@@ -1070,12 +1116,12 @@ def run_confirm(scr, title):
 
             if key in (27, ord("q"), ord("Q"), ord("n"), ord("N")) or gp_action == "back":
                 if js:
-                    js.close()
+                    close_gamepad()
                 scr.timeout(100)
                 return False
 
     if js:
-        js.close()
+        close_gamepad()
     scr.timeout(100)
     return True
 
@@ -1104,7 +1150,7 @@ def _submenu_run_selected(scr, items, sel_idx, js):
         result = run_script(scr, script, name, mode)
         if result == "switch_view":
             if js:
-                js.close()
+                close_gamepad()
             return "switch_view", None
     except Exception as e:
         draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -1112,7 +1158,7 @@ def _submenu_run_selected(scr, items, sel_idx, js):
         scr.refresh()
         time.sleep(3)
     if js:
-        js.close()
+        close_gamepad()
     js = open_gamepad()
     return None, js
 
@@ -1191,7 +1237,7 @@ def run_submenu(scr, submenu_key, parent_title):
         scr.refresh()
 
         try:
-            key = scr.getch()
+            key = get_key(scr)
         except curses.error:
             key = -1
 
@@ -1238,14 +1284,14 @@ def run_submenu(scr, submenu_key, parent_title):
                     return "switch_view"
 
     if js:
-        js.close()
+        close_gamepad()
     return None
 
 
 def _tui_input_loop(scr, js):
     """Shared input reader. Returns (key, gp_action)."""
     try:
-        key = scr.getch()
+        key = get_key(scr)
     except curses.error:
         key = -1
     gp_action = None
@@ -1338,7 +1384,7 @@ def run_process_manager(scr):
                     time.sleep(1)
 
     if js:
-        js.close()
+        close_gamepad()
     scr.timeout(100)
 
 
@@ -1621,7 +1667,7 @@ def main_tiles(scr):
 
         # Input
         try:
-            key = scr.getch()
+            key = get_key(scr)
         except curses.error:
             key = -1
 
@@ -1684,7 +1730,7 @@ def main_tiles(scr):
                         result = run_script(scr, script, name, mode)
                         if result == "switch_view":
                             if js:
-                                js.close()
+                                close_gamepad()
                             return "switch_view"
                     except Exception as e:
                         draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -1692,7 +1738,7 @@ def main_tiles(scr):
                         scr.refresh()
                         time.sleep(3)
                     if js:
-                        js.close()
+                        close_gamepad()
                     js = open_gamepad()
                     info = get_quick_info()
                     last_info_time = time.time()
@@ -1712,10 +1758,10 @@ def main_tiles(scr):
 
 def _get_native_tools():
     """Lazy-load native tools from submodules to avoid circular imports."""
-    from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle
+    from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle, run_trackball_scroll_toggle
     from tui.tools import (run_keybinds, run_git_panel, run_notes, run_calculator,
                            run_stopwatch, run_screenshot, run_syslog_viewer, run_ssh_bookmarks,
-                           run_pomodoro, run_weather, run_hackernews, run_mdviewer)
+                           run_pomodoro, run_weather, run_hackernews, run_forum, run_mdviewer)
     from tui.games import (run_minesweeper, run_snake, run_tetris, run_2048, run_romlauncher)
     from tui.monitor import run_live_monitor, run_esp32_monitor
     from tui.files import run_file_browser
@@ -1728,6 +1774,7 @@ def _get_native_tools():
         "_viewmode":    lambda scr: run_viewmode_toggle(scr),
         "_bat_gauge":   lambda scr: run_bat_gauge_toggle(scr),
         "_keybinds":    lambda scr: run_keybinds(scr),
+        "_trackball_scroll": lambda scr: run_trackball_scroll_toggle(scr),
         "_monitor":     lambda scr: run_live_monitor(scr),
         "_processes":   lambda scr: run_process_manager(scr),
         "_syslog":      lambda scr: run_syslog_viewer(scr),
@@ -1747,6 +1794,7 @@ def _get_native_tools():
         "_pomodoro":    lambda scr: run_pomodoro(scr),
         "_weather":     lambda scr: run_weather(scr),
         "_hackernews":  lambda scr: run_hackernews(scr),
+        "_forum":       lambda scr: run_forum(scr),
         "_mdviewer":    lambda scr: run_mdviewer(scr),
         "_cron":        lambda scr: run_cron_viewer(scr),
         "_screenshot":  lambda scr: run_screenshot(scr),
@@ -1972,7 +2020,7 @@ def main(scr):
 
         # Input — keyboard
         try:
-            key = scr.getch()
+            key = get_key(scr)
         except curses.error:
             key = -1
 
@@ -2022,7 +2070,7 @@ def main(scr):
                     result = run_script(scr, script, name, mode)
                     if result == "switch_view":
                         if js:
-                            js.close()
+                            close_gamepad()
                         return "switch_view"
                 except Exception as e:
                     draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -2031,7 +2079,7 @@ def main(scr):
                     time.sleep(3)
                 # Re-open gamepad (fd may be stale after curses endwin/reinit)
                 if js:
-                    js.close()
+                    close_gamepad()
                 js = open_gamepad()
                 # Refresh info after running a script
                 info = get_quick_info()

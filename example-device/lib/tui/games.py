@@ -915,29 +915,193 @@ ROM_EXTENSIONS = {
     ".nes", ".snes", ".smc", ".sfc",
 }
 
-EMULATOR_MAP = {
-    ".gb": "gearboy",
-    ".gbc": "gearboy",
-    ".gba": "mgba",
-    ".n64": "mupen64plus",
-    ".z64": "mupen64plus",
-    ".v64": "mupen64plus",
-    ".nes": "retroarch",
-    ".snes": "retroarch",
-    ".smc": "retroarch",
-    ".sfc": "retroarch",
+# SDL controller mapping for ClockworkPI uConsole gamepad
+# SDL 2.26+ encodes CRC16 in GUID bytes 2-3: 030000fd...
+# Physical layout: A=b1, B=b2, X=b3, Y=b0
+SDL_CONTROLLER_MAP = (
+    "030000fdaf1e00002400000010010000,"
+    "ClockworkPI uConsole,"
+    "a:b1,b:b2,back:b8,"
+    "dpdown:+a1,dpleft:-a0,dpright:+a0,dpup:-a1,"
+    "start:b9,x:b3,y:b0,"
+    "platform:Linux,"
+)
+
+MGBA_ARGS = ["-f", "-C", "lockAspectRatio=1"]
+
+# Per-system emulator options: {system: [(name, args_fn), ...]}
+# First entry is the default; user prefs override via config file.
+EMULATOR_OPTIONS = {
+    "gb": [
+        ("mgba",    lambda: _mgba_entry()),
+        ("gearboy", lambda: _gearboy_entry()),
+    ],
+    "gbc": [
+        ("mgba",    lambda: _mgba_entry()),
+        ("gearboy", lambda: _gearboy_entry()),
+    ],
+    "gba": [
+        ("mgba", lambda: _mgba_entry()),
+    ],
+    "n64": [
+        ("retroarch (mupen64plus)", lambda: _retroarch_entry("mupen64plus_next")),
+    ],
+    "nes": [
+        ("retroarch", lambda: _retroarch_entry(None)),
+    ],
+    "snes": [
+        ("retroarch", lambda: _retroarch_entry(None)),
+    ],
 }
+
+# Map file extension to system key
+EXT_TO_SYSTEM = {
+    ".gb": "gb", ".gbc": "gbc", ".gba": "gba",
+    ".n64": "n64", ".z64": "n64", ".v64": "n64",
+    ".nes": "nes", ".snes": "snes", ".smc": "snes", ".sfc": "snes",
+}
+
+RETROARCH_CORE_DIRS = [
+    os.path.expanduser("~/.config/retroarch/cores"),
+    "/usr/lib/libretro",
+    "/usr/lib/aarch64-linux-gnu/libretro",
+]
+
+EMU_PREFS_FILE = os.path.expanduser("~/.config/uconsole/emulator-prefs.conf")
+
+
+def _load_emu_prefs():
+    """Load emulator preferences from config file."""
+    prefs = {}
+    try:
+        with open(EMU_PREFS_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    sys_key, emu_name = line.split("=", 1)
+                    prefs[sys_key.strip()] = emu_name.strip()
+    except FileNotFoundError:
+        pass
+    return prefs
+
+
+def _save_emu_prefs(prefs):
+    """Save emulator preferences to config file."""
+    os.makedirs(os.path.dirname(EMU_PREFS_FILE), exist_ok=True)
+    with open(EMU_PREFS_FILE, "w") as f:
+        f.write("# Emulator preferences per system\n")
+        for sys_key in sorted(prefs):
+            f.write(f"{sys_key}={prefs[sys_key]}\n")
+
+
+def _mgba_entry():
+    """Build (path, args) for mGBA."""
+    path = _find_binary("mgba")
+    if path:
+        return (path, list(MGBA_ARGS))
+    return None
+
+
+def _gearboy_entry():
+    """Build (path, args) for Gearboy."""
+    path = _find_binary("gearboy")
+    if path:
+        return (path, [])
+    return None
+
+
+def _retroarch_entry(core_name):
+    """Build (path, args) for RetroArch, optionally with a core."""
+    ra = _find_binary("retroarch")
+    if not ra:
+        return None
+    if core_name:
+        for d in RETROARCH_CORE_DIRS:
+            core = os.path.join(d, f"{core_name}_libretro.so")
+            if os.path.isfile(core):
+                return (ra, ["-L", core])
+        return None
+    return (ra, [])
 
 
 def _find_emulator(ext):
-    """Find the emulator binary for a given ROM extension."""
-    name = EMULATOR_MAP.get(ext)
-    if not name:
+    """Find the emulator binary for a given ROM extension.
+
+    Returns (cmd, args) tuple or None.
+    """
+    sys_key = EXT_TO_SYSTEM.get(ext)
+    if not sys_key:
         return None
-    # Check local emulators directory first
+
+    options = EMULATOR_OPTIONS.get(sys_key, [])
+    if not options:
+        return None
+
+    # Check user preference
+    prefs = _load_emu_prefs()
+    preferred = prefs.get(sys_key)
+
+    # Try preferred emulator first
+    if preferred:
+        for name, entry_fn in options:
+            if name == preferred:
+                result = entry_fn()
+                if result:
+                    return result
+                break
+
+    # Fall back to first available
+    for _name, entry_fn in options:
+        result = entry_fn()
+        if result:
+            return result
+    return None
+
+
+def _emu_label_for_ext(ext):
+    """Get the display name of the selected emulator for an extension."""
+    sys_key = EXT_TO_SYSTEM.get(ext)
+    if not sys_key:
+        return "?"
+    options = EMULATOR_OPTIONS.get(sys_key, [])
+    prefs = _load_emu_prefs()
+    preferred = prefs.get(sys_key)
+    if preferred:
+        for name, entry_fn in options:
+            if name == preferred and entry_fn():
+                return name
+    for name, entry_fn in options:
+        if entry_fn():
+            return name
+    return "?"
+
+
+def _launch_env():
+    """Build environment dict with SDL controller mapping."""
+    env = os.environ.copy()
+    # Use our canonical mapping, replacing any existing one for this GUID
+    guid = SDL_CONTROLLER_MAP.split(",")[0]
+    existing = env.get("SDL_GAMECONTROLLERCONFIG", "")
+    # Filter out any existing entries for this GUID
+    lines = [l for l in existing.split("\n") if l.strip() and not l.startswith(guid)]
+    lines.insert(0, SDL_CONTROLLER_MAP)
+    env["SDL_GAMECONTROLLERCONFIG"] = "\n".join(lines)
+    return env
+
+
+def _find_binary(name):
+    """Find an executable by name."""
+    # Check local emulators directory first (flat or nested)
     local = os.path.expanduser(f"~/emulators/{name}")
     if os.path.isfile(local) and os.access(local, os.X_OK):
         return local
+    nested = os.path.expanduser(f"~/emulators/{name}/{name}")
+    if os.path.isfile(nested) and os.access(nested, os.X_OK):
+        return nested
+    # Check /usr/games (Debian installs games there)
+    usr_games = f"/usr/games/{name}"
+    if os.path.isfile(usr_games) and os.access(usr_games, os.X_OK):
+        return usr_games
     # Fall back to system PATH
     try:
         result = subprocess.run(["which", name], capture_output=True, text=True, timeout=3)
@@ -980,6 +1144,90 @@ def _scan_roms():
                         systems[key] = []
                     systems[key].append((entry, sys_path))
     return systems
+
+
+def _emulator_config_menu(scr, js):
+    """Show emulator preference menu for each system."""
+    hdr = curses.color_pair(C_HEADER) | curses.A_BOLD
+    val = curses.color_pair(C_ITEM) | curses.A_BOLD
+    dim = curses.color_pair(C_DIM)
+    sel_attr = curses.color_pair(C_SEL) | curses.A_BOLD
+    cat_attr = curses.color_pair(C_CAT) | curses.A_BOLD
+    warn_attr = curses.color_pair(tui.C_WARN) | curses.A_BOLD
+
+    prefs = _load_emu_prefs()
+    sys_keys = sorted(EMULATOR_OPTIONS.keys())
+    sel = 0
+    message = ""
+    msg_time = 0
+
+    while True:
+        h, w = scr.getmaxyx()
+        scr.erase()
+        tui.put(scr, 0, 1, "EMULATOR CONFIG", w - 2, hdr)
+
+        for i, sys_key in enumerate(sys_keys):
+            options = EMULATOR_OPTIONS[sys_key]
+            current = prefs.get(sys_key)
+            # Find active emulator name
+            active = None
+            if current:
+                for name, fn in options:
+                    if name == current:
+                        active = name
+                        break
+            if not active:
+                for name, fn in options:
+                    if fn():
+                        active = name
+                        break
+            active = active or "none"
+
+            available = [n for n, fn in options if fn()]
+            label = f"  {sys_key.upper():<8} {active}"
+            if len(available) <= 1:
+                label += " (only option)"
+            attr = sel_attr if i == sel else val
+            marker = "▸" if i == sel else " "
+            tui.put(scr, i + 2, 1, f"{marker}{label}", w - 2, attr)
+
+        if message and time.time() - msg_time < 3:
+            tui.put(scr, h - 2, 2, message, w - 4, warn_attr)
+
+        bar = " ↑↓ Select │ A/→ Cycle │ B Back "
+        tui.put(scr, h - 1, 0, bar.center(w), w, curses.color_pair(C_FOOTER))
+        scr.refresh()
+
+        key, gp = _tui_input_loop(scr, js)
+        if key == -1 and gp is None:
+            continue
+
+        if key == ord("q") or key == ord("b") or gp == "back":
+            break
+        elif key == curses.KEY_UP or key == ord("k"):
+            sel = max(0, sel - 1)
+        elif key == curses.KEY_DOWN or key == ord("j"):
+            sel = min(len(sys_keys) - 1, sel + 1)
+        elif key in (curses.KEY_ENTER, 10, 13, curses.KEY_RIGHT, ord("a")) or gp in ("enter", "right"):
+            sys_key = sys_keys[sel]
+            options = EMULATOR_OPTIONS[sys_key]
+            available = [(n, fn) for n, fn in options if fn()]
+            if len(available) <= 1:
+                message = f"No alternatives for {sys_key.upper()}"
+                msg_time = time.time()
+                continue
+            current = prefs.get(sys_key, available[0][0])
+            # Cycle to next
+            names = [n for n, _ in available]
+            try:
+                idx = names.index(current)
+                nxt = names[(idx + 1) % len(names)]
+            except ValueError:
+                nxt = names[0]
+            prefs[sys_key] = nxt
+            _save_emu_prefs(prefs)
+            message = f"{sys_key.upper()} → {nxt}"
+            msg_time = time.time()
 
 
 def run_romlauncher(scr):
@@ -1068,7 +1316,7 @@ def run_romlauncher(scr):
                     break
                 fname, fpath = roms[idx]
                 _, ext = os.path.splitext(fname)
-                emu = EMULATOR_MAP.get(ext.lower(), "?")
+                emu = _emu_label_for_ext(ext.lower())
                 line = f"  {fname:<50} [{emu}]"
                 if idx == rom_sel:
                     marker = "▸"
@@ -1084,9 +1332,9 @@ def run_romlauncher(scr):
 
         # Footer
         if in_system:
-            bar = " ↑↓ Select │ A Launch │ B Back │ X Refresh "
+            bar = " ↑↓ Select │ A Launch │ B Back │ X Refresh │ Y Emulator "
         else:
-            bar = " ↑↓ Select │ A Open │ B Quit │ X Refresh "
+            bar = " ↑↓ Select │ A Open │ B Quit │ X Refresh │ Y Emulator "
         tui.put(scr, h - 1, 0, bar.center(w), w, curses.color_pair(C_FOOTER))
         scr.refresh()
 
@@ -1119,6 +1367,8 @@ def run_romlauncher(scr):
             sys_sel = 0
             rom_sel = 0
             in_system = False
+        elif key == ord("y"):
+            _emulator_config_menu(scr, js)
         elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter" or key == ord("a"):
             if not system_names:
                 continue
@@ -1133,14 +1383,18 @@ def run_romlauncher(scr):
                 if roms and rom_sel < len(roms):
                     fname, fpath = roms[rom_sel]
                     _, ext = os.path.splitext(fname)
-                    emu_path = _find_emulator(ext.lower())
-                    if not emu_path:
+                    emu = _find_emulator(ext.lower())
+                    if not emu:
                         message = f"No emulator found for {ext}"
                         msg_time = time.time()
                     else:
+                        emu_path, emu_args = emu
                         curses.endwin()
                         try:
-                            subprocess.run([emu_path, fpath])
+                            subprocess.run(
+                                [emu_path] + emu_args + [fpath],
+                                env=_launch_env(),
+                            )
                         except Exception as e:
                             print(f"\n  Error: {e}")
                         print("\n  Press any key to return...")

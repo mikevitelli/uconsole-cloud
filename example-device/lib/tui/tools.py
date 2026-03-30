@@ -958,6 +958,208 @@ def run_hackernews(scr):
         js.close()
 
 
+def run_forum(scr):
+    """ClockworkPi uConsole forum browser (Discourse API)."""
+    js = open_gamepad()
+    scr.timeout(100)
+
+    FORUM = "https://forum.clockworkpi.com"
+    CAT_ID = 30  # uConsole category
+    topics = []
+    posts = []
+    sel = 0
+    scroll = 0
+    mode = "topics"  # topics or posts
+    error_msg = ""
+    current_topic = None
+
+    def fetch_topics():
+        nonlocal topics, error_msg
+        try:
+            out = subprocess.check_output(
+                ["curl", "-s", f"{FORUM}/c/uconsole/{CAT_ID}/l/latest.json"],
+                timeout=10, stderr=subprocess.DEVNULL
+            ).decode()
+            data = json.loads(out)
+            items = []
+            for t in data.get("topic_list", {}).get("topics", [])[:30]:
+                if t.get("pinned_globally"):
+                    continue
+                items.append({
+                    "id": t["id"],
+                    "title": t.get("title", "(no title)"),
+                    "posts_count": t.get("posts_count", 0),
+                    "like_count": t.get("like_count", 0),
+                    "views": t.get("views", 0),
+                    "last_posted_at": (t.get("last_posted_at") or "")[:10],
+                    "slug": t.get("slug", ""),
+                })
+            topics = items
+            error_msg = ""
+        except Exception as e:
+            if not topics:
+                error_msg = f"Error: {e}"
+
+    def fetch_posts(topic_id):
+        nonlocal posts, error_msg
+        try:
+            out = subprocess.check_output(
+                ["curl", "-s", f"{FORUM}/t/{topic_id}.json"],
+                timeout=10, stderr=subprocess.DEVNULL
+            ).decode()
+            data = json.loads(out)
+            items = []
+            for p in data.get("post_stream", {}).get("posts", []):
+                # strip HTML tags
+                raw = re.sub(r"<[^>]+>", "", p.get("cooked", ""))
+                # collapse whitespace
+                raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
+                items.append({
+                    "username": p.get("username", "?"),
+                    "created_at": p.get("created_at", "")[:10],
+                    "likes": p.get("like_count", 0),
+                    "text": raw,
+                })
+            posts = items
+            error_msg = ""
+        except Exception:
+            if not posts:
+                error_msg = "Failed to load thread"
+
+    fetch_topics()
+
+    while True:
+        h, w = scr.getmaxyx()
+        scr.erase()
+
+        if mode == "topics":
+            title = f" uConsole Forum — {len(topics)} topics "
+            tui.put(scr, 0, 0, title.center(w), w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+
+            if error_msg and not topics:
+                tui.put(scr, h // 2, max(0, (w - len(error_msg)) // 2),
+                        error_msg, w, curses.color_pair(C_DIM))
+            else:
+                view_h = h - 3
+                if sel < scroll:
+                    scroll = sel
+                elif sel >= scroll + view_h:
+                    scroll = sel - view_h + 1
+
+                for i in range(view_h):
+                    li = scroll + i
+                    if li >= len(topics):
+                        break
+                    t = topics[li]
+                    marker = ">" if li == sel else " "
+                    line = f"{marker} {t['title']}"
+                    meta = f"  {t['posts_count']} posts | {t['views']} views | {t['like_count']} likes | {t['last_posted_at']}"
+                    attr = curses.color_pair(C_SEL) | curses.A_BOLD if li == sel else curses.color_pair(C_ITEM)
+                    meta_attr = curses.color_pair(C_SEL) if li == sel else curses.color_pair(C_DIM)
+                    y = 1 + i * 2
+                    if y >= h - 2:
+                        break
+                    tui.put(scr, y, 1, line, w - 2, attr)
+                    if y + 1 < h - 2:
+                        tui.put(scr, y + 1, 1, meta, w - 2, meta_attr)
+
+                view_h = (h - 3) // 2
+
+            bar = " Up/Down Select | A Open | X Refresh | B Quit ".center(w)
+            tui.put(scr, h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+
+        else:  # posts
+            title_str = current_topic["title"] if current_topic else "Thread"
+            if len(title_str) > w - 4:
+                title_str = title_str[: w - 7] + "..."
+            tui.put(scr, 0, 0, f" {title_str} ".center(w), w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+
+            # Render posts into lines
+            lines = []
+            for p in posts:
+                header_line = f"@{p['username']}  {p['created_at']}  ♥{p['likes']}"
+                lines.append(("header", header_line))
+                # Word-wrap post text
+                for paragraph in p["text"].split("\n"):
+                    if not paragraph.strip():
+                        lines.append(("text", ""))
+                        continue
+                    while len(paragraph) > w - 4:
+                        brk = paragraph[: w - 4].rfind(" ")
+                        if brk <= 0:
+                            brk = w - 4
+                        lines.append(("text", paragraph[:brk]))
+                        paragraph = paragraph[brk:].lstrip()
+                    lines.append(("text", paragraph))
+                lines.append(("sep", "─" * (w - 4)))
+
+            view_h = h - 2
+            if scroll > max(0, len(lines) - view_h):
+                scroll = max(0, len(lines) - view_h)
+
+            for i in range(view_h):
+                li = scroll + i
+                if li >= len(lines):
+                    break
+                kind, text = lines[li]
+                if kind == "header":
+                    attr = curses.color_pair(C_STATUS) | curses.A_BOLD
+                elif kind == "sep":
+                    attr = curses.color_pair(C_DIM)
+                else:
+                    attr = curses.color_pair(C_ITEM)
+                tui.put(scr, 1 + i, 2, text, w - 4, attr)
+
+            bar = " Up/Down Scroll | B Back ".center(w)
+            tui.put(scr, h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+
+        scr.refresh()
+
+        key, gp = _tui_input_loop(scr, js)
+        if key == -1 and gp is None:
+            continue
+
+        if mode == "topics":
+            if key == ord("q") or key == ord("Q") or gp == "back":
+                break
+            elif key == curses.KEY_UP or key == ord("k"):
+                sel = max(0, sel - 1)
+            elif key == curses.KEY_DOWN or key == ord("j"):
+                sel = min(max(0, len(topics) - 1), sel + 1)
+            elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
+                if topics and sel < len(topics):
+                    current_topic = topics[sel]
+                    # Show loading
+                    tui.put(scr, h // 2, max(0, (w - 12) // 2),
+                            " Loading... ", w, curses.color_pair(C_DIM))
+                    scr.refresh()
+                    fetch_posts(current_topic["id"])
+                    mode = "posts"
+                    scroll = 0
+            elif gp == "refresh" or key == ord("x") or key == ord("r"):
+                fetch_topics()
+                sel = 0
+                scroll = 0
+        else:  # posts
+            if key == ord("q") or key == ord("Q") or gp == "back":
+                mode = "topics"
+                posts = []
+                scroll = 0
+            elif key == curses.KEY_UP or key == ord("k"):
+                scroll = max(0, scroll - 1)
+            elif key == curses.KEY_DOWN or key == ord("j"):
+                scroll += 1
+            elif key == curses.KEY_PPAGE:
+                scroll = max(0, scroll - (h - 3))
+            elif key == curses.KEY_NPAGE:
+                scroll += h - 3
+
+    if js:
+        js.close()
+
+
 def run_mdviewer(scr):
     """Markdown note viewer — browse and read .md files."""
     js = open_gamepad()
