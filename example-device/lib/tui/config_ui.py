@@ -1,6 +1,7 @@
 """TUI module: config_ui"""
 
 import curses
+import subprocess
 import time
 
 from tui.framework import (
@@ -393,6 +394,52 @@ def run_viewmode_toggle(scr):
     scr.refresh()
     time.sleep(0.5)
     return new_mode
+
+def run_trackball_scroll_toggle(scr):
+    """Toggle trackball scroll daemon (Select + trackball = scroll)."""
+    import os
+    svc = "trackball-scroll.service"
+    svc_src = "/opt/uconsole/share/systemd/trackball-scroll.service"
+    svc_dst = os.path.expanduser("~/.config/systemd/user/trackball-scroll.service")
+
+    # Ensure service file is linked (disable removes it)
+    if not os.path.exists(svc_dst) and os.path.exists(svc_src):
+        os.makedirs(os.path.dirname(svc_dst), exist_ok=True)
+        os.symlink(svc_src, svc_dst)
+        subprocess.run(["systemctl", "--user", "daemon-reload"],
+                       capture_output=True)
+
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-enabled", svc],
+            capture_output=True, text=True
+        )
+        enabled = result.stdout.strip() == "enabled"
+    except Exception:
+        enabled = False
+
+    h, w = scr.getmaxyx()
+    if enabled:
+        subprocess.run(["systemctl", "--user", "stop", svc],
+                       capture_output=True)
+        subprocess.run(["systemctl", "--user", "disable", svc],
+                       capture_output=True)
+        draw_status_bar(scr, h, w, "  ✓ Trackball scroll: OFF",
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+    else:
+        # Re-link if disable removed it
+        if not os.path.exists(svc_dst) and os.path.exists(svc_src):
+            os.symlink(svc_src, svc_dst)
+            subprocess.run(["systemctl", "--user", "daemon-reload"],
+                           capture_output=True)
+        subprocess.run(["systemctl", "--user", "enable", svc],
+                       capture_output=True)
+        subprocess.run(["systemctl", "--user", "start", svc],
+                       capture_output=True)
+        draw_status_bar(scr, h, w, "  ✓ Trackball scroll: ON (Fn + trackball)",
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+    scr.refresh()
+    time.sleep(1)
 
 
 # ── Native TUI tools ──────────────────────────────────────────────────────
