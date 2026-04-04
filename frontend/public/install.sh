@@ -25,8 +25,7 @@ mkdir -p /etc/apt/keyrings
 
 # Add GPG key (idempotent — overwrites if exists)
 echo "Adding GPG key..."
-curl -fsSL "${BASE_URL}/apt/uconsole.gpg" | gpg --dearmor -o "${GPG_KEY}" 2>/dev/null || \
-    curl -fsSL "${BASE_URL}/apt/uconsole.gpg" -o "${GPG_KEY}"
+curl -fsSL "${BASE_URL}/apt/uconsole.gpg" | gpg --batch --yes --dearmor -o "${GPG_KEY}"
 chmod 644 "${GPG_KEY}"
 
 # Add repository (idempotent — overwrites if exists)
