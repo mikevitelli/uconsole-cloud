@@ -129,7 +129,7 @@ def run_wifi_switcher(scr):
 def run_hotspot_toggle(scr):
     """Toggle hotspot on/off."""
     h, w = scr.getmaxyx()
-    script = os.path.join(SCRIPT_DIR, "hotspot.sh")
+    script = os.path.join(SCRIPT_DIR, "network", "hotspot.sh")
     try:
         result = subprocess.check_output(
             ["bash", script, "toggle"],
@@ -278,7 +278,7 @@ def run_hotspot_config(scr):
 def run_wifi_fallback(scr):
     """Toggle WiFi fallback dispatcher on/off."""
     h, w = scr.getmaxyx()
-    script = os.path.join(SCRIPT_DIR, "wifi-fallback.sh")
+    script = os.path.join(SCRIPT_DIR, "network", "wifi-fallback.sh")
     if not os.path.isfile(script):
         msg = f"  ✗ Script not found: {script}"
         draw_status_bar(scr, h, w, msg, curses.color_pair(C_STATUS) | curses.A_BOLD)

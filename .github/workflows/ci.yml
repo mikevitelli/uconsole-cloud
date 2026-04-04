@@ -21,6 +21,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Shellcheck
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck frontend/public/install.sh
+          shellcheck frontend/public/scripts/uconsole
+
       - name: Lint
         run: npm run lint -w @uconsole/frontend
 
