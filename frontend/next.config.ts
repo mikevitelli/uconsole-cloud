@@ -39,6 +39,31 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      {
+        // APT repository metadata — correct content types, no transform
+        source: "/apt/dists/:path*",
+        headers: [
+          { key: "Content-Type", value: "text/plain; charset=utf-8" },
+          { key: "Cache-Control", value: "public, max-age=300" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        // APT .deb packages — binary content, long cache
+        source: "/apt/pool/:path*",
+        headers: [
+          { key: "Content-Type", value: "application/vnd.debian.binary-package" },
+          { key: "Cache-Control", value: "public, max-age=86400, immutable" },
+        ],
+      },
+      {
+        // APT GPG key
+        source: "/apt/uconsole.gpg",
+        headers: [
+          { key: "Content-Type", value: "application/pgp-keys" },
+          { key: "Cache-Control", value: "public, max-age=86400" },
+        ],
+      },
     ];
   },
 };
