@@ -94,7 +94,9 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Landing Page**
 
-<img src="docs/screenshots/landing.png" alt="Landing page — three-step onboarding" width="300" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1c978ae1-75d6-45b8-97d5-e354b386261a" />
+
+
 
 *Sign in, install, link your device*
 
@@ -103,7 +105,8 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Repo Linking**
 
-<img src="docs/screenshots/repo-link.png" alt="Link repository — auto-detects your backup repo" width="300" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/361f69d6-78a5-465c-8c47-067a5c158a99" />
+
 
 *Auto-detects your uconsole backup repo*
 
@@ -114,7 +117,7 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Dashboard Overview**
 
-<img src="docs/screenshots/dashboard.png" alt="Dashboard — restore readiness, backup coverage, repository stats" width="300" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/91cc277f-abf2-4d2f-bbfe-72552ecfbd79" />
 
 *Restore readiness, backup coverage across 8 categories, repo stats*
 
@@ -123,7 +126,8 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Device Status**
 
-<img src="docs/screenshots/device-status.png" alt="Device status — battery, CPU, memory, disk, WiFi, kernel" width="300" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/85fc67de-53ed-44fc-ace8-dc453cb77959" />
+
 
 *Battery donut, CPU temp, memory, disk, WiFi, uptime, kernel*
 
