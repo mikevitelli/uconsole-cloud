@@ -86,57 +86,50 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 ## Screenshots
 
-### Cloud Dashboard
-
 <div align="center">
 
-<!-- TODO: replace with actual screenshot -->
-<!-- Take at: uconsole.cloud (signed in, device online) -->
-<!-- Recommended: 1200px wide, dark mode, full dashboard view -->
-![Cloud dashboard — device status, backup coverage, system inventory](docs/screenshots/dashboard.png)
+<table>
+<tr>
+<td align="center" width="50%">
 
-*Live device telemetry, backup coverage grid, and system inventory at [uconsole.cloud](https://uconsole.cloud)*
+**Landing Page**
 
-</div>
+<img src="docs/screenshots/landing.png" alt="Landing page — three-step onboarding" width="300" />
 
-### Local Web Dashboard
+*Sign in, install, link your device*
 
-<div align="center">
+</td>
+<td align="center" width="50%">
 
-<!-- TODO: replace with actual screenshot -->
-<!-- Take at: https://uconsole.local (or device IP) -->
-<!-- Recommended: 1200px wide, showing terminal + stats -->
-![Local web dashboard — terminal, live stats, script execution](docs/screenshots/webdash.png)
+**Repo Linking**
 
-*Flask web dashboard at `uconsole.local` — terminal access, live stats, and script execution*
+<img src="docs/screenshots/repo-link.png" alt="Link repository — auto-detects your backup repo" width="300" />
 
-</div>
+*Auto-detects your uconsole backup repo*
 
-### Landing Page
+</td>
+</tr>
+<tr>
+<td align="center">
 
-<div align="center">
+**Dashboard Overview**
 
-<img src="frontend/public/uConsole-spin.gif" alt="uConsole device" width="200" />
+<img src="docs/screenshots/dashboard.png" alt="Dashboard — restore readiness, backup coverage, repository stats" width="300" />
 
-<!-- TODO: replace with actual screenshot -->
-<!-- Take at: uconsole.cloud (signed out) -->
-<!-- Recommended: 1200px wide, showing full landing page -->
-![Landing page — install steps, feature cards](docs/screenshots/landing.png)
+*Restore readiness, backup coverage across 8 categories, repo stats*
 
-*Three-step onboarding: sign in, install, link your device*
+</td>
+<td align="center">
 
-</div>
+**Device Status**
 
-### Device Code Linking
+<img src="docs/screenshots/device-status.png" alt="Device status — battery, CPU, memory, disk, WiFi, kernel" width="300" />
 
-<div align="center">
+*Battery donut, CPU temp, memory, disk, WiFi, uptime, kernel*
 
-<!-- TODO: replace with actual screenshot -->
-<!-- Take at: uconsole.cloud/link (with a code displayed) -->
-<!-- Recommended: 800px wide, showing code entry form -->
-![Device linking — enter code or scan QR](docs/screenshots/device-link.png)
-
-*Link your device with an 8-character code or QR scan — no typing passwords on tiny keyboards*
+</td>
+</tr>
+</table>
 
 </div>
 
