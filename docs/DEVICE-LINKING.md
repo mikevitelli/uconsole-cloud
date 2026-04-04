@@ -1,6 +1,6 @@
 # Device Linking Flow
 
-How a uConsole device gets linked to a user's uconsole.cloud account.
+How a uConsole device gets linked to a user's uconsole.cloud account. See also `uconsole doctor` for diagnosing linking issues after setup.
 
 ## Overview
 
@@ -251,6 +251,31 @@ Revokes the old token (deletes from Redis), generates a new one with fresh 90-da
 - Device generates QR code pointing to `https://uconsole.cloud/link?code=AB12-CD34`
 - /link page accepts `?code=` query param to pre-fill the form
 - User still needs to click "Confirm" (no auto-confirm from URL)
+
+## Troubleshooting
+
+### `uconsole doctor`
+
+The doctor command checks all components of the linking and push pipeline:
+
+- **Timer status** — is the systemd timer active and firing?
+- **Cron conflicts** — warns if both a cron job and systemd timer exist (dual-fire)
+- **Push connectivity** — can the device reach uconsole.cloud?
+- **Token validity** — is `status.env` present and readable?
+- **SSL certificate** — is the self-signed cert valid and has SANs?
+- **Nginx** — is the reverse proxy running and serving the webdash?
+- **Webdash** — is the Flask app running?
+
+Run `uconsole doctor` after setup or whenever telemetry stops appearing in the dashboard.
+
+### Common issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "Device offline" in dashboard | Timer not running | `uconsole doctor`, then `uconsole setup` to re-enable |
+| Push fails with 401 | Token expired (90-day TTL) | `uconsole link` to get a new token |
+| Code expired during linking | Took >10 minutes | Run `uconsole link` again for a fresh code |
+| Both cron and timer active | Legacy cron from older install | `uconsole doctor` detects this; `uconsole setup` cleans up |
 
 ## Proposed Improvements
 

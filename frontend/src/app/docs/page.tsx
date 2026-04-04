@@ -535,9 +535,9 @@ npm test       # 138 tests`}</Code>
               GitHub
             </a>
             {" · "}
-            <a href="/">Dashboard</a>
+            <Link href="/">Dashboard</Link>
             {" · "}
-            <a href="/link">Link Device</a>
+            <Link href="/link">Link Device</Link>
             {" · "}
             <a href="https://github.com/mikevitelli/uconsole-cloud/blob/main/docs/DEVICE-LINKING.md">
               Device Linking Flow

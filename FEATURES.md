@@ -24,6 +24,8 @@
 - [x] GitHub-style hover tooltips on calendar grid
 - [x] GIF animation speed (8s → 1.2s per rotation)
 - [x] Token file permissions (chmod 600 in CLI)
+- [x] Documentation page at /docs (install, CLI, architecture, troubleshooting)
+- [x] GitHub Actions release workflow (automated .deb builds + APT publishing)
 
 ### Device Scripts (uconsole backup repo)
 - [x] push-status.sh: webdash detection added to telemetry payload
@@ -40,14 +42,21 @@
 - [ ] Connection timeline (Redis sorted set of online/offline transitions)
 
 ### Device Scripts
-- [ ] avahi-daemon config in installer/restore (mDNS for uconsole.local)
-- [ ] `/etc/avahi/services/webdash.service` for service advertisement
+- [x] avahi-daemon config in packaging (mDNS for uconsole.local)
+- [x] `/etc/avahi/services/webdash.service` for service advertisement
 - [ ] Push on reconnect (immediate push when wifi-fallback tears down AP)
-- [ ] `uconsole doctor` command (check timer, webdash, push, connectivity)
-- [ ] CLI: switch cron → systemd timer in setup
-- [ ] `uconsole restore` command (detect ~/uconsole, run restore.sh --yes)
+- [x] `uconsole doctor` command (check timer, webdash, push, connectivity)
+- [x] CLI: switch cron → systemd timer in setup
+- [x] `uconsole restore` command (detect ~/uconsole, run restore.sh --yes)
 - [ ] restore.sh step [10/10]: cloud connection guidance
-- [ ] Add avahi-daemon to package manifest
+- [x] Add avahi-daemon to package recommends
+- [x] Webdash migrated to systemd service (from manual start)
+- [x] Shared utility libraries (lib.sh, tui_lib.py)
+- [x] Forum browser (ClockworkPi forum access from TUI)
+- [x] Battery discharge test with configurable profiles
+- [x] Marauder TUI integration (ESP32 serial interface)
+- [x] Games category in TUI
+- [x] Trackball scroll support in TUI
 
 ### UX Design Needed
 - [ ] Offline/AP mode dashboard UX (what does the user see when device is in AP mode?)
@@ -76,14 +85,18 @@
 
 ---
 
-## Phase 4: System Packaging (.deb)
+## Phase 4: System Packaging (.deb) ✅
 
-- [ ] .deb package structure (debian/, postinst, prerm)
-- [ ] Installs: uconsole CLI, push-status.sh, systemd services, avahi config
-- [ ] Post-install: enables services, prompts for setup
-- [ ] Host apt repo (GitHub Releases or Cloudsmith)
-- [ ] `uconsole update` uses apt
-- [ ] Package signing (GPG)
+- [x] .deb package structure (packaging/, postinst, prerm, postrm)
+- [x] Installs: uconsole CLI, push-status.sh, systemd services, avahi config
+- [x] Post-install: config setup (services not auto-started, setup wizard handles that)
+- [x] Host APT repo (GPG-signed, served from Vercel CDN at uconsole.cloud/apt/)
+- [x] `uconsole update` uses apt
+- [x] Package signing (GPG-signed Release files, key distributed via HTTPS)
+- [x] `curl -s https://uconsole.cloud/install | sudo bash` bootstrap story
+- [x] GitHub Actions release workflow (build .deb, publish to APT repo)
+- [x] Makefile targets: build-deb, publish-apt, release, version bumps
+- [x] example-device/ bundled for self-contained builds without private repo
 
 ---
 
@@ -98,9 +111,9 @@
 ### Device Scripts
 - [ ] HMAC request signing on push payloads
 - [ ] Token rotation (shorter TTL, auto-refresh on push)
-- [ ] webdash: password hashing (replace plaintext comparison)
-- [ ] webdash: cryptographic session tokens (replace deterministic)
-- [ ] webdash: server-side session invalidation
+- [x] webdash: password hashing (bcrypt, replaces plaintext comparison)
+- [x] webdash: cryptographic session tokens (secrets.token_hex, replaces deterministic)
+- [x] webdash: server-side session store with 30-day TTL
 - [ ] console.py: confirmation before process kill
 - [ ] Optional: Tailscale integration for HTTPS + remote webdash
 - [ ] Optional: webdash basic auth for shared networks
@@ -115,8 +128,8 @@
 - [D] This is incompatible with current symlink strategy — needs full design
 
 ### Nginx Config
-- [ ] Add nginx config to backup repo (currently not tracked)
-- [ ] Include in restore.sh or installer
+- [x] nginx config included in packaging (packaging/nginx/uconsole-webdash)
+- [x] Included in .deb install (sites-available, setup enables)
 
 ### Testing
 - [ ] E2E tests for device code flow on staging
@@ -128,13 +141,13 @@
 ## Dependencies Between Phases
 
 ```
-Phase 1 (MVP Polish) ─── no dependencies, ship now
+Phase 1 (MVP Polish) ✅ ─── shipped v0.1.0
     ↓
-Phase 2 (Local Network) ─── depends on Phase 1 webdash telemetry
+Phase 2 (Local Network) ─── device scripts mostly done, cloud UX remaining
     ↓
 Phase 3 (Terminal Auth) ─── depends on Phase 2 mDNS (nice to have, not required)
     ↓
-Phase 4 (.deb) ─── depends on Phase 2 (avahi config) + Phase 3 (CLI finalized)
+Phase 4 (.deb) ✅ ─── shipped v0.1.0, automated in v0.1.1
     ↓
-Phase 5 (Polish) ─── independent, can start anytime after Phase 1
+Phase 5 (Polish) ─── security items partially done, cloud features remaining
 ```

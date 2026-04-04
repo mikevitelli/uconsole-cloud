@@ -16,6 +16,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06b6d4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=flat-square&logo=vercel)](https://vercel.com)
+[![Version](https://img.shields.io/badge/version-0.1.1-58a6ff?style=flat-square)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-138%20passing-3fb950?style=flat-square)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
@@ -27,9 +28,9 @@
 
 A three-tier platform for managing the ClockworkPi uConsole — a modular ARM handheld Linux terminal (RPi CM4, 5" IPS, QWERTY keyboard, Debian Bookworm).
 
-**On your device:** a `.deb` package installs 40+ management scripts, a curses TUI, a Flask web dashboard with terminal access, and systemd services that push telemetry to the cloud every 5 minutes.
+**On your device:** a `.deb` package installs 45+ management scripts, a curses TUI with 8 categories (including FM radio, GPS globe, Marauder serial, battery discharge testing, forum browser, games), a Flask web dashboard with terminal access, and systemd services that push telemetry to the cloud every 5 minutes.
 
-**On your local network:** the web dashboard runs at `https://uconsole.local` via nginx + self-signed TLS, accessible from any phone or laptop on the same WiFi. If no known network is available, the device creates a fallback AP ("uConsole") so you can always connect.
+**On your local network:** the web dashboard runs at `https://uconsole.local` via nginx + self-signed TLS + mDNS, accessible from any phone or laptop on the same WiFi. If no known network is available, the device creates a fallback AP ("uConsole") so you can always connect.
 
 **In the cloud:** this Next.js app at [uconsole.cloud](https://uconsole.cloud) shows live device status, backup coverage, system inventory, and hardware info — from anywhere.
 
@@ -70,9 +71,12 @@ A three-tier platform for managing the ClockworkPi uConsole — a modular ARM ha
 - **System inventory** — packages, browser extensions, scripts manifest, repo tree
 - **Local web dashboard** — HTTPS at `uconsole.local` via mDNS, with WiFi fallback AP
 - **Same-network detection** — shows a direct link to the local dashboard when you're on the same WiFi
+- **Curses TUI** — 8 categories, 14+ tools (FM radio, GPS globe, Marauder serial, discharge testing, forum browser, games)
 - **PWA** — installable on iOS/Android for quick access from your phone
 - **Device code auth** — link devices with an 8-character code or QR scan, no typing passwords on tiny keyboards
 - **APT repository** — `curl | sudo bash` adds the repo, `apt upgrade` handles future updates
+- **Diagnostics** — `uconsole doctor` checks services, SSL, nginx, connectivity, timer health
+- **Automated releases** — GitHub Actions builds `.deb`, publishes to APT repo, tags release
 
 ### Optional hardware
 
@@ -156,16 +160,16 @@ uConsole (arm64, Debian)                 Cloud (Vercel)
 ## uconsole CLI
 
 ```
-uconsole setup     Interactive setup wizard (hardware detect, passwords, cloud link)
-uconsole link      Link device to uconsole.cloud (code auth only, no wizard)
-uconsole push      Push status now
-uconsole status    Show config, timer status, last push
-uconsole doctor    Diagnose services, SSL, nginx, connectivity
-uconsole restore   Run restore.sh from backup repo
-uconsole unlink    Remove cloud config and stop timer
-uconsole update    Update via APT (or re-download scripts for curl installs)
-uconsole version   Show installed version
-uconsole help      Show all commands
+uconsole setup       Interactive setup wizard (hardware detect, passwords, SSL, cloud link)
+uconsole link        Link device to uconsole.cloud (code auth + QR, no wizard)
+uconsole push        Push status to cloud now
+uconsole status      Show config, timer status, last push time
+uconsole doctor      Diagnose services, SSL, nginx, connectivity, cron/timer conflicts
+uconsole restore     Run restore.sh from backup repo (detects ~/uconsole)
+uconsole unlink      Remove cloud config and stop timer
+uconsole update      Update via APT (or re-download scripts for curl installs)
+uconsole version     Show installed version
+uconsole help        Show all commands
 ```
 
 ---
@@ -179,16 +183,16 @@ apt install uconsole-cloud
 Installs to `/opt/uconsole/` with organized subdirectories:
 
 ```
-uconsole-cloud_0.1.0_arm64.deb
+uconsole-cloud_0.1.1_arm64.deb
 ├── /opt/uconsole/
 │   ├── bin/                    uconsole CLI, console TUI launcher
 │   ├── lib/                    tui_lib.py, lib.sh, shared modules
 │   ├── scripts/
 │   │   ├── system/             push-status, backup, restore, update, doctor, setup
-│   │   ├── power/              battery, charge, power management (safety-critical)
+│   │   ├── power/              battery, charge, discharge-test (safety-critical)
 │   │   ├── network/            wifi, hotspot, tailscale
-│   │   ├── radio/              sdr, lora, gps, rtc (AIO board)
-│   │   └── util/               everything else
+│   │   ├── radio/              sdr, lora, gps, rtc, marauder (AIO board)
+│   │   └── util/               everything else (forum browser, games, etc.)
 │   ├── webdash/                Flask app, templates, static assets
 │   └── share/                  themes, battery-data, esp32, default configs
 ├── /etc/uconsole/              uconsole.conf, hardware.json, ssl/
@@ -198,15 +202,23 @@ uconsole-cloud_0.1.0_arm64.deb
 └── /usr/bin/uconsole           symlink → /opt/uconsole/bin/uconsole
 ```
 
+**Dependencies:** python3, python3-flask, python3-bcrypt, python3-socketio, curl, nginx, systemd, qrencode  
+**Recommends:** avahi-daemon, network-manager  
+**Suggests:** gpsd, rtl-sdr, gh
+
 Services are **not** auto-started on install — `uconsole setup` handles that after the interactive configuration wizard.
 
 ### Building
 
 ```bash
-make build-deb          # → dist/uconsole-cloud_0.1.0_arm64.deb
+make build-deb          # → dist/uconsole-cloud_0.1.1_arm64.deb
 make publish-apt        # update APT repo in frontend/public/apt/
 make release            # bump version, build, publish, commit + tag
 ```
+
+### Release automation
+
+Releases are built via GitHub Actions. The workflow builds the `.deb`, updates the GPG-signed APT repository in `frontend/public/apt/`, and creates a GitHub release with the `.deb` attached. On merge to `main`, Vercel auto-deploys the updated APT repo to `uconsole.cloud/apt/`.
 
 ---
 
@@ -222,11 +234,12 @@ make release            # bump version, build, publish, commit + tag
 | `/api/github/*` | GET/POST | Session | GitHub API proxy (repos, commits, tree) |
 | `/api/settings` | GET/POST/DELETE | Session | User settings, repo linking |
 | `/api/settings/regenerate-token` | POST | Session | Regenerate device token |
-| `/api/scripts/[name]` | GET | No | Serve allowlisted scripts |
+| `/api/scripts/[name]` | GET | No | Serve allowlisted scripts (uconsole, push-status.sh) |
+| `/api/raw` | GET | Session | Fetch raw file content from backup repo |
 | `/api/health` | GET | No | Redis health check |
-| `/install` | GET | No | APT bootstrap script |
-| `/apt/*` | GET | No | APT repository (Packages, Release, .deb files) |
-| `/link` | Page | No | Device code entry (accepts `?code=` for QR) |
+| `/install` | GET | No | APT bootstrap script (adds repo + installs package) |
+| `/apt/*` | GET | No | GPG-signed APT repository (Packages, Release, .deb files) |
+| `/link` | Page | No | Device code entry (accepts `?code=` for QR scan) |
 | `/docs` | Page | No | Documentation (install, CLI, architecture, troubleshooting) |
 
 See [docs/DEVICE-LINKING.md](docs/DEVICE-LINKING.md) for the full device auth flow.
@@ -237,45 +250,51 @@ See [docs/DEVICE-LINKING.md](docs/DEVICE-LINKING.md) for the full device auth fl
 
 ```
 uconsole-cloud/
-├── frontend/                       Next.js 16 app
+├── frontend/                       Next.js 16 app (88 TS/TSX files)
 │   ├── src/
 │   │   ├── app/                    Pages, API routes, server actions
 │   │   │   ├── page.tsx            Main dashboard (Server Component)
 │   │   │   ├── link/page.tsx       Device code entry page
+│   │   │   ├── docs/page.tsx       Documentation page
 │   │   │   ├── install/route.ts    APT bootstrap script endpoint
 │   │   │   ├── actions.ts          Server actions (sign in/out, unlink)
 │   │   │   ├── manifest.ts         PWA manifest
 │   │   │   └── api/                16 API routes
 │   │   ├── components/
 │   │   │   ├── dashboard/          17 dashboard sections
-│   │   │   ├── viz/                7 visualization components
-│   │   │   └── *.tsx               Shared UI (RepoLinker, DeviceCodeForm, etc.)
+│   │   │   ├── viz/                7 visualization components (sparkline, donut, treemap, etc.)
+│   │   │   └── *.tsx               Shared UI (RepoLinker, DeviceCodeForm, CopyCommand, etc.)
 │   │   ├── lib/                    20 modules (auth, redis, github, device config, etc.)
-│   │   └── __tests__/              138 tests (vitest)
+│   │   └── __tests__/              10 test suites, 211 tests (vitest)
 │   ├── public/
 │   │   ├── scripts/                Install-time copies of CLI + push-status.sh
 │   │   ├── install.sh              APT bootstrap installer
 │   │   └── apt/                    GPG-signed APT repository (Packages, Release, .deb)
-│   └── next.config.ts              Security headers, image config
-├── example-device/                 Scrubbed pkg/ for contributors (builds without private repo)
+│   └── next.config.ts              Security headers, APT MIME types, image config
+├── example-device/                 Scrubbed device tree for contributors
+│   ├── bin/                        uconsole CLI, console TUI launcher
+│   ├── lib/                        tui_lib.py, lib.sh, shared modules
+│   ├── scripts/                    45+ scripts (system, power, network, radio, util)
+│   ├── webdash/                    Flask app (app.py, templates, static)
+│   └── share/                      themes, battery-data, esp32, default configs
 ├── packaging/                      .deb build system
 │   ├── build-deb.sh                Build script (reads VERSION, organized layout)
 │   ├── control                     Package metadata + dependencies
-│   ├── postinst                    Config setup (no auto-start)
-│   ├── prerm                       Service teardown
-│   ├── postrm                      Purge cleanup
+│   ├── postinst, prerm, postrm     Lifecycle hooks (config setup, teardown, purge)
 │   ├── defaults/                   uconsole.conf.default
-│   ├── systemd/                    7 unit files
+│   ├── systemd/                    7 unit files (status, backup, update timers + webdash)
 │   ├── nginx/                      HTTPS reverse proxy config
 │   ├── avahi/                      mDNS service advertisement
-│   ├── scripts/                    generate-repo.sh, generate-gpg-key.sh
-│   └── apt-repo/                   APT repository docs
+│   └── scripts/                    generate-repo.sh, generate-gpg-key.sh
 ├── docs/                           Architecture documentation
-│   └── DEVICE-LINKING.md           Device auth flow (ASCII diagrams, API shapes)
-├── studio/                         Sanity CMS workspace
+│   └── DEVICE-LINKING.md           Device auth flow (ASCII diagrams, API shapes, edge cases)
+├── studio/                         Sanity CMS workspace (landing page content)
+├── .github/
+│   ├── workflows/                  Release automation (build .deb, publish APT)
+│   └── ISSUE_TEMPLATE/             Bug report + feature request templates
 ├── Makefile                        build-deb, publish-apt, release, version bumps
-├── VERSION                         Package version (semver)
-└── package.json                    npm workspace root
+├── VERSION                         Package version (0.1.1)
+└── package.json                    npm workspace root (frontend + studio)
 ```
 
 ---
@@ -306,10 +325,11 @@ uconsole-cloud/
 | Backup data | GitHub REST API | Commits, tree, raw files, packages |
 | CMS | Sanity v3 | Landing page and dashboard copy |
 | Styling | Tailwind CSS v4 | GitHub-dark theme with CSS variables |
-| Testing | Vitest 4 | 138 tests — parsing, security, API, validation |
+| Testing | Vitest 4 | 211 tests — parsing, security, API, validation |
 | Hosting | Vercel | Auto-deploy from main, preview on PRs |
-| Device | Bash + Python | 40+ scripts, Flask webdash, curses TUI, systemd services |
-| Packaging | dpkg + APT | `.deb` for arm64, signed repository on Vercel |
+| CI/CD | GitHub Actions | Automated `.deb` builds, APT repo publishing |
+| Device | Bash + Python | 45+ scripts, Flask webdash, curses TUI, systemd services |
+| Packaging | dpkg + APT | `.deb` for arm64, GPG-signed repository on Vercel CDN |
 
 ---
 
@@ -326,17 +346,18 @@ cp frontend/.env.example frontend/.env.local
 #          UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
 npm run dev        # frontend :3000, studio :3333
-npm test           # 138 tests
+npm test           # 211 tests (vitest)
 npm run build      # production build
+npm run lint       # ESLint
 ```
 
 ### Makefile targets
 
 ```
 make version       Print current version
-make bump-patch    Bump patch version (0.1.0 → 0.1.1)
-make bump-minor    Bump minor version (0.1.0 → 0.2.0)
-make bump-major    Bump major version (0.1.0 → 1.0.0)
+make bump-patch    Bump patch version (0.1.1 → 0.1.2)
+make bump-minor    Bump minor version (0.1.1 → 0.2.0)
+make bump-major    Bump major version (0.1.1 → 1.0.0)
 make build-deb     Build .deb package to dist/
 make publish-apt   Update APT repo from latest .deb
 make release       Bump + build + publish + commit + tag
@@ -365,6 +386,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — especially fr
 
 Built for the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole).
 
-`89 source files · 138 tests · 16 API routes · 32 components · 40+ device scripts`
+`88 source files · 211 tests · 16 API routes · 32 components · 45+ device scripts`
 
 </div>
