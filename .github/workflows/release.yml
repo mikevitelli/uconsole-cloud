@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify VERSION file matches tag
+        env:
+          TAG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          file_version=$(tr -d '[:space:]' < VERSION)
+          if [ "$file_version" != "$TAG_VERSION" ]; then
+            echo "ERROR: VERSION file ($file_version) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint -w @uconsole/frontend
+
+      - name: Typecheck
+        run: npx -w @uconsole/frontend tsc --noEmit
+
+      - name: Test
+        run: npm test -w @uconsole/frontend
+
+      - name: Build Next.js
+        run: npm run build -w @uconsole/frontend
+        env:
+          NEXT_PUBLIC_SANITY_PROJECT_ID: ${{ vars.NEXT_PUBLIC_SANITY_PROJECT_ID }}
+
+      - name: Build .deb package
+        run: bash packaging/build-deb.sh
+
+      - name: Verify .deb was created
+        id: deb
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          DEB="dist/uconsole-cloud_${PKG_VERSION}_arm64.deb"
+          if [ ! -f "$DEB" ]; then
+            echo "ERROR: Expected $DEB not found"
+            ls -la dist/
+            exit 1
+          fi
+          echo "deb_path=$DEB" >> "$GITHUB_OUTPUT"
+          echo "Built: $DEB ($(du -h "$DEB" | cut -f1))"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/uconsole-cloud_*.deb
+          generate_release_notes: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
