@@ -17,7 +17,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06b6d4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=flat-square&logo=vercel)](https://vercel.com)
 [![Version](https://img.shields.io/badge/version-0.1.1-58a6ff?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-138%20passing-3fb950?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-211%20passing-3fb950?style=flat-square)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 </div>
