@@ -206,8 +206,13 @@ TMREOF
       fi
 
       # First push
-      PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
-      [ "$INSTALL_MODE" = "standalone" ] && [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
+      if [ "$INSTALL_MODE" = "package" ]; then
+        PUSH_SCRIPT="${SCRIPTS_DIR}/system/push-status.sh"
+      else
+        PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
+        [ -x "${HOME}/uconsole/scripts/system/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/system/push-status.sh"
+        [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
+      fi
       if [ -x "$PUSH_SCRIPT" ]; then
         echo "Running first status push..."
         "$PUSH_SCRIPT" && echo "First status pushed!" || echo "Push failed (will retry via timer)"
@@ -239,7 +244,10 @@ cmd_push() {
     die "Not configured. Run 'uconsole setup' first."
   fi
   local push_script="${SCRIPTS_DIR}/push-status.sh"
-  if [ "$INSTALL_MODE" = "standalone" ]; then
+  if [ "$INSTALL_MODE" = "package" ]; then
+    push_script="${SCRIPTS_DIR}/system/push-status.sh"
+  elif [ "$INSTALL_MODE" = "standalone" ]; then
+    [ -x "${HOME}/uconsole/scripts/system/push-status.sh" ] && push_script="${HOME}/uconsole/scripts/system/push-status.sh"
     [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && push_script="${HOME}/uconsole/scripts/push-status.sh"
   fi
   if [ ! -x "$push_script" ]; then

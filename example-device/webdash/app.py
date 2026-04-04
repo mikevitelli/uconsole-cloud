@@ -293,17 +293,17 @@ def require_auth():
 @app.route('/apple-touch-icon.png')
 @app.route('/apple-touch-icon-precomposed.png')
 def favicon():
-    return send_from_directory(SCRIPTS_DIR, 'favicon.png', mimetype='image/png')
+    return send_from_directory(APP_DIR, 'favicon.png', mimetype='image/png')
 
 
 @app.route('/uConsole.gif')
 def login_gif():
-    return send_from_directory(SCRIPTS_DIR, 'uConsole.gif', mimetype='image/gif')
+    return send_from_directory(APP_DIR, 'uConsole.gif', mimetype='image/gif')
 
 
 @app.route('/uconsole.crt')
 def cert_download():
-    return send_from_directory(SCRIPTS_DIR, 'uconsole.crt',
+    return send_from_directory(APP_DIR, 'uconsole.crt',
                                mimetype='application/x-x509-ca-cert',
                                as_attachment=True)
 
@@ -373,30 +373,14 @@ def compress_response(response):
     response.headers['Content-Encoding'] = 'gzip'
     response.headers['Content-Length'] = len(response.get_data())
     return response
-SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Script path resolution — search categorized subdirs and legacy flat dir
-_SCRIPT_SEARCH = []
-for _base in ['/opt/uconsole/scripts', os.path.expanduser('~/scripts')]:
-    if os.path.isdir(_base):
-        _SCRIPT_SEARCH.append(_base)
-        for _sub in ['system', 'power', 'network', 'radio', 'util']:
-            _d = os.path.join(_base, _sub)
-            if os.path.isdir(_d):
-                _SCRIPT_SEARCH.append(_d)
+# Scripts directory: env override, else sibling ../scripts/ relative to webdash
+SCRIPTS_DIR = os.environ.get('UCONSOLE_SCRIPTS_DIR',
+    os.path.join(os.path.dirname(APP_DIR), 'scripts'))
 
-def _find_script(name):
-    """Find a script by name across all search dirs."""
-    for d in _SCRIPT_SEARCH:
-        p = os.path.join(d, name)
-        if os.path.isfile(p):
-            return p
-    # fallback to SCRIPTS_DIR for backward compat
-    return os.path.join(SCRIPTS_DIR, name)
-
-def _s(name):
-    """Shorthand for script path in ALLOWED_SCRIPTS."""
-    return _find_script(name)
+# Package mode: system-level services, sudo for systemctl
+PACKAGE_MODE = os.path.isdir('/opt/uconsole/scripts')
 
 # previous CPU sample for delta calculation
 _prev_cpu = None
@@ -630,114 +614,126 @@ def get_failed_units():
         return f'Error: {e}'
 
 
+def _script(subdir, name, *args):
+    """Build a script command list: ['bash', SCRIPTS_DIR/subdir/name, ...args]."""
+    return ['bash', os.path.join(SCRIPTS_DIR, subdir, name)] + list(args)
+
+
+def _systemctl(*args):
+    """Build a systemctl command, using sudo (no --user) in package mode."""
+    if PACKAGE_MODE:
+        return ['sudo', 'systemctl'] + list(args)
+    return ['systemctl', '--user'] + list(args)
+
+
 ALLOWED_SCRIPTS = {
-    # battery
-    'battery':          ['bash', _s('battery.sh')],
-    'battery-log':      ['bash', _s('battery.sh'), 'log'],
-    # charge
-    'charge-status':    ['bash', _s('charge.sh')],
-    'charge-300':       ['bash', _s('charge.sh'), '300'],
-    'charge-500':       ['bash', _s('charge.sh'), '500'],
-    'charge-900':       ['bash', _s('charge.sh'), '900'],
-    # network
-    'network-overview': ['bash', _s('network.sh')],
-    'network-speed':    ['bash', _s('network.sh'), 'speed'],
-    'network-scan':     ['bash', _s('network.sh'), 'scan'],
-    'network-ping':     ['bash', _s('network.sh'), 'ping'],
-    'network-trace':    ['bash', _s('network.sh'), 'trace'],
-    'network-log':      ['bash', _s('network.sh'), 'log'],
-    'hotspot-status':   ['bash', _s('hotspot.sh'), 'status'],
-    'hotspot-start':    ['bash', _s('hotspot.sh'), 'on'],
-    'hotspot-stop':     ['bash', _s('hotspot.sh'), 'off'],
-    # storage
-    'storage':          ['bash', _s('storage.sh')],
-    'storage-devices':  ['bash', _s('storage.sh'), 'devices'],
-    'storage-smart':    ['bash', _s('storage.sh'), 'smart'],
-    'storage-usb':      ['bash', _s('storage.sh'), 'usb'],
-    'storage-mount':    ['bash', _s('storage.sh'), 'mount'],
-    'storage-temp':     ['bash', _s('storage.sh'), 'temp'],
-    # disk usage
-    'disk-usage':       ['bash', _s('diskusage.sh')],
-    'disk-big':         ['bash', _s('diskusage.sh'), 'big'],
-    'disk-dirs':        ['bash', _s('diskusage.sh'), 'dirs'],
-    'disk-clean':       ['bash', _s('diskusage.sh'), 'clean'],
-    # audit
-    'audit-overview':   ['bash', _s('audit.sh')],
-    'audit-junk':       ['bash', _s('audit.sh'), 'junk'],
-    'audit-untracked':  ['bash', _s('audit.sh'), 'untracked'],
-    'audit-categories': ['bash', _s('audit.sh'), 'categories'],
-    # backup (gather + sync = backward compat, same as before)
-    'backup-all':       ['bash', _s('backup.sh'), 'all'],
-    'backup-git':       ['bash', _s('backup.sh'), 'git'],
-    'backup-gh':        ['bash', _s('backup.sh'), 'gh'],
-    'backup-system':    ['bash', _s('backup.sh'), 'system'],
-    'backup-pkgs':      ['bash', _s('backup.sh'), 'packages'],
-    'backup-desktop':   ['bash', _s('backup.sh'), 'desktop'],
-    'backup-browser':   ['bash', _s('backup.sh'), 'browser'],
-    'backup-scripts':   ['bash', _s('backup.sh'), 'scripts'],
-    'backup-status':    ['bash', _s('backup.sh'), 'status'],
-    # backup (new: gather-only + explicit sync)
-    'backup-gather-all':     ['bash', _s('backup.sh'), 'gather', 'all'],
-    'backup-gather-git':     ['bash', _s('backup.sh'), 'gather', 'git'],
-    'backup-gather-gh':      ['bash', _s('backup.sh'), 'gather', 'gh'],
-    'backup-gather-system':  ['bash', _s('backup.sh'), 'gather', 'system'],
-    'backup-gather-pkgs':    ['bash', _s('backup.sh'), 'gather', 'packages'],
-    'backup-gather-desktop': ['bash', _s('backup.sh'), 'gather', 'desktop'],
-    'backup-gather-browser': ['bash', _s('backup.sh'), 'gather', 'browser'],
-    'backup-gather-scripts': ['bash', _s('backup.sh'), 'gather', 'scripts'],
-    'backup-sync':           ['bash', _s('backup.sh'), 'sync'],
-    # update
-    'update-all':       ['bash', _s('update.sh'), 'all'],
-    'update-apt':       ['bash', _s('update.sh'), 'apt'],
-    'update-flatpak':   ['bash', _s('update.sh'), 'flatpak'],
-    'update-firmware':  ['bash', _s('update.sh'), 'firmware'],
-    'update-repo':      ['bash', _s('update.sh'), 'repo'],
-    'update-status':    ['bash', _s('update.sh'), 'status'],
-    'update-log':       ['bash', _s('update.sh'), 'log'],
-    'update-snapshot':  ['bash', _s('update.sh'), 'snapshot'],
-    # power
-    'power-status':     ['bash', _s('power.sh'), 'status'],
-    'power-reboot':     ['bash', _s('power.sh'), 'reboot'],
-    'power-shutdown':   ['bash', _s('power.sh'), 'shutdown'],
-    # dashboard (terminal)
-    'dashboard-status': ['bash', _s('dashboard.sh'), 'status'],
-    # esp32
-    'esp32-status':     ['bash', _s('esp32.sh'), 'status'],
-    'esp32-log':        ['bash', _s('esp32.sh'), 'log'],
-    'esp32-flash':      ['bash', _s('esp32.sh'), 'flash'],
-    'esp32-reset':      ['bash', _s('esp32.sh'), 'reset'],
-    'esp32-info':       ['bash', _s('esp32.sh'), 'info'],
-    # gps
-    'gps-status':       ['bash', _s('gps.sh'), 'status'],
-    'gps-log':          ['bash', _s('gps.sh'), 'log'],
-    'gps-fix':          ['bash', _s('gps.sh'), 'fix'],
-    'gps-time':         ['bash', _s('gps.sh'), 'time'],
-    'gps-track':        ['bash', _s('gps.sh'), 'track'],
-    'gps-stop':         ['bash', _s('gps.sh'), 'stop'],
-    # sdr
-    'sdr-status':       ['bash', _s('sdr.sh'), 'status'],
-    'sdr-test':         ['bash', _s('sdr.sh'), 'test'],
-    'sdr-info':         ['bash', _s('sdr.sh'), 'info'],
-    'sdr-scan':         ['bash', _s('sdr.sh'), 'scan'],
-    # lora
-    'lora-status':      ['bash', _s('lora.sh'), 'status'],
-    'lora-config':      ['bash', _s('lora.sh'), 'config'],
-    'lora-listen':      ['bash', _s('lora.sh'), 'listen'],
-    'lora-send':        ['bash', _s('lora.sh'), 'send', 'test'],
-    # battery test
-    'battest-status':   ['bash', _s('battery-test.sh'), 'status'],
-    'battest-stop':     ['bash', _s('battery-test.sh'), 'stop'],
-    'battest-list':     ['bash', _s('battery-test.sh'), 'list'],
-    'battest-compare':  ['bash', _s('battery-test.sh'), 'compare'],
+    # battery (power/)
+    'battery':          _script('power', 'battery.sh'),
+    'battery-log':      _script('power', 'battery.sh', 'log'),
+    # charge (power/)
+    'charge-status':    _script('power', 'charge.sh'),
+    'charge-300':       _script('power', 'charge.sh', '300'),
+    'charge-500':       _script('power', 'charge.sh', '500'),
+    'charge-900':       _script('power', 'charge.sh', '900'),
+    # network (network/)
+    'network-overview': _script('network', 'network.sh'),
+    'network-speed':    _script('network', 'network.sh', 'speed'),
+    'network-scan':     _script('network', 'network.sh', 'scan'),
+    'network-ping':     _script('network', 'network.sh', 'ping'),
+    'network-trace':    _script('network', 'network.sh', 'trace'),
+    'network-log':      _script('network', 'network.sh', 'log'),
+    'hotspot-status':   _script('network', 'hotspot.sh', 'status'),
+    'hotspot-start':    _script('network', 'hotspot.sh', 'on'),
+    'hotspot-stop':     _script('network', 'hotspot.sh', 'off'),
+    # storage (util/)
+    'storage':          _script('util', 'storage.sh'),
+    'storage-devices':  _script('util', 'storage.sh', 'devices'),
+    'storage-smart':    _script('util', 'storage.sh', 'smart'),
+    'storage-usb':      _script('util', 'storage.sh', 'usb'),
+    'storage-mount':    _script('util', 'storage.sh', 'mount'),
+    'storage-temp':     _script('util', 'storage.sh', 'temp'),
+    # disk usage (util/)
+    'disk-usage':       _script('util', 'diskusage.sh'),
+    'disk-big':         _script('util', 'diskusage.sh', 'big'),
+    'disk-dirs':        _script('util', 'diskusage.sh', 'dirs'),
+    'disk-clean':       _script('util', 'diskusage.sh', 'clean'),
+    # audit (util/)
+    'audit-overview':   _script('util', 'audit.sh'),
+    'audit-junk':       _script('util', 'audit.sh', 'junk'),
+    'audit-untracked':  _script('util', 'audit.sh', 'untracked'),
+    'audit-categories': _script('util', 'audit.sh', 'categories'),
+    # backup (system/) — gather + sync = backward compat
+    'backup-all':       _script('system', 'backup.sh', 'all'),
+    'backup-git':       _script('system', 'backup.sh', 'git'),
+    'backup-gh':        _script('system', 'backup.sh', 'gh'),
+    'backup-system':    _script('system', 'backup.sh', 'system'),
+    'backup-pkgs':      _script('system', 'backup.sh', 'packages'),
+    'backup-desktop':   _script('system', 'backup.sh', 'desktop'),
+    'backup-browser':   _script('system', 'backup.sh', 'browser'),
+    'backup-scripts':   _script('system', 'backup.sh', 'scripts'),
+    'backup-status':    _script('system', 'backup.sh', 'status'),
+    # backup (gather-only + explicit sync)
+    'backup-gather-all':     _script('system', 'backup.sh', 'gather', 'all'),
+    'backup-gather-git':     _script('system', 'backup.sh', 'gather', 'git'),
+    'backup-gather-gh':      _script('system', 'backup.sh', 'gather', 'gh'),
+    'backup-gather-system':  _script('system', 'backup.sh', 'gather', 'system'),
+    'backup-gather-pkgs':    _script('system', 'backup.sh', 'gather', 'packages'),
+    'backup-gather-desktop': _script('system', 'backup.sh', 'gather', 'desktop'),
+    'backup-gather-browser': _script('system', 'backup.sh', 'gather', 'browser'),
+    'backup-gather-scripts': _script('system', 'backup.sh', 'gather', 'scripts'),
+    'backup-sync':           _script('system', 'backup.sh', 'sync'),
+    # update (system/)
+    'update-all':       _script('system', 'update.sh', 'all'),
+    'update-apt':       _script('system', 'update.sh', 'apt'),
+    'update-flatpak':   _script('system', 'update.sh', 'flatpak'),
+    'update-firmware':  _script('system', 'update.sh', 'firmware'),
+    'update-repo':      _script('system', 'update.sh', 'repo'),
+    'update-status':    _script('system', 'update.sh', 'status'),
+    'update-log':       _script('system', 'update.sh', 'log'),
+    'update-snapshot':  _script('system', 'update.sh', 'snapshot'),
+    # power (power/)
+    'power-status':     _script('power', 'power.sh', 'status'),
+    'power-reboot':     _script('power', 'power.sh', 'reboot'),
+    'power-shutdown':   _script('power', 'power.sh', 'shutdown'),
+    # dashboard (util/)
+    'dashboard-status': _script('util', 'dashboard.sh', 'status'),
+    # esp32 (radio/)
+    'esp32-status':     _script('radio', 'esp32.sh', 'status'),
+    'esp32-log':        _script('radio', 'esp32.sh', 'log'),
+    'esp32-flash':      _script('radio', 'esp32.sh', 'flash'),
+    'esp32-reset':      _script('radio', 'esp32.sh', 'reset'),
+    'esp32-info':       _script('radio', 'esp32.sh', 'info'),
+    # gps (radio/)
+    'gps-status':       _script('radio', 'gps.sh', 'status'),
+    'gps-log':          _script('radio', 'gps.sh', 'log'),
+    'gps-fix':          _script('radio', 'gps.sh', 'fix'),
+    'gps-time':         _script('radio', 'gps.sh', 'time'),
+    'gps-track':        _script('radio', 'gps.sh', 'track'),
+    'gps-stop':         _script('radio', 'gps.sh', 'stop'),
+    # sdr (radio/)
+    'sdr-status':       _script('radio', 'sdr.sh', 'status'),
+    'sdr-test':         _script('radio', 'sdr.sh', 'test'),
+    'sdr-info':         _script('radio', 'sdr.sh', 'info'),
+    'sdr-scan':         _script('radio', 'sdr.sh', 'scan'),
+    # lora (radio/)
+    'lora-status':      _script('radio', 'lora.sh', 'status'),
+    'lora-config':      _script('radio', 'lora.sh', 'config'),
+    'lora-listen':      _script('radio', 'lora.sh', 'listen'),
+    'lora-send':        _script('radio', 'lora.sh', 'send', 'test'),
+    # battery test (power/)
+    'battest-status':   _script('power', 'battery-test.sh', 'status'),
+    'battest-stop':     _script('power', 'battery-test.sh', 'stop'),
+    'battest-list':     _script('power', 'battery-test.sh', 'list'),
+    'battest-compare':  _script('power', 'battery-test.sh', 'compare'),
     # config / timers
-    'timer-enable-backup':  ['systemctl', '--user', 'enable', '--now', 'uconsole-backup.timer'],
-    'timer-disable-backup': ['systemctl', '--user', 'disable', '--now', 'uconsole-backup.timer'],
-    'timer-enable-update':  ['systemctl', '--user', 'enable', '--now', 'uconsole-update.timer'],
-    'timer-disable-update': ['systemctl', '--user', 'disable', '--now', 'uconsole-update.timer'],
+    'timer-enable-backup':  _systemctl('enable', '--now', 'uconsole-backup.timer'),
+    'timer-disable-backup': _systemctl('disable', '--now', 'uconsole-backup.timer'),
+    'timer-enable-update':  _systemctl('enable', '--now', 'uconsole-update.timer'),
+    'timer-disable-update': _systemctl('disable', '--now', 'uconsole-update.timer'),
 }
 
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
-DOCS_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), 'docs')
+DOCS_DIR = os.path.join(os.path.dirname(APP_DIR), 'docs')
 
 
 @app.route('/')
@@ -972,8 +968,8 @@ for _timer, _presets in TIMER_PRESETS.items():
         CALENDAR_TO_PRESET[(_timer, _cal)] = _key
 
 TIMER_FILES = {
-    'backup': os.path.join(os.path.dirname(SCRIPTS_DIR), 'config', 'systemd-user', 'uconsole-backup.timer'),
-    'update': os.path.join(os.path.dirname(SCRIPTS_DIR), 'config', 'systemd-user', 'uconsole-update.timer'),
+    'backup': os.path.join(os.path.dirname(APP_DIR), 'config', 'systemd-user', 'uconsole-backup.timer'),
+    'update': os.path.join(os.path.dirname(APP_DIR), 'config', 'systemd-user', 'uconsole-update.timer'),
 }
 
 
@@ -1006,8 +1002,8 @@ def api_timer_schedule(timer_name):
             f.write(content)
 
         # reload systemd and restart timer
-        subprocess.run(['systemctl', '--user', 'daemon-reload'], timeout=10)
-        subprocess.run(['systemctl', '--user', 'restart', f'{service_name}.timer'], timeout=10)
+        subprocess.run(_systemctl('daemon-reload'), timeout=10)
+        subprocess.run(_systemctl('restart', f'{service_name}.timer'), timeout=10)
 
         return jsonify({'ok': True, 'schedule': label, 'calendar': calendar})
     except Exception as e:
@@ -1038,7 +1034,7 @@ def api_config():
     # git remote
     try:
         result = subprocess.run(
-            ['git', '-C', os.path.dirname(SCRIPTS_DIR), 'remote', 'get-url', 'origin'],
+            ['git', '-C', os.path.dirname(APP_DIR), 'remote', 'get-url', 'origin'],
             capture_output=True, text=True, timeout=5
         )
         config['git_remote'] = result.stdout.strip()
@@ -1091,7 +1087,7 @@ def api_set_git_remote():
         return jsonify({'error': 'Missing url'}), 400
     try:
         subprocess.run(
-            ['git', '-C', os.path.dirname(SCRIPTS_DIR), 'remote', 'set-url', 'origin', url],
+            ['git', '-C', os.path.dirname(APP_DIR), 'remote', 'set-url', 'origin', url],
             check=True, timeout=10
         )
         return jsonify({'ok': True, 'git_remote': url})
@@ -1402,7 +1398,7 @@ def api_battest_start():
         return jsonify({'error': 'Invalid label (alphanumeric, hyphens, underscores only)'}), 400
     interval = str(data.get('interval', 5))
     subprocess.Popen(
-        ['bash', _s('battery-test.sh'), 'start', label, interval],
+        ['bash', os.path.join(SCRIPTS_DIR, 'power', 'battery-test.sh'), 'start', label, interval],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
         start_new_session=True
     )
