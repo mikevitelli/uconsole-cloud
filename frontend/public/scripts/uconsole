@@ -575,10 +575,11 @@ cmd_help() {
 # ── Main ─────────────────────────────────────────────────
 
 COMMAND="${1:-help}"
+shift 2>/dev/null || true
 
 case "$COMMAND" in
-  setup)   cmd_setup ;;
-  link)    cmd_link ;;
+  setup)   cmd_setup "$@" ;;
+  link)    cmd_link "$@" ;;
   push)    cmd_push ;;
   status)  cmd_status ;;
   doctor)  cmd_doctor ;;
