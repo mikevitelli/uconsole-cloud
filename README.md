@@ -84,6 +84,64 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 ---
 
+## Screenshots
+
+### Cloud Dashboard
+
+<div align="center">
+
+<!-- TODO: replace with actual screenshot -->
+<!-- Take at: uconsole.cloud (signed in, device online) -->
+<!-- Recommended: 1200px wide, dark mode, full dashboard view -->
+![Cloud dashboard — device status, backup coverage, system inventory](docs/screenshots/dashboard.png)
+
+*Live device telemetry, backup coverage grid, and system inventory at [uconsole.cloud](https://uconsole.cloud)*
+
+</div>
+
+### Local Web Dashboard
+
+<div align="center">
+
+<!-- TODO: replace with actual screenshot -->
+<!-- Take at: https://uconsole.local (or device IP) -->
+<!-- Recommended: 1200px wide, showing terminal + stats -->
+![Local web dashboard — terminal, live stats, script execution](docs/screenshots/webdash.png)
+
+*Flask web dashboard at `uconsole.local` — terminal access, live stats, and script execution*
+
+</div>
+
+### Landing Page
+
+<div align="center">
+
+<img src="frontend/public/uConsole-spin.gif" alt="uConsole device" width="200" />
+
+<!-- TODO: replace with actual screenshot -->
+<!-- Take at: uconsole.cloud (signed out) -->
+<!-- Recommended: 1200px wide, showing full landing page -->
+![Landing page — install steps, feature cards](docs/screenshots/landing.png)
+
+*Three-step onboarding: sign in, install, link your device*
+
+</div>
+
+### Device Code Linking
+
+<div align="center">
+
+<!-- TODO: replace with actual screenshot -->
+<!-- Take at: uconsole.cloud/link (with a code displayed) -->
+<!-- Recommended: 800px wide, showing code entry form -->
+![Device linking — enter code or scan QR](docs/screenshots/device-link.png)
+
+*Link your device with an 8-character code or QR scan — no typing passwords on tiny keyboards*
+
+</div>
+
+---
+
 ## Install
 
 ```bash
