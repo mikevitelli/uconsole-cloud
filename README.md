@@ -106,7 +106,8 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Repo Linking**
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/361f69d6-78a5-465c-8c47-067a5c158a99" />
+<img width="1239" height="872" alt="image" src="https://github.com/user-attachments/assets/b02570ac-a365-4850-a8f7-63a27ac786df" />
+
 
 
 *Auto-detects your uconsole backup repo*
