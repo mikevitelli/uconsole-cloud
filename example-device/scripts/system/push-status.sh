@@ -1,17 +1,14 @@
 #!/bin/bash
 # Push uConsole system status to the uconsole.cloud API.
 # Runs every 5 minutes via cron. Pure bash, no jq/python deps.
-# Reads config from /etc/uconsole/status.env (fallback: ~/.config/uconsole/status.env)
+# Reads config from ~/.config/uconsole/status.env
 
 set -euo pipefail
 
 # ── Load config ─────────────────────────────────────────
-if [ -f /etc/uconsole/status.env ]; then
-    ENV_FILE="/etc/uconsole/status.env"
-elif [ -f "${HOME}/.config/uconsole/status.env" ]; then
-    ENV_FILE="${HOME}/.config/uconsole/status.env"
-else
-    echo "Missing /etc/uconsole/status.env" >&2
+ENV_FILE="${HOME}/.config/uconsole/status.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Missing $ENV_FILE" >&2
     exit 1
 fi
 source "$ENV_FILE"
@@ -140,6 +137,14 @@ if [ -c /dev/ttyS0 ]; then
     fi
 fi
 
+# ESP32 Marauder (CP210x on internal USB-C)
+AIO_ESP32_DETECTED=false
+AIO_ESP32_FW=""
+if [ -e /dev/esp32 ]; then
+    AIO_ESP32_DETECTED=true
+    AIO_ESP32_FW=$(timeout 5 bash "$HOME/scripts/esp32-marauder.sh" version 2>/dev/null || echo "unknown")
+fi
+
 # RTC (PCF85063A at 0x51 — check /sys/class/rtc, fallback to i2cdetect)
 AIO_RTC_DETECTED=false
 AIO_RTC_SYNCED=false
@@ -155,9 +160,9 @@ fi
 # ── Webdash ────────────────────────────────────────────
 WEBDASH_RUNNING=false
 WEBDASH_PORT=8080
-if systemctl is-active --quiet uconsole-webdash.service 2>/dev/null; then
+if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
     WEBDASH_RUNNING=true
-    WEBDASH_PORT=$(systemctl show uconsole-webdash.service -p Environment 2>/dev/null \
+    WEBDASH_PORT=$(systemctl --user show webdash.service -p Environment 2>/dev/null \
         | grep -oP 'WEBDASH_PORT=\K[0-9]+' || echo "8080")
 fi
 
@@ -214,6 +219,7 @@ JSON=$(cat <<ENDJSON
     "sdr": { "detected": $AIO_SDR_DETECTED, "chip": "$(json_escape "$AIO_SDR_CHIP")" },
     "lora": { "detected": $AIO_LORA_DETECTED, "chip": "$(json_escape "$AIO_LORA_CHIP")" },
     "gps": { "detected": $AIO_GPS_DETECTED, "hasFix": $AIO_GPS_FIX },
+    "esp32": { "detected": $AIO_ESP32_DETECTED, "firmware": "$(json_escape "$AIO_ESP32_FW")" },
     "rtc": { "detected": $AIO_RTC_DETECTED, "synced": $AIO_RTC_SYNCED, "time": "$(json_escape "$AIO_RTC_TIME")" }
   },
   "screen": {
