@@ -150,7 +150,12 @@ EOF
 
       if [ "$INSTALL_MODE" = "package" ]; then
         # Package mode: system services are already installed by postinst.
-        # Just restart the timer so it picks up the new env file.
+        # Clean up stale cron entries from old standalone installs
+        if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+          crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
+          echo "Removed stale cron job (now using systemd timer)"
+        fi
+        # Restart the timer so it picks up the new env file.
         sudo systemctl restart uconsole-status.timer 2>/dev/null || true
         echo "Status timer restarted"
       else
@@ -488,6 +493,11 @@ cmd_doctor() {
     # Check for old user-level services
     if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
       echo "  [!!] Old user-level webdash.service still running — run 'systemctl --user stop webdash && systemctl --user disable webdash'"
+      fail=$((fail + 1))
+    fi
+    # Check for stale cron job (should use systemd timer in package mode)
+    if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+      echo "  [!!] Stale cron job found — run 'uconsole link' to clean up (package mode uses systemd timer)"
       fail=$((fail + 1))
     fi
   fi
