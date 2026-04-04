@@ -38,7 +38,7 @@ This starts the Next.js frontend at `:3000` and the Sanity Studio at `:3333`.
 - TypeScript throughout, strict mode
 - Server Components by default — only add `'use client'` when needed
 - Tailwind CSS v4 for styling (GitHub-dark theme)
-- Keep tests passing (138+ as of v0.1.1)
+- Keep tests passing (211+ as of v0.1.1)
 
 ## Project layout
 
@@ -60,7 +60,7 @@ frontend/src/
 ## Testing
 
 ```bash
-npm test              # run all 138 tests (vitest)
+npm test              # run all 211 tests (vitest)
 npm run test:watch    # watch mode during development
 npm run build         # catches type errors the tests don't
 npm run lint          # ESLint

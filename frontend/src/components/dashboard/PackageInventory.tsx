@@ -28,9 +28,6 @@ export function PackageInventory({
 
   const managers = Object.keys(packages);
   const total = managers.reduce((sum, m) => sum + packages[m].length, 0);
-  const aptCount = (packages["APT"] || []).length;
-  const otherCount = total - aptCount;
-
   // Treemap items from APT categories
   const treemapItems = aptCategories.map((c) => ({
     name: c.name,
