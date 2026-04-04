@@ -94,7 +94,8 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Landing Page**
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1c978ae1-75d6-45b8-97d5-e354b386261a" />
+<img width="1239" height="872" alt="image" src="https://github.com/user-attachments/assets/e55515bd-d603-4675-950b-6d2afccaee56" />
+
 
 
 
@@ -117,7 +118,9 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Dashboard Overview**
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/91cc277f-abf2-4d2f-bbfe-72552ecfbd79" />
+<img width="1239" height="872" alt="image" src="https://github.com/user-attachments/assets/10ba4f7b-7721-42a0-ba4e-bd526433e174" />
+
+
 
 *Restore readiness, backup coverage across 8 categories, repo stats*
 
@@ -126,7 +129,8 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 
 **Device Status**
 
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/85fc67de-53ed-44fc-ace8-dc453cb77959" />
+<img width="1239" height="872" alt="image" src="https://github.com/user-attachments/assets/cfc6c6bc-8014-4594-866c-91f658991ed8" />
+
 
 
 *Battery donut, CPU temp, memory, disk, WiFi, uptime, kernel*
