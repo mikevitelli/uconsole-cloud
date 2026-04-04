@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.1.1 (2026-04-03)
+
+Bug fixes and release automation.
+
+### Device Package
+- Fix: move cron cleanup before re-link prompt during setup (avoids stale cron entries)
+- Fix: improve `uconsole doctor` dual-fire warning (clearer messaging when both cron and timer exist)
+- Fix: GPG key import in install script — add `--batch --yes` to dearmor for non-interactive installs
+
+### Cloud Dashboard
+- GitHub Actions release workflow for automated `.deb` builds and APT repo publishing
+- Fix: APT repository headers (correct MIME types, cache control)
+
+### Device Scripts
+- Marauder TUI integration (ESP32 Marauder serial interface)
+- Battery discharge test expansion with configurable profiles
+- Forum browser (ClockworkPi forum access from TUI)
+- Trackball scroll support in TUI
+- Games category in TUI
+- Webdash migrated to systemd service (from manual start)
+- Shared utility libraries (`lib.sh`, `tui_lib.py`)
+
+---
+
 ## v0.1.0 (2026-03-28)
 
 First public release.
