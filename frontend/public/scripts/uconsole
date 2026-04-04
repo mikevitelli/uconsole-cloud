@@ -63,6 +63,12 @@ cmd_setup() {
 }
 
 cmd_link() {
+  # Clean up stale cron entries from old standalone installs (package mode uses systemd timer)
+  if [ "$INSTALL_MODE" = "package" ] && crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+    crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
+    echo "Removed stale cron job (package mode uses systemd timer)"
+  fi
+
   # Check for existing config
   local env_readable=false
   if [ "$INSTALL_MODE" = "package" ] && sudo test -f "${ENV_FILE}" 2>/dev/null; then
@@ -150,11 +156,6 @@ EOF
 
       if [ "$INSTALL_MODE" = "package" ]; then
         # Package mode: system services are already installed by postinst.
-        # Clean up stale cron entries from old standalone installs
-        if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
-          crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
-          echo "Removed stale cron job (now using systemd timer)"
-        fi
         # Restart the timer so it picks up the new env file.
         sudo systemctl restart uconsole-status.timer 2>/dev/null || true
         echo "Status timer restarted"
@@ -495,9 +496,10 @@ cmd_doctor() {
       echo "  [!!] Old user-level webdash.service still running — run 'systemctl --user stop webdash && systemctl --user disable webdash'"
       fail=$((fail + 1))
     fi
-    # Check for stale cron job (should use systemd timer in package mode)
+    # Check for stale cron job (package mode uses systemd timer, cron causes double-firing)
     if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
-      echo "  [!!] Stale cron job found — run 'uconsole link' to clean up (package mode uses systemd timer)"
+      echo "  [!!] Stale cron job found — push-status running via both cron and systemd timer"
+      echo "       Fix: uconsole link (auto-cleans cron) or: crontab -l | grep -v push-status | crontab -"
       fail=$((fail + 1))
     fi
   fi
