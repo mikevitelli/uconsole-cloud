@@ -265,7 +265,7 @@ uconsole-cloud/
 │   │   │   ├── viz/                7 visualization components (sparkline, donut, treemap, etc.)
 │   │   │   └── *.tsx               Shared UI (RepoLinker, DeviceCodeForm, CopyCommand, etc.)
 │   │   ├── lib/                    20 modules (auth, redis, github, device config, etc.)
-│   │   └── __tests__/              10 test suites, 138 tests (vitest)
+│   │   └── __tests__/              10 test suites, 211 tests (vitest)
 │   ├── public/
 │   │   ├── scripts/                Install-time copies of CLI + push-status.sh
 │   │   ├── install.sh              APT bootstrap installer
@@ -325,7 +325,7 @@ uconsole-cloud/
 | Backup data | GitHub REST API | Commits, tree, raw files, packages |
 | CMS | Sanity v3 | Landing page and dashboard copy |
 | Styling | Tailwind CSS v4 | GitHub-dark theme with CSS variables |
-| Testing | Vitest 4 | 138 tests — parsing, security, API, validation |
+| Testing | Vitest 4 | 211 tests — parsing, security, API, validation |
 | Hosting | Vercel | Auto-deploy from main, preview on PRs |
 | CI/CD | GitHub Actions | Automated `.deb` builds, APT repo publishing |
 | Device | Bash + Python | 45+ scripts, Flask webdash, curses TUI, systemd services |
@@ -346,7 +346,7 @@ cp frontend/.env.example frontend/.env.local
 #          UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
 npm run dev        # frontend :3000, studio :3333
-npm test           # 138 tests (vitest)
+npm test           # 211 tests (vitest)
 npm run build      # production build
 npm run lint       # ESLint
 ```
@@ -386,6 +386,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — especially fr
 
 Built for the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole).
 
-`88 source files · 138 tests · 16 API routes · 32 components · 45+ device scripts`
+`88 source files · 211 tests · 16 API routes · 32 components · 45+ device scripts`
 
 </div>
