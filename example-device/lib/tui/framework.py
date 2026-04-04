@@ -129,6 +129,7 @@ SUBMENUS = {
         ("Discharge: Panasonic",  "util/discharge-test.sh panasonic-ga",       "overnight 30s log + git push","stream"),
     ],
     "sub:esp32": [
+        ("Marauder",         "_marauder",                 "WiFi/BLE attack toolkit (ESP32)",        "action"),
         ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel"),
         ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action"),
         ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen"),
@@ -1769,6 +1770,7 @@ def _get_native_tools():
                              run_wifi_fallback, run_bluetooth)
     from tui.services import run_cron_viewer, run_webdash_config, run_push_interval
     from tui.radio import run_gps_globe, run_fm_radio
+    from tui.marauder import run_marauder
     return {
         "_theme":       lambda scr: run_theme_picker(scr),
         "_viewmode":    lambda scr: run_viewmode_toggle(scr),
@@ -1806,6 +1808,7 @@ def _get_native_tools():
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
+        "_marauder":      lambda scr: run_marauder(scr),
     }
 
 NATIVE_TOOLS = None
