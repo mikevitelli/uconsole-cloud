@@ -131,7 +131,7 @@ export default function DocsPage() {
                 <InlineCode>/usr/bin/uconsole</InlineCode>
               </li>
               <li>
-                40+ management scripts in{" "}
+                46 management scripts in{" "}
                 <InlineCode>/opt/uconsole/scripts/</InlineCode>
               </li>
               <li>
@@ -628,6 +628,18 @@ Phone / Browser            │
               [
                 "Headers",
                 "CSP, X-Frame-Options DENY, nosniff, strict Referrer-Policy, restrictive Permissions-Policy.",
+              ],
+              [
+                "Process safety",
+                "PID range guard (2-4194304) in TUI process manager. AST-based calculator prevents code injection.",
+              ],
+              [
+                "Network isolation",
+                "Webdash binds 127.0.0.1 only (nginx proxies). CORS whitelist: uconsole.local, uconsole.cloud. PTY auth gate on terminal sessions.",
+              ],
+              [
+                "Systemd hardening",
+                "PrivateTmp, ProtectSystem=strict, NoNewPrivileges on all service units.",
               ],
             ].map(([title, desc]) => (
               <div
