@@ -12,6 +12,12 @@ User=UCONSOLE_USER
 Group=UCONSOLE_USER
 Restart=always
 RestartSec=3
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
 
 [Install]
 WantedBy=multi-user.target
