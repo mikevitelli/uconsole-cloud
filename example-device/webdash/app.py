@@ -35,7 +35,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('WEBDASH_SECRET', secrets.token_hex(32))
 
 # --- Terminal PTY via SocketIO ---
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading') if _HAS_SOCKETIO else None
+socketio = SocketIO(app, cors_allowed_origins=[
+    'https://uconsole.local',
+    'https://uconsole.cloud',
+], async_mode='threading') if _HAS_SOCKETIO else None
 _pty_sessions = {}  # sid -> {pid, fd}
 
 
@@ -66,6 +69,9 @@ if _HAS_SOCKETIO:
     def _on_pty_spawn(data):
         sid = request.sid
         if sid in _pty_sessions:
+            return
+        if not _is_authenticated():
+            socketio.emit('pty-exit', {'error': 'Not authenticated'}, to=sid)
             return
         pid, fd = pty.fork()
         if pid == 0:
@@ -99,7 +105,10 @@ if _HAS_SOCKETIO:
         if sess:
             try:
                 os.kill(sess['pid'], 9)
-                os.waitpid(sess['pid'], os.WNOHANG)
+            except OSError:
+                pass
+            try:
+                os.waitpid(sess['pid'], 0)
             except (OSError, ChildProcessError):
                 pass
             try:
@@ -191,6 +200,9 @@ def login():
     if not _password_is_set():
         return redirect('/setup-password')
     if request.method == 'POST':
+        if _bcrypt is None:
+            return render_template('login.html',
+                error='Server error: bcrypt not installed (pip3 install bcrypt)'), 500
         p = request.form.get('password', '')
         if _check_password(p):
             token = _make_token()
@@ -274,16 +286,32 @@ def _check_rate_limit(ip):
     return True
 
 
+_PUBLIC_PATHS = frozenset((
+    '/login', '/setup-password', '/api/set-password',
+    '/favicon.png', '/apple-touch-icon.png',
+    '/apple-touch-icon-precomposed.png', '/uconsole.crt',
+    '/uConsole.gif', '/manifest.json', '/sw.js',
+))
+_LOCAL_ONLY_PATHS = frozenset((
+    '/api/public/stats',
+    '/api/esp32/push', '/api/esp32',
+    '/api/gps/push', '/api/gps',
+    '/api/sdr/push', '/api/sdr',
+    '/api/lora/push', '/api/lora',
+    '/api/battery-test/chart', '/api/battery-test/start',
+))
+
+
 @app.before_request
 def require_auth():
-    if request.path in ('/login', '/setup-password', '/api/set-password',
-                         '/favicon.png', '/apple-touch-icon.png',
-                         '/apple-touch-icon-precomposed.png', '/uconsole.crt',
-                         '/uConsole.gif', '/manifest.json', '/sw.js',
-                         '/api/public/stats', '/api/esp32/push', '/api/esp32',
-                         '/api/gps/push', '/api/gps', '/api/sdr/push', '/api/sdr',
-                         '/api/lora/push', '/api/lora',
-                         '/api/battery-test/chart', '/api/battery-test/start'):
+    if request.path in _PUBLIC_PATHS:
+        return
+    if request.path in _LOCAL_ONLY_PATHS:
+        client_ip = request.headers.get('X-Real-IP', request.remote_addr)
+        if not _is_local_ip(client_ip):
+            return jsonify({'error': 'Forbidden'}), 403
+        if not _check_rate_limit(client_ip):
+            return jsonify({'error': 'Rate limit exceeded'}), 429
         return
     if not _is_authenticated():
         return redirect('/login')
@@ -319,10 +347,10 @@ def manifest():
         "background_color": "#000000",
         "theme_color": "#000000",
         "icons": [
-            {"src": "/favicon.png", "sizes": "64x64", "type": "image/png"}
+            {"src": "/favicon.png", "sizes": "180x180", "type": "image/png"}
         ]
     }
-    return app.response_class(_json.dumps(m), mimetype='application/manifest+json')
+    r = app.response_class(_json.dumps(m), mimetype='application/manifest+json'); r.headers['Cache-Control'] = 'no-cache, no-store'; return r
 
 
 @app.route('/sw.js')
@@ -355,6 +383,22 @@ self.addEventListener('fetch',function(e){
 });'''
     return app.response_class(sw, mimetype='application/javascript',
                               headers={'Service-Worker-Allowed': '/'})
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'same-origin'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' wss://uconsole.local; "
+        "img-src 'self' data:; "
+        "font-src 'self'"
+    )
+    return response
 
 
 @app.after_request
@@ -1502,8 +1546,8 @@ if __name__ == '__main__':
     t.start()
     _port = int(os.environ.get('WEBDASH_PORT', 8080))
     if socketio:
-        socketio.run(app, host='0.0.0.0', port=_port,
+        socketio.run(app, host='127.0.0.1', port=_port,
                      debug=False, allow_unsafe_werkzeug=True)
     else:
-        app.run(host='0.0.0.0', port=_port,
+        app.run(host='127.0.0.1', port=_port,
                 debug=False, threaded=True)

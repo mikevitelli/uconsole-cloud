@@ -17,6 +17,7 @@ from tui.framework import (
     draw_status_bar,
     open_gamepad,
 )
+from tui.network import _run_config_editor, WEBDASH_CONF
 
 
 def run_cron_viewer(scr):
@@ -188,10 +189,8 @@ def run_push_interval(scr):
                     lines.append(line)
         with open(timer_src, "w") as f:
             f.writelines(lines)
-        _pkg = os.path.isdir('/opt/uconsole/scripts')
-        _sctl = ["sudo", "systemctl"] if _pkg else ["systemctl", "--user"]
-        subprocess.run(_sctl + ["daemon-reload"], timeout=10, capture_output=True)
-        subprocess.run(_sctl + ["restart", "uconsole-status.timer"], timeout=10, capture_output=True)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=10, capture_output=True)
+        subprocess.run(["systemctl", "--user", "restart", "uconsole-status.timer"], timeout=10, capture_output=True)
         msg = f"  ✓ Push interval set to {new_interval}"
     except Exception as e:
         msg = f"  ✗ Failed: {e}"

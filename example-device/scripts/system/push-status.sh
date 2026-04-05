@@ -242,8 +242,9 @@ ENDJSON
 # ── Push to API ─────────────────────────────────────────
 COMPACT_JSON=$(printf '%s' "$JSON" | tr -d '\n' | tr -s ' ')
 
-HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    "${DEVICE_API_URL}" \
+HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+    --connect-timeout 10 --max-time 30 \
+    -X POST "${DEVICE_API_URL}" \
     -H "Authorization: Bearer ${DEVICE_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "$COMPACT_JSON")
