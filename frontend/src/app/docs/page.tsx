@@ -87,6 +87,10 @@ export default function DocsPage() {
               ["telemetry", "Telemetry"],
               ["webdash", "Local Web Dashboard"],
               ["cloud", "Cloud Dashboard"],
+              ["scripts", "Scripts"],
+              ["tui", "TUI Modules"],
+              ["webdash-api", "Webdash API"],
+              ["services", "Services"],
               ["security", "Security"],
               ["troubleshooting", "Troubleshooting"],
               ["contributing", "Contributing"],
@@ -402,6 +406,197 @@ Phone / Browser            │
           </div>
         </Section>
 
+        {/* Scripts */}
+        <Section id="scripts" title="Scripts">
+          <p className="text-sub mb-3 text-sm">
+            46 management scripts organized in 5 categories under{" "}
+            <InlineCode>/opt/uconsole/scripts/</InlineCode>.
+          </p>
+          <div className="space-y-4">
+            {[
+              {
+                name: "network/",
+                count: 5,
+                scripts: "hotspot.sh, network.sh, wifi-fallback.sh, wifi.sh, lib.sh",
+              },
+              {
+                name: "power/",
+                count: 10,
+                scripts:
+                  "battery.sh, battery-test.sh, cellhealth.sh, charge.sh, cpu-freq-cap.sh, fix-voltage-cutoff.sh, low-battery-shutdown.sh, pmu-voltage-min.sh, power.sh, lib.sh",
+              },
+              {
+                name: "radio/",
+                count: 8,
+                scripts:
+                  "aio-check.sh, esp32.sh, esp32-marauder.sh, gps.sh, lora.sh, lora_helper.py, sdr.sh, lib.sh",
+              },
+              {
+                name: "system/",
+                count: 5,
+                scripts: "backup.sh, push-status.sh, restore.sh, update.sh, lib.sh",
+              },
+              {
+                name: "util/",
+                count: 18,
+                scripts:
+                  "audit.sh, boot-check.sh, config.py, config.sh, console.sh, crash-log.sh, dashboard.sh, discharge-test.sh, diskusage.sh, hardware-detect.sh, integration-test.sh, smoke-test.sh, storage.sh, trackball-scroll.py, webdash-ctl.sh, webdash-info.sh, webdash.sh, lib.sh",
+              },
+            ].map(({ name, count, scripts }) => (
+              <div
+                key={name}
+                className="bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <code className="text-accent font-mono">{name}</code>
+                  <span className="text-dim text-xs">({count} files)</span>
+                </div>
+                <p className="text-sub text-xs">{scripts}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* TUI */}
+        <Section id="tui" title="TUI Modules">
+          <p className="text-sub mb-3 text-sm">
+            Curses-based terminal interface launched via{" "}
+            <InlineCode>console</InlineCode>. 9 category tabs, 147 menu
+            entries, 37 native tools. Supports keyboard (arrows, vim keys) and
+            gamepad input.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {[
+              ["framework", "Main loop, menus, rendering"],
+              ["monitor", "Real-time CPU, RAM, temp gauges"],
+              ["network", "WiFi switcher, hotspot, fallback"],
+              ["radio", "GPS globe, FM radio"],
+              ["marauder", "ESP32 Marauder WiFi/BLE toolkit"],
+              ["services", "Timer config, push interval"],
+              ["tools", "Git panel, notes, calculator, stopwatch"],
+              ["games", "Minesweeper, snake, tetris, 2048"],
+              ["files", "File browser"],
+              ["config_ui", "Theme picker, view mode"],
+              ["workspace-monitor", "Labwc workspace detection"],
+            ].map(([mod, desc]) => (
+              <div
+                key={mod}
+                className="bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              >
+                <code className="text-accent font-mono text-xs">{mod}</code>
+                <p className="text-sub text-xs mt-0.5">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Webdash API */}
+        <Section id="webdash-api" title="Webdash API">
+          <p className="text-sub mb-3 text-sm">
+            46 routes served by the Flask webdash at{" "}
+            <InlineCode>https://uconsole.local</InlineCode>.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left text-bright font-medium py-2 pr-4">
+                    Category
+                  </th>
+                  <th className="text-left text-bright font-medium py-2">
+                    Endpoints
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="text-sub">
+                {[
+                  ["Auth", "/login, /setup-password, /api/set-password, /logout"],
+                  ["Dashboard", "/, /api/logo, /api/stats, /api/public/stats"],
+                  [
+                    "Config",
+                    "/api/config, /api/config/brightness, /api/config/git-remote, /api/config/timezone",
+                  ],
+                  ["Timers", "/api/timers, /api/timer-schedule/<name>"],
+                  [
+                    "Monitoring",
+                    "/api/processes, /api/logs/<source>, /api/connections, /api/services",
+                  ],
+                  ["Wiki", "/api/wiki (GET/POST/DELETE)"],
+                  ["WiFi", "/api/wifi/scan, /api/wifi/connect, /api/wifi/disconnect"],
+                  [
+                    "Scripts",
+                    "/api/run/<script> (POST), /api/stream/<script> (SSE)",
+                  ],
+                  [
+                    "Battery",
+                    "/api/battery-test/chart, /api/battery-test/start",
+                  ],
+                  [
+                    "Hardware",
+                    "/api/esp32, /api/gps, /api/sdr, /api/lora (GET + push POST)",
+                  ],
+                  [
+                    "Terminal",
+                    "SocketIO: pty-spawn, pty-input, pty-resize, pty-output, pty-exit",
+                  ],
+                  [
+                    "Static",
+                    "/favicon.png, /uconsole.crt, /manifest.json, /sw.js",
+                  ],
+                ].map(([cat, endpoints]) => (
+                  <tr key={cat} className="border-b border-border/50">
+                    <td className="py-2 pr-4 font-mono text-accent text-xs">
+                      {cat}
+                    </td>
+                    <td className="py-2 text-xs">{endpoints}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        {/* Services */}
+        <Section id="services" title="Services">
+          <p className="text-sub mb-3 text-sm">
+            4 systemd services and 3 timers, managed by the setup wizard.
+          </p>
+          <div className="space-y-2">
+            {[
+              [
+                "uconsole-webdash.service",
+                "Flask dashboard on :8080, Restart=always",
+              ],
+              [
+                "uconsole-status.service + timer",
+                "Push telemetry every 5 minutes",
+              ],
+              [
+                "uconsole-backup.service + timer",
+                "Daily backup at 3:00 AM",
+              ],
+              [
+                "uconsole-update.service + timer",
+                "Weekly update check, Sunday 4:00 AM",
+              ],
+              [
+                "nginx",
+                "HTTPS reverse proxy on :443, self-signed cert, CORS for uconsole.cloud",
+              ],
+            ].map(([svc, desc]) => (
+              <div
+                key={svc}
+                className="flex gap-3 bg-card border border-border rounded-lg px-3 py-2 text-sm"
+              >
+                <code className="text-accent font-mono shrink-0 text-xs">
+                  {svc}
+                </code>
+                <span className="text-sub text-xs">{desc}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
         {/* Security */}
         <Section id="security" title="Security">
           <div className="space-y-2 text-sm">
@@ -489,6 +684,63 @@ uconsole setup`}</Code>
             </div>
             <div>
               <p className="text-bright font-medium text-sm mb-1">
+                iOS PWA icon shows letter instead of logo
+              </p>
+              <p className="text-sub text-sm mb-2">
+                Safari won&apos;t load the favicon from a self-signed cert it
+                doesn&apos;t trust. Fix: go to Settings &gt; General &gt; About
+                &gt; Certificate Trust Settings, enable the uconsole.local
+                certificate. Then clear Safari website data (Settings &gt;
+                Safari &gt; Clear History and Website Data). Delete the old PWA
+                from Home Screen and re-add from Safari&apos;s share sheet.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                Desktop is bare after reboot
+              </p>
+              <p className="text-sub text-sm mb-2">
+                The labwc autostart file can get overwritten by system updates,
+                losing pcmanfm, wf-panel, and kanshi entries. Check{" "}
+                <InlineCode>~/.config/labwc/autostart</InlineCode> has all
+                required entries. Consider adding it to your backup system.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                Console keybind missing after apt upgrade
+              </p>
+              <p className="text-sub text-sm mb-2">
+                The package installs to <InlineCode>/opt/uconsole</InlineCode>{" "}
+                but your dev tree at <InlineCode>~/pkg</InlineCode> may have
+                newer code. Run <InlineCode>uconsole update</InlineCode> or
+                manually copy from your dev tree.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                Webdash scripts return empty
+              </p>
+              <p className="text-sub text-sm mb-2">
+                SCRIPTS_DIR resolution may be wrong. Run{" "}
+                <InlineCode>uconsole doctor</InlineCode> and verify{" "}
+                <InlineCode>/opt/uconsole/scripts/</InlineCode> has the expected
+                scripts. Also check that PATH includes{" "}
+                <InlineCode>/opt/uconsole/bin</InlineCode>.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                WiFi fallback AP not starting
+              </p>
+              <p className="text-sub text-sm mb-2">
+                NetworkManager connection profile may be missing. Re-run{" "}
+                <InlineCode>uconsole setup</InlineCode> to reconfigure hotspot
+                settings.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
                 Reset everything
               </p>
               <Code>{`sudo apt remove uconsole-cloud    # remove package
@@ -510,7 +762,7 @@ npm install
 cp frontend/.env.example frontend/.env.local
 # Fill in your credentials
 npm run dev    # frontend :3000, studio :3333
-npm test       # 138 tests`}</Code>
+npm test       # 1,024 tests (211 vitest + 813 pytest)`}</Code>
           <p className="text-sub mt-3 text-sm">
             See{" "}
             <a href="https://github.com/mikevitelli/uconsole-cloud/blob/main/CONTRIBUTING.md">
