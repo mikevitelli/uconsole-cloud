@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-import curses, os, sys
+"""uConsole Command Center — TUI launcher entry point."""
+
+import curses
+import os
+import sys
+
+# Add module paths — prefer dev tree over installed package
 _pkg_lib = "/opt/uconsole/lib"
-_dev_lib = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib")
-if os.path.isdir(_dev_lib): sys.path.insert(0, _dev_lib)
-if os.path.isdir(_pkg_lib): sys.path.insert(0, _pkg_lib)
+_dev_lib = os.path.expanduser("~/pkg/lib")
+if os.path.isdir(_pkg_lib):
+    sys.path.insert(0, _pkg_lib)
+if os.path.isdir(_dev_lib):
+    sys.path.insert(0, _dev_lib)
+
 from tui.framework import entry
+
 if __name__ == "__main__":
     os.environ.setdefault("ESCDELAY", "25")
     curses.wrapper(entry)
