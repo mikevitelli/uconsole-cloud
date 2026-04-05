@@ -116,6 +116,7 @@ The [HackerGadgets AIO expansion board](https://www.hackergadgets.com/) adds RTL
 <tr>
 <td align="center">
 
+
 **Dashboard Overview**
 
 <img width="1239" height="872" alt="image" src="https://github.com/user-attachments/assets/4dbcdb42-d82b-42c6-9d83-2d4020b7a394" />
