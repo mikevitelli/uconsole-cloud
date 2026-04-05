@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="frontend/src/app/opengraph-image.png" alt="uConsole Cloud" width="400" />
+<img width="1280" height="640" alt="uconsole-cloud-open-graph-template" src="https://github.com/user-attachments/assets/aa03a58e-078d-4f02-b32f-d5d9b2c3c96e" />
 
 <br/>
 
