@@ -30,10 +30,7 @@ _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
     os.path.join(_PKG_ROOT, 'scripts') if os.path.isdir(os.path.join(_PKG_ROOT, 'scripts'))
     else '/opt/uconsole/scripts')
-# Config lives in user home (SCRIPT_DIR may be root-owned in package mode)
-_CONFIG_DIR = os.path.join(os.path.expanduser('~'), '.config', 'uconsole')
-os.makedirs(_CONFIG_DIR, exist_ok=True)
-CONFIG_FILE = os.path.join(_CONFIG_DIR, "console-config.json")
+CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
 # ── Menu structure ──────────────────────────────────────────────────────────
 # Display modes:
@@ -2111,16 +2108,10 @@ def main(scr):
 def entry(scr):
     """Entry point that switches between list and tile views."""
     _init_workspace()
-    # Migrate old config locations
-    for old in [os.path.join(SCRIPT_DIR, ".console-config.json"),
-                os.path.join(SCRIPT_DIR, ".console-theme.json")]:
-        if os.path.isfile(old) and not os.path.isfile(CONFIG_FILE):
-            try:
-                import shutil
-                shutil.copy2(old, CONFIG_FILE)
-            except OSError:
-                pass
-            break
+    # Migrate old config
+    old_config = os.path.join(SCRIPT_DIR, ".console-theme.json")
+    if os.path.isfile(old_config) and not os.path.isfile(CONFIG_FILE):
+        os.rename(old_config, CONFIG_FILE)
 
     while True:
         mode = load_view_mode()

@@ -20,7 +20,7 @@ from flask import Flask, jsonify, render_template, request, make_response, send_
 
 # ascii_logos may be in the scripts dir or alongside this file
 _app_dir = os.path.dirname(os.path.abspath(__file__))
-for _p in [_app_dir, '/opt/uconsole/lib', os.path.expanduser('~/scripts')]:
+for _p in [_app_dir, os.path.expanduser('~/scripts')]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from ascii_logos import get_random_logo, get_logo, list_logos
@@ -662,7 +662,7 @@ ALLOWED_SCRIPTS = {
     'audit-junk':       _script('util', 'audit.sh', 'junk'),
     'audit-untracked':  _script('util', 'audit.sh', 'untracked'),
     'audit-categories': _script('util', 'audit.sh', 'categories'),
-    # backup (system/) — gather + sync = backward compat
+    # backup (system/)
     'backup-all':       _script('system', 'backup.sh', 'all'),
     'backup-git':       _script('system', 'backup.sh', 'git'),
     'backup-gh':        _script('system', 'backup.sh', 'gh'),
@@ -1136,7 +1136,7 @@ def api_set_port():
                 )
             with open(svc_file, 'w') as f:
                 f.write(content)
-            subprocess.run(['systemctl', '--user', 'daemon-reload'], timeout=10)
+            subprocess.run(_systemctl('daemon-reload'), timeout=10)
             return jsonify({'ok': True, 'port': port,
                             'message': 'Restart webdash service to apply'})
         return jsonify({'ok': True, 'port': port,

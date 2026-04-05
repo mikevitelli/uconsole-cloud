@@ -41,22 +41,32 @@ check_serial() {
 marauder_cmd() {
     local cmd="$1"
     local wait="${2:-$TIMEOUT}"
-    python3 -c "
-import serial, time
-s = serial.Serial('$SERIAL_PORT', $BAUD, timeout=$wait)
-time.sleep(0.3)
-s.write(b'\r\n')
+    python3 - "$SERIAL_PORT" "$BAUD" "$cmd" "$wait" << 'PYEOF'
+import serial, time, sys
+port, baud, cmd, wait = sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4])
+s = serial.Serial(port, baud, timeout=1)
 time.sleep(0.3)
 s.read(s.in_waiting)
-s.write(b'$cmd\r\n')
-time.sleep($wait)
-out = s.read(s.in_waiting).decode('utf-8', errors='replace')
-for line in out.splitlines():
-    stripped = line.strip()
-    if stripped and stripped != '>' and stripped != '#$cmd':
-        print(stripped)
+s.write(f"{cmd}\r\n".encode())
+skip = {">", "", f"#{cmd}"}
+buf = ""
+deadline = time.monotonic() + wait
+while time.monotonic() < deadline:
+    if s.in_waiting:
+        buf += s.read(s.in_waiting).decode("utf-8", errors="replace")
+        while "\n" in buf:
+            line, buf = buf.split("\n", 1)
+            stripped = line.strip()
+            stripped = stripped.lstrip("> ").strip()
+            if stripped and stripped not in skip and not stripped.startswith("Failed to set"):
+                print(stripped, flush=True)
+    else:
+        time.sleep(0.1)
+s.write(b"stopscan\r\n")
+time.sleep(0.3)
+s.read(s.in_waiting)
 s.close()
-"
+PYEOF
 }
 
 # Get GPS fix from gpsd, fall back to sample data
