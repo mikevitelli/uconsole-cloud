@@ -25,11 +25,11 @@ for _p in [os.path.dirname(os.path.realpath(__file__)),
         sys.path.insert(0, _p)
 import tui_lib as tui
 
-# SCRIPT_DIR: resolve relative to package root, with env override
+# SCRIPT_DIR: resolve relative to this file's package, env override available
 _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_PKG_SCRIPTS = os.path.join(_PKG_ROOT, 'scripts')
 SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
-    _PKG_SCRIPTS if os.path.isdir(_PKG_SCRIPTS) else '/opt/uconsole/scripts')
+    os.path.join(_PKG_ROOT, 'scripts') if os.path.isdir(os.path.join(_PKG_ROOT, 'scripts'))
+    else '/opt/uconsole/scripts')
 CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
 # ── Menu structure ──────────────────────────────────────────────────────────
@@ -124,6 +124,11 @@ SUBMENUS = {
         ("Live View",             "power/battery-test.sh live",                 "tail active test log",        "fullscreen"),
         ("List Tests",            "power/battery-test.sh list",                 "all completed tests",         "panel"),
         ("Compare",               "power/battery-test.sh compare",             "side-by-side comparison",     "panel"),
+        ("Voltage Chart",         "power/battery-test.sh chart",               "ASCII voltage curves",        "panel"),
+        ("Health Report",         "power/battery-test.sh health",              "capacity, energy, temp stats", "panel"),
+        ("Stress: Samsung-35E",   "power/battery-test.sh stress samsung-35e",  "max CPU load + logging",      "stream"),
+        ("Stress: Nitecore",      "power/battery-test.sh stress nitecore-3400","max CPU load + logging",      "stream"),
+        ("Calibrate Gauge",       "power/battery-test.sh calibrate",           "AXP228 fuel gauge reset",     "stream"),
         ("Discharge: Nitecore",   "util/discharge-test.sh nitecore-3400",      "overnight 30s log + git push","stream"),
         ("Discharge: Samsung-35E","util/discharge-test.sh samsung-35e",        "overnight 30s log + git push","stream"),
         ("Discharge: Samsung-30Q","util/discharge-test.sh samsung-30q",        "overnight 30s log + git push","stream"),
@@ -289,14 +294,33 @@ GP_B = 2       # Back (previous category)
 GP_X = 0       # Refresh
 GP_Y = 3       # Quit
 
-# Claim file: whichever instance last received keyboard input owns the gamepad.
-# js0 broadcasts events to all readers; non-owners drain and discard.
-_GP_CLAIM = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid())), "console-gamepad-owner")
+# Gamepad ownership uses two layers:
+# 1. Workspace detection — workspace-monitor daemon writes active workspace name
+# 2. Keyboard claim — for multiple consoles on the same workspace, last keyboard
+#    input wins. Both must agree for gamepad events to be processed.
+_RUN_DIR = os.environ.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid()))
+_WS_FILE = os.path.join(_RUN_DIR, "labwc-active-workspace")
+_GP_CLAIM = os.path.join(_RUN_DIR, "console-gamepad-owner")
 _MY_PID = str(os.getpid())
+_MY_WORKSPACE = None  # set at startup
+
+
+def _read_active_workspace():
+    try:
+        with open(_WS_FILE, "r") as f:
+            return f.read().strip()
+    except (OSError, ValueError):
+        return None
+
+
+def _init_workspace():
+    global _MY_WORKSPACE
+    _MY_WORKSPACE = _read_active_workspace()
+    # Claim gamepad on startup (last launched instance wins initially)
+    _claim_gamepad()
 
 
 def _claim_gamepad():
-    """Mark this process as the active gamepad owner."""
     try:
         with open(_GP_CLAIM, "w") as f:
             f.write(_MY_PID)
@@ -305,12 +329,18 @@ def _claim_gamepad():
 
 
 def _is_gamepad_owner():
-    """Check if this process owns the gamepad."""
+    """Check workspace match AND claim ownership."""
+    # Layer 1: workspace check (cross-workspace isolation)
+    if _MY_WORKSPACE is not None:
+        active = _read_active_workspace()
+        if active is not None and active != _MY_WORKSPACE:
+            return False
+    # Layer 2: claim check (same-workspace isolation)
     try:
         with open(_GP_CLAIM, "r") as f:
             return f.read().strip() == _MY_PID
     except (OSError, ValueError):
-        return True  # no claim file = single instance, allow
+        return False
 
 
 def open_gamepad():
@@ -333,7 +363,7 @@ def close_gamepad(js=None):
 
 
 def read_gamepad(js):
-    """Read pending button presses. Returns [] if not the active owner."""
+    """Read pending button presses. Returns [] if not the gamepad owner."""
     pressed = []
     if js is None:
         return pressed
@@ -349,7 +379,6 @@ def read_gamepad(js):
                 pressed.append(num)
     except (OSError, BlockingIOError):
         pass
-    # Only return presses if this instance is the active owner
     if not _is_gamepad_owner():
         return []
     return pressed
@@ -692,29 +721,21 @@ SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 def _resolve_cmd(script_name):
-    """Resolve 'subdir/script.sh arg1 arg2' into (path, [cmd_list]) or (None, None).
-
-    Script names include their subdirectory (e.g. 'util/webdash-info.sh').
-    Search order: SCRIPT_DIR, /opt/uconsole/scripts, ~/scripts.
-    """
+    """Resolve 'script.sh arg1 arg2' into (path, [cmd_list]) or (None, None)."""
     parts = script_name.split()
     name = parts[0]
-    # Search base directories; name already includes subdir prefix
-    bases = []
-    for b in [SCRIPT_DIR, '/opt/uconsole/scripts', os.path.expanduser('~/scripts')]:
-        if os.path.isdir(b) and b not in bases:
-            bases.append(b)
-    for b in bases:
-        path = os.path.join(b, name)
+    # Search: SCRIPT_DIR flat, then subdirectories, then /opt/uconsole/scripts/ tree
+    search_dirs = [SCRIPT_DIR]
+    for base in [SCRIPT_DIR, '/opt/uconsole/scripts']:
+        if os.path.isdir(base):
+            for sub in ['system', 'power', 'network', 'radio', 'util']:
+                d = os.path.join(base, sub)
+                if os.path.isdir(d):
+                    search_dirs.append(d)
+    for d in search_dirs:
+        path = os.path.join(d, name)
         if os.path.isfile(path):
             return path, ["bash", path] + parts[1:]
-    # Fallback: try just the filename (no subdir) in case of legacy flat layout
-    basename = os.path.basename(name)
-    if basename != name:
-        for b in bases:
-            path = os.path.join(b, basename)
-            if os.path.isfile(path):
-                return path, ["bash", path] + parts[1:]
     return None, None
 
 
@@ -861,19 +882,10 @@ def run_panel(scr, script_name, title):
             pass
 
         # Input
-        try:
-            key = get_key(scr)
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_B or btn == GP_Y:
-                gp_action = "back"
-            elif btn == GP_A:
-                gp_action = "scroll_down"
-            elif btn == GP_X:
-                gp_action = "refresh"
+        key, gp_action = _tui_input_loop(scr, js)
+        # Remap: GP_A scrolls down in panel view
+        if gp_action == "enter":
+            gp_action = "scroll_down"
 
         if key == -1 and gp_action is None:
             continue
@@ -898,7 +910,7 @@ def run_panel(scr, script_name, title):
             break
 
     if js:
-        close_gamepad()
+        close_gamepad(js)
 
 
 def run_stream(scr, script_name, title):
@@ -981,17 +993,7 @@ def run_stream(scr, script_name, title):
             pass
 
         # Input
-        try:
-            key = get_key(scr)
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_B or btn == GP_Y:
-                gp_action = "back"
-            elif btn == GP_X:
-                gp_action = "refresh"
+        key, gp_action = _tui_input_loop(scr, js)
 
         # Re-run when finished
         if not running and (key == ord("r") or key == ord("R") or gp_action == "refresh"):
@@ -1023,7 +1025,7 @@ def run_stream(scr, script_name, title):
 
     t.join(timeout=2)
     if js:
-        close_gamepad()
+        close_gamepad(js)
     scr.timeout(100)
 
 
@@ -1114,24 +1116,16 @@ def run_confirm(scr, title):
 
         # Poll for cancel input over ~1 second (5 × 200ms)
         for _ in range(5):
-            try:
-                key = get_key(scr)
-            except curses.error:
-                key = -1
-
-            gp_action = None
-            for btn in read_gamepad(js):
-                if btn == GP_B:
-                    gp_action = "back"
+            key, gp_action = _tui_input_loop(scr, js)
 
             if key in (27, ord("q"), ord("Q"), ord("n"), ord("N")) or gp_action == "back":
                 if js:
-                    close_gamepad()
+                    close_gamepad(js)
                 scr.timeout(100)
                 return False
 
     if js:
-        close_gamepad()
+        close_gamepad(js)
     scr.timeout(100)
     return True
 
@@ -1160,7 +1154,7 @@ def _submenu_run_selected(scr, items, sel_idx, js):
         result = run_script(scr, script, name, mode)
         if result == "switch_view":
             if js:
-                close_gamepad()
+                close_gamepad(js)
             return "switch_view", None
     except Exception as e:
         draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -1168,8 +1162,10 @@ def _submenu_run_selected(scr, items, sel_idx, js):
         scr.refresh()
         time.sleep(3)
     if js:
-        close_gamepad()
+        close_gamepad(js)
     js = open_gamepad()
+    read_gamepad(js)  # flush lingering button presses
+    _gp_set_cooldown()
     return None, js
 
 
@@ -1246,17 +1242,7 @@ def run_submenu(scr, submenu_key, parent_title):
 
         scr.refresh()
 
-        try:
-            key = get_key(scr)
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_A:
-                gp_action = "enter"
-            elif btn == GP_B:
-                gp_action = "back"
+        key, gp_action = _tui_input_loop(scr, js)
 
         if key == -1 and gp_action is None:
             continue
@@ -1294,12 +1280,37 @@ def run_submenu(scr, submenu_key, parent_title):
                     return "switch_view"
 
     if js:
-        close_gamepad()
+        close_gamepad(js)
     return None
 
 
-def _tui_input_loop(scr, js):
-    """Shared input reader. Returns (key, gp_action)."""
+_gp_back_cooldown = 0  # monotonic timestamp — ignore "back" until this time
+
+def _gp_set_cooldown(secs=0.35):
+    """Suppress gamepad 'back' for a short window after returning from a sub-view."""
+    global _gp_back_cooldown
+    _gp_back_cooldown = time.monotonic() + secs
+
+
+def _reopen_gamepad(js, scr=None):
+    """Close old gamepad, open fresh one, flush all input. Returns new js."""
+    if js:
+        close_gamepad(js)
+    js = open_gamepad()
+    read_gamepad(js)
+    if scr:
+        curses.flushinp()
+    _gp_set_cooldown()
+    return js
+
+
+def _tui_input_loop(scr, js, map_y_quit=False):
+    """Shared input reader. Returns (key, gp_action).
+
+    gp_action is one of: "enter", "back", "refresh", "quit", or None.
+    map_y_quit=True maps GP_Y to "quit" (for top-level loops);
+    otherwise GP_Y maps to "back" (for sub-views).
+    """
     try:
         key = get_key(scr)
     except curses.error:
@@ -1308,10 +1319,18 @@ def _tui_input_loop(scr, js):
     for btn in read_gamepad(js):
         if btn == GP_A:
             gp_action = "enter"
-        elif btn == GP_B or btn == GP_Y:
+        elif btn == GP_B:
             gp_action = "back"
+        elif btn == GP_Y:
+            gp_action = "quit" if map_y_quit else "back"
         elif btn == GP_X:
             gp_action = "refresh"
+    # Suppress stale back/quit during cooldown (prevents double-exit from sub-views)
+    if gp_action in ("back", "quit") and time.monotonic() < _gp_back_cooldown:
+        gp_action = None
+    # Also suppress keyboard escape during cooldown (AIO B button sends both)
+    if key == 27 and time.monotonic() < _gp_back_cooldown:
+        key = -1
     return key, gp_action
 
 
@@ -1394,7 +1413,7 @@ def run_process_manager(scr):
                     time.sleep(1)
 
     if js:
-        close_gamepad()
+        close_gamepad(js)
     scr.timeout(100)
 
 
@@ -1676,21 +1695,7 @@ def main_tiles(scr):
             last_info_time = time.time()
 
         # Input
-        try:
-            key = get_key(scr)
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_A:
-                gp_action = "enter"
-            elif btn == GP_B:
-                gp_action = "back"
-            elif btn == GP_X:
-                gp_action = "refresh"
-            elif btn == GP_Y:
-                gp_action = "quit"
+        key, gp_action = _tui_input_loop(scr, js, map_y_quit=True)
 
         if key == -1 and gp_action is None:
             continue
@@ -1740,7 +1745,7 @@ def main_tiles(scr):
                         result = run_script(scr, script, name, mode)
                         if result == "switch_view":
                             if js:
-                                close_gamepad()
+                                close_gamepad(js)
                             return "switch_view"
                     except Exception as e:
                         draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -1748,8 +1753,10 @@ def main_tiles(scr):
                         scr.refresh()
                         time.sleep(3)
                     if js:
-                        close_gamepad()
+                        close_gamepad(js)
                     js = open_gamepad()
+                    read_gamepad(js)
+                    _gp_set_cooldown()
                     info = get_quick_info()
                     last_info_time = time.time()
         elif key == 27:  # ESC
@@ -1763,6 +1770,7 @@ def main_tiles(scr):
         else:
             item_sel = sel
 
+    close_gamepad(js)
     return None
 
 
@@ -1815,9 +1823,9 @@ def _get_native_tools():
         "_2048":        lambda scr: run_2048(scr),
         "_romlauncher": lambda scr: run_romlauncher(scr),
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
+        "_marauder":      lambda scr: run_marauder(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
-        "_marauder":      lambda scr: run_marauder(scr),
     }
 
 NATIVE_TOOLS = None
@@ -1931,6 +1939,8 @@ def get_quick_info():
         esp = json.loads(resp.read())
         if esp.get("online"):
             lines.append(("ESP32", f"{esp.get('temp_c', 0):.0f}°C"))
+        elif os.path.exists(os.environ.get("ESP32_PORT", "/dev/ttyUSB0")):
+            lines.append(("ESP32", "Marauder" if os.path.isdir(os.path.expanduser("~/marauder")) else "USB"))
     except Exception:
         pass
     return lines
@@ -2030,23 +2040,8 @@ def main(scr):
             info = get_quick_info()
             last_info_time = time.time()
 
-        # Input — keyboard
-        try:
-            key = get_key(scr)
-        except curses.error:
-            key = -1
-
-        # Input — gamepad
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_A:
-                gp_action = "enter"
-            elif btn == GP_B:
-                gp_action = "back"
-            elif btn == GP_X:
-                gp_action = "refresh"
-            elif btn == GP_Y:
-                gp_action = "quit"
+        # Input
+        key, gp_action = _tui_input_loop(scr, js, map_y_quit=True)
 
         if key == -1 and gp_action is None:
             continue
@@ -2082,7 +2077,7 @@ def main(scr):
                     result = run_script(scr, script, name, mode)
                     if result == "switch_view":
                         if js:
-                            close_gamepad()
+                            close_gamepad(js)
                         return "switch_view"
                 except Exception as e:
                     draw_status_bar(scr, h, w, f"  ✗ Error: {e}",
@@ -2091,8 +2086,10 @@ def main(scr):
                     time.sleep(3)
                 # Re-open gamepad (fd may be stale after curses endwin/reinit)
                 if js:
-                    close_gamepad()
+                    close_gamepad(js)
                 js = open_gamepad()
+                read_gamepad(js)
+                _gp_set_cooldown()
                 # Refresh info after running a script
                 info = get_quick_info()
                 last_info_time = time.time()
@@ -2104,11 +2101,13 @@ def main(scr):
             info = get_quick_info()
             last_info_time = time.time()
 
+    close_gamepad(js)
     return None
 
 
 def entry(scr):
     """Entry point that switches between list and tile views."""
+    _init_workspace()
     # Migrate old config
     old_config = os.path.join(SCRIPT_DIR, ".console-theme.json")
     if os.path.isfile(old_config) and not os.path.isfile(CONFIG_FILE):
