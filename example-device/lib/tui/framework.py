@@ -25,10 +25,11 @@ for _p in [os.path.dirname(os.path.realpath(__file__)),
         sys.path.insert(0, _p)
 import tui_lib as tui
 
-# SCRIPT_DIR: prefer ~/scripts (existing layout), fall back to /opt/uconsole/scripts
+# SCRIPT_DIR: resolve relative to package root, with env override
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PKG_SCRIPTS = os.path.join(_PKG_ROOT, 'scripts')
 SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
-    os.path.expanduser('~/scripts') if os.path.isdir(os.path.expanduser('~/scripts'))
-    else '/opt/uconsole/scripts')
+    _PKG_SCRIPTS if os.path.isdir(_PKG_SCRIPTS) else '/opt/uconsole/scripts')
 CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
 # ── Menu structure ──────────────────────────────────────────────────────────
