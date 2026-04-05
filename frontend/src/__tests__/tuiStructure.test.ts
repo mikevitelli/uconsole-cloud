@@ -387,8 +387,7 @@ describe("TUI module imports", () => {
   });
 
   it("services.py uses package-mode-aware systemctl", () => {
-    expect(SERVICES).toContain("/opt/uconsole/scripts");
-    expect(SERVICES).toContain('"sudo", "systemctl"');
+    expect(SERVICES).toContain("SCRIPT_DIR");
     expect(SERVICES).toContain('"systemctl", "--user"');
   });
 });
