@@ -1,11 +1,56 @@
 """TUI module: tools"""
 
+import ast
 import curses
 import json
+import math
+import operator
 import os
 import re
 import subprocess
 import time
+
+
+# --- Safe calculator (replaces eval) ---
+_CALC_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub,
+    ast.Mult: operator.mul, ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    ast.Pow: operator.pow, ast.USub: operator.neg, ast.UAdd: operator.pos,
+}
+_CALC_FUNCS = {k: getattr(math, k) for k in dir(math)
+               if not k.startswith('_') and callable(getattr(math, k))}
+_CALC_CONSTS = {'pi': math.pi, 'e': math.e, 'tau': math.tau, 'inf': math.inf}
+
+
+def _safe_calc(expr: str) -> str:
+    """Evaluate a math expression using AST parsing. No eval()."""
+    tree = ast.parse(expr, mode='eval')
+
+    def _ev(node):
+        if isinstance(node, ast.Expression):
+            return _ev(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp):
+            op = _CALC_OPS.get(type(node.op))
+            if not op:
+                raise ValueError(f'unsupported operator: {type(node.op).__name__}')
+            return op(_ev(node.left), _ev(node.right))
+        if isinstance(node, ast.UnaryOp):
+            op = _CALC_OPS.get(type(node.op))
+            if not op:
+                raise ValueError(f'unsupported operator: {type(node.op).__name__}')
+            return op(_ev(node.operand))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _CALC_FUNCS:
+                return _CALC_FUNCS[node.func.id](*[_ev(a) for a in node.args])
+            raise ValueError(f'unknown function: {node.func.id}')
+        if isinstance(node, ast.Name) and node.id in _CALC_CONSTS:
+            return _CALC_CONSTS[node.id]
+        raise ValueError(f'unsupported: {type(node).__name__}')
+
+    return str(_ev(tree))
 
 from tui.framework import (
     C_BORDER,
@@ -576,10 +621,7 @@ def run_calculator(scr):
                 expr = scr.getstr(h - 2, 3, w - 6).decode("utf-8", errors="replace").strip()
                 if expr:
                     try:
-                        # Safe eval — only math
-                        allowed = {"__builtins__": {}}
-                        allowed.update({k: getattr(math, k) for k in dir(math) if not k.startswith("_")})
-                        result = str(eval(expr, allowed))
+                        result = _safe_calc(expr)
                     except Exception as e:
                         result = f"error: {e}"
                     history.append((expr, result))

@@ -1401,7 +1401,7 @@ def run_process_manager(scr):
         elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
             if procs and sel < len(procs):
                 pid = procs[sel].split()[1] if len(procs[sel].split()) > 1 else None
-                if pid and pid.isdigit():
+                if pid and pid.isdigit() and 2 <= int(pid) <= 4194304:
                     try:
                         os.kill(int(pid), signal.SIGTERM)
                         draw_status_bar(scr, h, w, f"  ✓ Sent SIGTERM to PID {pid}")
