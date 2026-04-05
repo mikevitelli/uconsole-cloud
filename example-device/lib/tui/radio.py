@@ -6,6 +6,7 @@ import math
 import os
 import struct
 import subprocess
+import time
 import threading
 
 from tui.framework import (
@@ -14,9 +15,16 @@ from tui.framework import (
     C_DIM,
     C_FOOTER,
     C_HEADER,
+    C_ITEM,
+    C_SEL,
+    C_STATUS,
+    _gp_set_cooldown,
     _tui_input_loop,
+    close_gamepad,
     entry,
     open_gamepad,
+    read_gamepad,
+    run_confirm,
 )
 import tui_lib as tui
 

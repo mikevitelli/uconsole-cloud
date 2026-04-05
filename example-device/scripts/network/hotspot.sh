@@ -29,7 +29,7 @@ is_hotspot_active() {
 
 start_hotspot() {
     if is_hotspot_active; then
-        echo "Hotspot already active (SSID: ${HOTSPOT_SSID}, pass: ${HOTSPOT_PASS})"
+        echo "Hotspot already active (SSID: ${HOTSPOT_SSID}, pass: ****)"
         return 0
     fi
 
@@ -44,7 +44,7 @@ start_hotspot() {
         password "$HOTSPOT_PASS" 2>/dev/null
 
     log "Hotspot started (SSID: ${HOTSPOT_SSID})"
-    echo "Hotspot ON (SSID: ${HOTSPOT_SSID}, pass: ${HOTSPOT_PASS})"
+    echo "Hotspot ON (SSID: ${HOTSPOT_SSID}, pass: ****)"
 }
 
 stop_hotspot() {
@@ -65,7 +65,7 @@ stop_hotspot() {
 
 show_status() {
     if is_hotspot_active; then
-        echo "Hotspot active (SSID: ${HOTSPOT_SSID}, pass: ${HOTSPOT_PASS})"
+        echo "Hotspot active (SSID: ${HOTSPOT_SSID}, pass: ****)"
     else
         echo "Hotspot off"
     fi

@@ -2,8 +2,9 @@
 # Detect unclean shutdowns and log them with battery state
 # Runs at boot via systemd. Uses a stamp file to distinguish
 # clean shutdown (stamp removed by ExecStop) from crash (stamp remains).
+set -u
 
-STAMP="/tmp/.uconsole-running"
+STAMP="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/.uconsole-running"
 LOG="$HOME/crash.log"
 
 case "${1:-boot}" in

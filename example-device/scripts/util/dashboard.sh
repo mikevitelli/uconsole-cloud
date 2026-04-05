@@ -57,8 +57,8 @@ gather_stats() {
     wifi_rate=$(echo "$iw_out" | grep -oP 'Bit Rate=\K[\d.]+')
     wifi_ip=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
 
-    # antenna
-    if grep -q '^dtparam=ant2' /boot/config.txt 2>/dev/null; then
+    # antenna (Bookworm uses /boot/firmware/)
+    if grep -q '^dtparam=ant2' /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
         wifi_antenna="ext"
     else
         wifi_antenna="int"

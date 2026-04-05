@@ -57,7 +57,7 @@ The system defaults at `/etc/xdg/labwc/autostart` are overridden entirely when a
    ```
    # /etc/systemd/system/uconsole-webdash.service.d/path.conf
    [Service]
-   Environment=PATH=/home/mikevitelli/.local/bin:/usr/local/bin:/usr/bin:/bin
+   Environment=PATH=/home/<user>/.local/bin:/usr/local/bin:/usr/bin:/bin
    ```
 4. Restart: `sudo systemctl daemon-reload && sudo systemctl restart uconsole-webdash`
 

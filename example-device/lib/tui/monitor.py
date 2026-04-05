@@ -505,9 +505,17 @@ def run_esp32_monitor(scr):
 
         # ── Scanline header ──
         ts = time.strftime("%H:%M:%S")
+        usb_present = os.path.exists(os.environ.get("ESP32_PORT", "/dev/ttyUSB0"))
+        marauder_fw = usb_present and os.path.isdir(os.path.expanduser("~/marauder"))
         if online:
             status_str = "●ONLINE"
             status_attr = curses.color_pair(tui.C_OK) | curses.A_BOLD
+        elif marauder_fw:
+            status_str = "●MARAUDER"
+            status_attr = curses.color_pair(tui.C_WARN) | curses.A_BOLD
+        elif usb_present:
+            status_str = "●USB"
+            status_attr = curses.color_pair(tui.C_WARN) | curses.A_BOLD
         else:
             status_str = "○OFFLINE"
             status_attr = curses.color_pair(tui.C_CRIT) | curses.A_BOLD

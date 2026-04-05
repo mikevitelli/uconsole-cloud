@@ -44,12 +44,21 @@ def find_device(name_substring):
     return None
 
 
+def wait_for_devices():
+    """Wait for both input devices to appear, polling every 5 seconds."""
+    import time
+    while True:
+        consumer = find_device("Consumer Control")
+        mouse = find_device("uConsole Mouse")
+        if consumer and mouse:
+            return consumer, mouse
+        print(f"Waiting for devices: consumer={consumer} mouse={mouse}",
+              file=sys.stderr)
+        time.sleep(5)
+
+
 def main():
-    consumer = find_device("Consumer Control")
-    mouse = find_device("uConsole Mouse")
-    if not consumer or not mouse:
-        print(f"Device not found: consumer={consumer} mouse={mouse}", file=sys.stderr)
-        sys.exit(1)
+    consumer, mouse = wait_for_devices()
 
     # Virtual scroll device
     vscroll = uinput.Device([

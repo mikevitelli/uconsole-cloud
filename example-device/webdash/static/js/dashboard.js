@@ -1584,7 +1584,7 @@ function closeWifiPicker() {
 
 /* PWA service worker */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(function(e) { console.warn('SW:', e); });
+  navigator.serviceWorker.getRegistrations().then(function(regs) { regs.forEach(function(r) { r.unregister(); }); });
 }
 
 /* ---- Terminal (xterm.js + SocketIO) — persists across show/hide ---- */

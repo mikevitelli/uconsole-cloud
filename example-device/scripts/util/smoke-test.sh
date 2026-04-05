@@ -85,7 +85,7 @@ python3 -m py_compile /opt/uconsole/webdash/app.py 2>/dev/null \
 
 # ── 6. TUI modules compile ──
 section "6. TUI Modules"
-for mod in framework monitor files network services tools config_ui radio; do
+for mod in framework monitor files network services tools config_ui radio marauder games; do
     python3 -m py_compile /opt/uconsole/lib/tui/$mod.py 2>/dev/null \
         && ok "tui/$mod.py compiles" || fail "tui/$mod.py failed"
 done

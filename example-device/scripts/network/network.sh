@@ -51,10 +51,10 @@ get_wifi_info() {
     dns=$(grep -m1 'nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}')
     mac=$(cat /sys/class/net/"$IFACE"/address 2>/dev/null)
 
-    # antenna — read from boot config
-    if grep -q '^dtparam=ant2' /boot/config.txt 2>/dev/null; then
+    # antenna — read from boot config (Bookworm uses /boot/firmware/)
+    if grep -q '^dtparam=ant2' /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
         antenna="External (ant2)"
-    elif grep -q '^dtparam=ant1' /boot/config.txt 2>/dev/null; then
+    elif grep -q '^dtparam=ant1' /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
         antenna="Internal (ant1)"
     else
         antenna="Default"
@@ -115,6 +115,7 @@ cmd_speed() {
         # download test — fetch a 10MB file from Cloudflare
         echo "Download:"
         dl_result=$(curl -o /dev/null -w '%{speed_download} %{time_total}' -s \
+            --connect-timeout 10 --max-time 30 \
             'https://speed.cloudflare.com/__down?bytes=10000000' 2>/dev/null)
         dl_speed=$(echo "$dl_result" | awk '{printf "%.1f", $1 / 1000000 * 8}')
         dl_time=$(echo "$dl_result" | awk '{printf "%.1f", $2}')
@@ -126,6 +127,7 @@ cmd_speed() {
         echo "Upload:"
         ul_result=$(dd if=/dev/zero bs=1M count=2 2>/dev/null | \
             curl -o /dev/null -w '%{speed_upload} %{time_total}' -s \
+            --connect-timeout 10 --max-time 30 \
             -X POST --data-binary @- \
             'https://speed.cloudflare.com/__up' 2>/dev/null)
         ul_speed=$(echo "$ul_result" | awk '{printf "%.1f", $1 / 1000000 * 8}')
