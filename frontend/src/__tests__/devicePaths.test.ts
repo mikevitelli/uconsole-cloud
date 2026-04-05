@@ -153,12 +153,12 @@ describe("TUI framework script paths", () => {
 describe("TUI network.py script paths", () => {
   const networkPy = fs.readFileSync(TUI_NETWORK, "utf-8");
 
-  it("references hotspot.sh with network/ prefix", () => {
-    expect(networkPy).toContain('"network", "hotspot.sh"');
+  it("references hotspot.sh via SCRIPT_DIR", () => {
+    expect(networkPy).toContain('SCRIPT_DIR, "hotspot.sh"');
   });
 
-  it("references wifi-fallback.sh with network/ prefix", () => {
-    expect(networkPy).toContain('"network", "wifi-fallback.sh"');
+  it("references wifi-fallback.sh via SCRIPT_DIR", () => {
+    expect(networkPy).toContain('SCRIPT_DIR, "wifi-fallback.sh"');
   });
 });
 
