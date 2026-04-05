@@ -79,7 +79,7 @@ SUBMENUS = {
     ],
     "sub:webdash": [
         ("Status",           "util/webdash-info.sh",         "service, nginx, SSL, auth status",   "panel"),
-        ("Config",           "util/webdash-ctl.sh config",   "change username and password",       "fullscreen"),
+        ("Config",           "_webdash_config",              "change username and password",       "action"),
         ("Start",            "util/webdash-ctl.sh start",    "start webdash service",              "action"),
         ("Stop",             "util/webdash-ctl.sh stop",     "stop webdash service",               "action"),
         ("Restart",          "util/webdash-ctl.sh restart",  "restart webdash service",            "action"),
@@ -691,21 +691,29 @@ SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 def _resolve_cmd(script_name):
-    """Resolve 'script.sh arg1 arg2' into (path, [cmd_list]) or (None, None)."""
+    """Resolve 'subdir/script.sh arg1 arg2' into (path, [cmd_list]) or (None, None).
+
+    Script names include their subdirectory (e.g. 'util/webdash-info.sh').
+    Search order: SCRIPT_DIR, /opt/uconsole/scripts, ~/scripts.
+    """
     parts = script_name.split()
     name = parts[0]
-    # Search: SCRIPT_DIR flat, then subdirectories, then /opt/uconsole/scripts/ tree
-    search_dirs = [SCRIPT_DIR]
-    for base in [SCRIPT_DIR, '/opt/uconsole/scripts']:
-        if os.path.isdir(base):
-            for sub in ['system', 'power', 'network', 'radio', 'util']:
-                d = os.path.join(base, sub)
-                if os.path.isdir(d):
-                    search_dirs.append(d)
-    for d in search_dirs:
-        path = os.path.join(d, name)
+    # Search base directories; name already includes subdir prefix
+    bases = []
+    for b in [SCRIPT_DIR, '/opt/uconsole/scripts', os.path.expanduser('~/scripts')]:
+        if os.path.isdir(b) and b not in bases:
+            bases.append(b)
+    for b in bases:
+        path = os.path.join(b, name)
         if os.path.isfile(path):
             return path, ["bash", path] + parts[1:]
+    # Fallback: try just the filename (no subdir) in case of legacy flat layout
+    basename = os.path.basename(name)
+    if basename != name:
+        for b in bases:
+            path = os.path.join(b, basename)
+            if os.path.isfile(path):
+                return path, ["bash", path] + parts[1:]
     return None, None
 
 

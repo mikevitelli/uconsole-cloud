@@ -27,6 +27,15 @@ jobs:
           shellcheck frontend/public/install.sh
           shellcheck frontend/public/scripts/uconsole
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: TUI integrity tests
+        run: |
+          pip install pytest
+          python -m pytest tests/test_tui_integrity.py -v
+
       - name: Lint
         run: npm run lint -w @uconsole/frontend
 
