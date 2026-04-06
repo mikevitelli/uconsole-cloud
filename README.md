@@ -10,13 +10,13 @@
 
 [![Live](https://img.shields.io/badge/live-uconsole.cloud-58a6ff?style=for-the-badge)](https://uconsole.cloud)
 
+[![GitHub Release](https://img.shields.io/github/v/release/mikevitelli/uconsole-cloud?style=flat-square&color=58a6ff)](https://github.com/mikevitelli/uconsole-cloud/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/mikevitelli/uconsole-cloud/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/mikevitelli/uconsole-cloud/actions)
+[![License](https://img.shields.io/github/license/mikevitelli/uconsole-cloud?style=flat-square&color=yellow)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06b6d4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=flat-square&logo=vercel)](https://vercel.com)
-[![Version](https://img.shields.io/badge/version-0.1.1-58a6ff?style=flat-square)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-211%20passing-3fb950?style=flat-square)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 </div>
 
@@ -32,33 +32,6 @@ A three-tier platform for managing the ClockworkPi uConsole — a modular ARM ha
 
 **In the cloud:** this Next.js app at [uconsole.cloud](https://uconsole.cloud) shows live device status, backup coverage, system inventory, and hardware info — from anywhere.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      uconsole.cloud                          │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │ Battery: 100% │  │ CPU: 34.0°C  │  │ WiFi: MyNetwork    │ │
-│  │ Charging      │  │ Load: 0.18   │  │ Signal: -57 dBm    │ │
-│  └──────────────┘  └──────────────┘  └────────────────────┘ │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │ Mem: 1.5/3.8G │  │ Disk: 45%    │  │ SDR: RTL2838       │ │
-│  │               │  │ 13G / 29G    │  │ LoRa: SX1262       │ │
-│  └──────────────┘  └──────────────┘  └────────────────────┘ │
-│                                                              │
-│  ● Device offline — last seen 2h ago                         │
-│                                                              │
-│  ┌──── Backup Coverage ─────────────────────────────────┐    │
-│  │  Shell configs   ● today   │  Desktop       ● 6d     │    │
-│  │  System configs  ● today   │  Git/SSH       ● today  │    │
-│  │  Packages (287)  ● today   │  GitHub CLI    ● today  │    │
-│  │  Browser (12)    ● today   │  Scripts       ● today  │    │
-│  └──────────────────────────────────────────────────────┘    │
-│                                                              │
-│  Backup History │ Packages │ Extensions │ Scripts │ Repo     │
-└──────────────────────────────────────────────────────────────┘
-```
 
 ### Features
 
@@ -161,37 +134,9 @@ Cloud is optional — everything works offline.
 
 ## Architecture
 
-```
-uConsole (arm64, Debian)                 Cloud (Vercel)
-┌──────────────────────────┐         ┌──────────────────────────┐
-│                          │         │                          │
-│  /opt/uconsole/          │         │  uconsole.cloud          │
-│  ├── bin/                │         │                          │
-│  │   ├── uconsole  CLI   │         │  Upstash Redis           │
-│  │   └── console   TUI   │         │  (device:{repo}:status)  │
-│  ├── scripts/            │         │         │                │
-│  │   ├── system/         │         │         │                │
-│  │   │   └── push-status ────→     │         ▼                │
-│  │   ├── power/          │  POST   │  Next.js 16 SSR          │
-│  │   ├── network/        │         │  ┌────────────────────┐  │
-│  │   ├── radio/          │         │  │ Server Components  │  │
-│  │   └── util/           │         │  │ + GitHub API proxy │  │
-│  ├── webdash/            │         │  └────────────────────┘  │
-│  │   └── app.py    ◄──┐│         │         │                │
-│  └── lib/               ││         │         ▼                │
-│                    nginx ││         │    HTML stream           │
-│                    :443  ││         │                          │
-│                          ││         │  /apt/ (APT repository)  │
-└──────────────────────────┘│         │  /install (bootstrap)    │
-                            │         └──────────────────────────┘
-  Phone / Browser           │
-  ┌─────────────────┐       │
-  │ uconsole.cloud   │ ◄─────── Vercel CDN
-  │ uconsole.local   │ ◄──┘
-  └─────────────────┘
-```
+**Device → Redis → Dashboard.** The device pushes telemetry every 5 minutes via `push-status.sh` (systemd timer) to Upstash Redis. The Next.js dashboard reads from Redis on page load using Server Components. No client-side polling. Data persists indefinitely, so the last-known status is always available, even when the device is offline.
 
-**Device → Redis → Dashboard.** No polling from the browser. The device pushes; the dashboard reads on page load. Data persists indefinitely — the last-known status is always available.
+On the local network, the Flask web dashboard runs behind nginx with self-signed TLS at `https://uconsole.local`. If no known WiFi is available, the device creates a fallback AP so you can always connect from a phone or laptop.
 
 ---
 
@@ -240,7 +185,7 @@ apt install uconsole-cloud
 Installs to `/opt/uconsole/` with organized subdirectories:
 
 ```
-uconsole-cloud_0.1.1_arm64.deb
+uconsole-cloud_x.y.z_arm64.deb
 ├── /opt/uconsole/
 │   ├── bin/                    uconsole CLI, console TUI launcher
 │   ├── lib/                    tui_lib.py, lib.sh, shared modules
@@ -268,7 +213,7 @@ Services are **not** auto-started on install — `uconsole setup` handles that a
 ### Building
 
 ```bash
-make build-deb          # → dist/uconsole-cloud_0.1.1_arm64.deb
+make build-deb          # → dist/uconsole-cloud_x.y.z_arm64.deb
 make publish-apt        # update APT repo in frontend/public/apt/
 make release            # bump version, build, publish, commit + tag
 ```
@@ -322,7 +267,7 @@ uconsole-cloud/
 │   │   │   ├── viz/                7 visualization components (sparkline, donut, treemap, etc.)
 │   │   │   └── *.tsx               Shared UI (RepoLinker, DeviceCodeForm, CopyCommand, etc.)
 │   │   ├── lib/                    20 modules (auth, redis, github, device config, etc.)
-│   │   └── __tests__/              10 test suites, 211 tests (vitest)
+│   │   └── __tests__/              10 test suites, 117 tests (vitest)
 │   ├── public/
 │   │   ├── scripts/                Install-time copies of CLI + push-status.sh
 │   │   ├── install.sh              APT bootstrap installer
@@ -331,7 +276,7 @@ uconsole-cloud/
 ├── example-device/                 Scrubbed device tree for contributors
 │   ├── bin/                        uconsole CLI, console TUI launcher
 │   ├── lib/                        tui_lib.py, lib.sh, shared modules
-│   ├── scripts/                    45+ scripts (system, power, network, radio, util)
+│   ├── scripts/                    46 scripts (system, power, network, radio, util)
 │   ├── webdash/                    Flask app (app.py, templates, static)
 │   └── share/                      themes, battery-data, esp32, default configs
 ├── packaging/                      .deb build system
@@ -350,7 +295,7 @@ uconsole-cloud/
 │   ├── workflows/                  Release automation (build .deb, publish APT)
 │   └── ISSUE_TEMPLATE/             Bug report + feature request templates
 ├── Makefile                        build-deb, publish-apt, release, version bumps
-├── VERSION                         Package version (0.1.1)
+├── VERSION                         Package version (semver)
 └── package.json                    npm workspace root (frontend + studio)
 ```
 
@@ -382,10 +327,10 @@ uconsole-cloud/
 | Backup data | GitHub REST API | Commits, tree, raw files, packages |
 | CMS | Sanity v3 | Landing page and dashboard copy |
 | Styling | Tailwind CSS v4 | GitHub-dark theme with CSS variables |
-| Testing | Vitest 4 | 211 tests — parsing, security, API, validation |
+| Testing | Vitest 4 | 117 tests — parsing, security, API, validation |
 | Hosting | Vercel | Auto-deploy from main, preview on PRs |
 | CI/CD | GitHub Actions | Automated `.deb` builds, APT repo publishing |
-| Device | Bash + Python | 45+ scripts, Flask webdash, curses TUI, systemd services |
+| Device | Bash + Python | 46 scripts, Flask webdash, curses TUI, systemd services |
 | Packaging | dpkg + APT | `.deb` for arm64, GPG-signed repository on Vercel CDN |
 
 ---
@@ -403,7 +348,7 @@ cp frontend/.env.example frontend/.env.local
 #          UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 
 npm run dev        # frontend :3000, studio :3333
-npm test           # 211 tests (vitest)
+npm test           # 117 tests (vitest)
 npm run build      # production build
 npm run lint       # ESLint
 ```
@@ -412,9 +357,9 @@ npm run lint       # ESLint
 
 ```
 make version       Print current version
-make bump-patch    Bump patch version (0.1.1 → 0.1.2)
-make bump-minor    Bump minor version (0.1.1 → 0.2.0)
-make bump-major    Bump major version (0.1.1 → 1.0.0)
+make bump-patch    Bump patch version (x.y.z → x.y.z+1)
+make bump-minor    Bump minor version (x.y.z → x.y+1.0)
+make bump-major    Bump major version (x.y.z → x+1.0.0)
 make build-deb     Build .deb package to dist/
 make publish-apt   Update APT repo from latest .deb
 make release       Bump + build + publish + commit + tag
@@ -443,6 +388,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — especially fr
 
 Built for the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole).
 
-`88 source files · 211 tests · 16 API routes · 32 components · 45+ device scripts`
+`88 source files · 16 API routes · 32 components · 46 device scripts`
 
 </div>
