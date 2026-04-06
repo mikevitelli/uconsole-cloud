@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.1.4 (2026-04-06)
+
+Security hardening release. Backfills the full security audit from 2026-04-04 that was missed in v0.1.3.
+
+### Security
+- Webdash: bind to 127.0.0.1 (localhost only), CORS whitelist, PTY auth gate, rate-limited public APIs, security headers
+- Scripts: mask hotspot password in output, curl timeouts (push-status, speed test), crash-log uses XDG_RUNTIME_DIR
+- Systemd: PrivateTmp, ProtectSystem=strict, NoNewPrivileges on webdash service
+
+### Added
+- Workspace-monitor C extension (Wayland protocol for active workspace tracking)
+- Updated trackball-scroll.py
+
+### Fixed
+- Sanitized example-device: removed SSH keys, pulse cookie, GitHub repo list, device-specific configs from published package
+- Test assertions updated for SCRIPT_DIR refactor
+
+---
+
+## v0.1.3 (2026-04-05)
+
+Docs expansion, security fixes, and path architecture refactor.
+
+### Security
+- AST-based calculator replaces eval() in TUI
+- PID range guard (2-4194304) in process killer
+
+### Added
+- Docs page: scripts (46), TUI modules (12), webdash API (46 routes), services, troubleshooting
+- Dashboard overview section in README
+
+### Fixed
+- Console entry point uses _PKG_ROOT relative path (dev tree priority)
+- SCRIPT_DIR uses _PKG_ROOT resolution (no ~/scripts shadowing)
+- _resolve_cmd doubled subdir bug (util/util/webdash-info.sh)
+- Release workflow: contents:write permission
+
+---
+
+## v0.1.2 (2026-04-04)
+
+Script path architecture and TUI test suite.
+
+### Added
+- TUI test suite (798 pytest tests)
+- Script path architecture: all 147 menu entries use subdir prefixes (power/, network/, radio/, system/, util/)
+- _webdash_config wired as native tool
+
+### Fixed
+- SCRIPT_DIR uses _PKG_ROOT instead of ~/scripts fallback
+- Console entry point resolves lib relative to package root
+- Move TUI config to ~/.config/uconsole/ (permission denied in package mode)
+
+---
+
 ## v0.1.1 (2026-04-03)
 
 Bug fixes and release automation.
