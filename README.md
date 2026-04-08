@@ -353,6 +353,36 @@ npm run build      # production build
 npm run lint       # ESLint
 ```
 
+### Branching
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Released state — what consumers get via APT. Tags trigger GitHub Releases. |
+| `dev` | Active development. CI runs on push. Merged to `main` at release time. |
+
+Feature branches (`feat/...`, `fix/...`) branch from and merge back to `dev`.
+
+### Development workflow
+
+```bash
+# On the uConsole (or any machine with the repo):
+cd ~/uconsole-cloud
+git checkout dev
+
+# Edit device source
+vim device/lib/tui/framework.py
+
+# Deploy to device for testing (rsyncs to /opt/uconsole/ and ~/pkg/)
+make install
+sudo systemctl restart uconsole-webdash   # if webdash changed
+
+# Test, iterate, commit to dev
+git add device/ && git commit -m "feat: ..."
+git push origin dev
+```
+
+Publishing a release merges `dev` → `main`, bumps VERSION, builds the `.deb`, signs the APT repo, tags, and pushes.
+
 ### Makefile targets
 
 ```
@@ -360,6 +390,7 @@ make version       Print current version
 make bump-patch    Bump patch version (x.y.z → x.y.z+1)
 make bump-minor    Bump minor version (x.y.z → x.y+1.0)
 make bump-major    Bump major version (x.y.z → x+1.0.0)
+make install       Deploy device/ to /opt/uconsole/ and ~/pkg/
 make build-deb     Build .deb package to dist/
 make publish-apt   Update APT repo from latest .deb
 make release       Bump + build + publish + commit + tag
