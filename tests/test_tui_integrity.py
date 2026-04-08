@@ -238,6 +238,23 @@ class TestNativeToolImports:
             pytest.fail("Import failures in _get_native_tools:\n" + "\n".join(f"  - {f}" for f in failures))
 
 
+# Handlers that are dispatched dynamically at runtime (not statically referenced
+# in SUBMENUS or CATEGORIES) and are therefore exempt from the static-ref check.
+DYNAMIC_HANDLERS = {
+    # ESP32 handlers injected at runtime by _esp32_menu_for() / run_esp32_hub().
+    # These live in _ESP32_MICROPYTHON_ITEMS, _ESP32_MARAUDER_ITEMS, or
+    # _ESP32_COMMON_ITEMS and are written into SUBMENUS["sub:esp32"] dynamically,
+    # so the static AST checker cannot see them referenced in SUBMENUS/CATEGORIES.
+    "_esp32_monitor",    # in _ESP32_MICROPYTHON_ITEMS (MicroPython path)
+    "_marauder",         # in _ESP32_MARAUDER_ITEMS (Marauder path)
+    "_esp32_force_mp",   # injected by _esp32_menu_for() when firmware is UNKNOWN
+    "_esp32_force_mrd",  # injected by _esp32_menu_for() when firmware is UNKNOWN
+    "_esp32_usb_reset",  # in _ESP32_COMMON_ITEMS (all firmware paths)
+    "_esp32_flash",      # in _ESP32_COMMON_ITEMS (all firmware paths)
+    "_esp32_redetect",   # in _ESP32_COMMON_ITEMS (all firmware paths)
+}
+
+
 # ── Test: all native tool keys in menus have handlers ──────────────────────
 
 class TestNativeToolCoverage:
@@ -254,8 +271,13 @@ class TestNativeToolCoverage:
             pytest.fail(f"Menu references with no handler in _get_native_tools: {missing}")
 
     def test_all_handlers_are_referenced(self):
-        """Every handler in _get_native_tools should be referenced in a menu."""
-        unreferenced = self.tool_keys - self.menu_refs
+        """Every handler in _get_native_tools should be referenced in a menu.
+
+        Handlers listed in DYNAMIC_HANDLERS are exempt — they are injected into
+        the SUBMENUS dict at runtime (e.g. by run_esp32_hub) and are not visible
+        to the static AST checker.
+        """
+        unreferenced = (self.tool_keys - self.menu_refs) - DYNAMIC_HANDLERS
         if unreferenced:
             pytest.fail(f"Handlers defined but never referenced in menus: {unreferenced}")
 
