@@ -28,10 +28,38 @@ This starts the Next.js frontend at `:3000` and the Sanity Studio at `:3333`.
 
 ## Making changes
 
-1. Fork the repo and create a branch from `main`
+1. Fork the repo and create a branch from `dev` (not `main`)
 2. Make your changes
-3. Run `npm test` and `npm run build` to verify nothing breaks
-4. Open a pull request against `main`
+3. Run tests (see below)
+4. Open a pull request against `dev`
+
+**Branching model:**
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Released state only — tagged versions, deployed to Vercel + APT |
+| `dev` | Active development — PRs target this branch, CI runs on push |
+
+Do not open PRs against `main` — releases are merged from `dev` → `main` by maintainers.
+
+### Running tests locally
+
+```bash
+# Frontend (requires Node 22+)
+npm test                         # 117 vitest tests
+npm run lint                     # ESLint
+npx -w @uconsole/frontend tsc --noEmit  # typecheck
+
+# Device (Python, runs on any platform)
+pip install pytest
+python3 -m pytest tests/ -v      # 798 pytest tests (TUI integrity, script health, etc.)
+
+# Shell scripts
+find device/scripts -name "*.sh" -exec bash -n {} \;
+
+# Full build check
+npm run build -w @uconsole/frontend
+```
 
 ## Code style
 
