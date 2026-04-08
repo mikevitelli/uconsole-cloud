@@ -18,9 +18,12 @@ from tui.framework import (
     C_ITEM,
     C_SEL,
     C_STATUS,
+    _gp_set_cooldown,
     _tui_input_loop,
     close_gamepad,
+    draw_tile_grid,
     open_gamepad,
+    read_gamepad,
 )
 import tui_lib as tui
 
@@ -42,7 +45,20 @@ _RE_PROBE = re.compile(
 _RE_EAPOL = re.compile(r'^Received EAPOL:\s+([0-9A-Fa-f:]{17})')
 _RE_CRED = re.compile(r'^u:\s+(.*?)\s+p:\s+(.*)')
 
+# BLE serial output parsers
+_RE_BLE = re.compile(
+    r'(-?\d+)\s+BLE:\s+([0-9A-Fa-f:]{17})\s*(?:Name:\s*(.*))?')
+_RE_BLE_TYPE = re.compile(
+    r'Type:\s+(\w+)\s+RSSI:\s+(-?\d+)\s+MAC:\s+([0-9A-Fa-f:]{17})'
+    r'(?:\s+Name:\s*(.*))?')
+_RE_SKIM = re.compile(
+    r'(?:Potential\s+)?[Ss]kimmer.*?RSSI:\s+(-?\d+)\s+MAC:\s+([0-9A-Fa-f:]{17})')
+
 _IDLE, _SCANNING, _ATTACKING = 0, 1, 2
+
+# Module-level selected AP targets — avoids reliance on Marauder's
+# flaky select -a command.  Updated by _wifi_scan's stop/attack flow.
+_selected_targets = []
 
 
 # ── Serial Connection ────────────────────────────────────────────────
@@ -58,6 +74,7 @@ class _Conn:
         self.lines = []
         self.lock = threading.Lock()
         self._stop = threading.Event()
+        self._ready = threading.Event()
         self._thread = None
         self.state = _IDLE
         self.dev_path = ""
@@ -73,10 +90,16 @@ class _Conn:
                 self.port = _pyserial.Serial(dev, self.BAUD, timeout=0.1)
                 self.dev_path = dev
                 self._stop.clear()
+                self._ready.clear()
                 self._thread = threading.Thread(target=self._reader, daemon=True)
                 self._thread.start()
+                self._ready.wait(timeout=1)  # block until reader is running
                 self.ok = True
+                # Reset Marauder state: stop any pending scan, wake, drain
+                self.port.write(b"\r\n")
                 time.sleep(0.2)
+                self.port.write(b"stopscan\r\n")
+                time.sleep(0.5)
                 self.port.reset_input_buffer()
                 self.clear()
                 return True
@@ -127,6 +150,7 @@ class _Conn:
 
     def _reader(self):
         buf = b""
+        self._ready.set()
         while not self._stop.is_set():
             try:
                 if self.port and self.port.is_open and self.port.in_waiting:
@@ -223,15 +247,15 @@ def _confirm(scr, title, msg):
 # ── Main Menu ────────────────────────────────────────────────────────
 
 _MENU = [
-    ("WiFi Scan",       "Scan access points and stations"),
-    ("WiFi Attack",     "Deauth, beacon, probe, rickroll, CSA"),
-    ("Sniffers",        "Deauth, PMKID, beacon, probe, raw"),
-    ("BLE Tools",       "Scan, spam, AirTag, Flipper, skimmers"),
-    ("Signal Monitor",  "Live RSSI braille waveforms"),
-    ("Evil Portal",     "Captive portal credential capture"),
-    ("Network Recon",   "Join network, ping, ARP, port scan"),
-    ("Device",          "Info, settings, MAC spoof, reboot"),
-    ("Raw Console",     "Direct serial I/O"),
+    ("WiFi Scan",       "Scan access points and stations",       "◎"),
+    ("WiFi Attack",     "Deauth, beacon, probe, rickroll, CSA",  "☠"),
+    ("Sniffers",        "Deauth, PMKID, beacon, probe, raw",    "◈"),
+    ("BLE Tools",       "Scan, spam, AirTag, Flipper, skimmers", "⚑"),
+    ("Signal Monitor",  "Live RSSI braille waveforms",           "⣿"),
+    ("Evil Portal",     "Captive portal credential capture",     "⚠"),
+    ("Network Recon",   "Join network, ping, ARP, port scan",   "⌗"),
+    ("Device",          "Info, settings, MAC spoof, reboot",     "⚙"),
+    ("Raw Console",     "Direct serial I/O",                     "⌨"),
 ]
 
 
@@ -242,34 +266,37 @@ def run_marauder(scr):
     scr.timeout(100)
     sel, status = 0, ""
     mrd = _get_conn()
+    cols = 1
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
 
         if mrd and mrd.ok:
             st = ["IDLE", "SCANNING", "ATTACKING"][mrd.state]
-            tui.panel_top(scr, 0, 0, w, f"MARAUDER  {st}", mrd.dev_path)
+            hdr = f" MARAUDER  {st}  {mrd.dev_path} "
+            if _selected_targets:
+                names = ", ".join(t["essid"] for t in _selected_targets)
+                hdr = f" MARAUDER  {st}  \u25c9 {len(_selected_targets)} AP: {names} "
+            tui.put(scr, 0, 0, hdr.center(w), w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
         else:
-            tui.panel_top(scr, 0, 0, w, "MARAUDER", "NOT CONNECTED")
+            tui.put(scr, 0, 0,
+                    " MARAUDER  NOT CONNECTED ".center(w),
+                    w, curses.color_pair(C_HEADER) | curses.A_BOLD)
 
-        for i, (name, desc) in enumerate(_MENU):
-            y = i + 2
-            if y >= h - 3:
-                break
-            mk = "\u25b8" if i == sel else " "
-            attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-            tui.put(scr, y, 1, f"{mk} {name:<20}{desc}", w - 2, attr)
-
-        tui.panel_bot(scr, min(len(_MENU) + 2, h - 3), 0, w)
+        # Tile grid
+        tiles = [{"name": n, "desc": d, "icon": ic} for n, d, ic in _MENU]
+        content_y = 2
+        content_h = h - content_y - 3
+        cols, _rows = draw_tile_grid(scr, content_y, w, content_h, tiles, sel)
 
         if status:
             tui.put(scr, h - 2, 1, status[:w - 2], w - 2,
                     curses.color_pair(C_STATUS) | curses.A_BOLD)
 
         tui.put(scr, h - 1, 0,
-                " \u2191\u2193 Select \u2502 A Enter \u2502 B Back ".center(w),
+                " \u2191\u2193\u2190\u2192 Navigate \u2502 A Enter \u2502 B Back ".center(w),
                 w, curses.color_pair(C_FOOTER))
         scr.refresh()
 
@@ -279,25 +306,36 @@ def run_marauder(scr):
         if key == ord("q") or key == ord("Q") or gp == "back":
             break
         elif key == curses.KEY_UP or key == ord("k"):
-            sel = max(0, sel - 1)
+            sel = max(0, sel - cols)
         elif key == curses.KEY_DOWN or key == ord("j"):
+            sel = min(len(_MENU) - 1, sel + cols)
+        elif key == curses.KEY_LEFT or key == ord("h"):
+            sel = max(0, sel - 1)
+        elif key == curses.KEY_RIGHT or key == ord("l"):
             sel = min(len(_MENU) - 1, sel + 1)
         elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
             if not mrd or not mrd.ok:
                 status = "ESP32 not connected \u2014 check /dev/esp32"
                 continue
             status = ""
-            fns = [_wifi_scan, _wifi_attack, _sniffers,
-                   _ble, _sigmon, _portal,
-                   _netrecon, _device, _console]
-            if sel < len(fns):
-                fns[sel](scr, mrd)
+            fn = _get_menu_fns().get(sel)
+            if fn:
+                result = fn(scr, mrd)
+                if result == "attack":
+                    _wifi_attack(scr, mrd)
+                # Flush stale B press from sub-view exit
+                read_gamepad(js)
+                curses.flushinp()
+                _gp_set_cooldown(0.5)
                 scr.timeout(100)
 
     if mrd:
         mrd.close()
     if js:
+        read_gamepad(js)  # flush lingering B press
         close_gamepad(js)
+    curses.flushinp()
+    _gp_set_cooldown(0.5)
     scr.timeout(100)
 
 
@@ -315,19 +353,48 @@ def _wifi_scan(scr, mrd):
     def start():
         nonlocal scanning, t0
         aps.clear()
+        # Fully reset Marauder state — stop, clear stale APs, then scan
+        mrd.send("stopscan")
+        time.sleep(0.3)
+        mrd.send("clearlist -a")
+        time.sleep(0.3)
+        mrd.drain()
         mrd.clear()
         mrd.send("scanap")
         mrd.state = _SCANNING
         scanning = True
         t0 = time.time()
 
+    def _save_targets():
+        """Save selected APs to module-level _selected_targets.
+
+        Also attempts Marauder select -a, but Signal Monitor
+        uses _selected_targets directly (not Marauder's state).
+        """
+        global _selected_targets
+        selected = [a for a in aps if a.get("selected")]
+        _selected_targets = [
+            {"essid": a["essid"], "bssid": a["bssid"],
+             "ch": a["ch"], "rssi": a["rssi"],
+             "hist": tui.make_history(120)}
+            for a in selected
+        ]
+        if not selected:
+            return
+        # Best-effort Marauder select (needed for attacks)
+        time.sleep(0.5)
+        mrd.drain()
+        for i, a in enumerate(aps):
+            if a.get("selected"):
+                mrd.send(f"select -a {i}")
+                time.sleep(0.15)
+        mrd.drain()
+
     def stop():
         nonlocal scanning
         mrd.stop_scan()
         scanning = False
-        idx = [str(i) for i, a in enumerate(aps) if a.get("selected")]
-        if idx:
-            mrd.send(f"select -a {','.join(idx)}")
+        _save_targets()
 
     start()
 
@@ -408,7 +475,7 @@ def _wifi_scan(scr, mrd):
         # Status hint
         tui.panel_side(scr, h - 3, 0, w)
         if n_sel and not scanning:
-            hint = f"  {n_sel} AP(s) saved for attacks. B to confirm and go back."
+            hint = f"  {n_sel} AP(s) selected. X \u2192 Attack \u2502 B Back"
             tui.put(scr, h - 3, 2, hint[:w - 4], w - 4,
                     curses.color_pair(C_STATUS) | curses.A_BOLD)
 
@@ -416,8 +483,10 @@ def _wifi_scan(scr, mrd):
 
         if scanning:
             foot = " \u2191\u2193 Nav \u2502 A Select \u2502 X Stop scan \u2502 B Back "
+        elif n_sel:
+            foot = " \u2191\u2193 Nav \u2502 A Select \u2502 X Attack \u2502 D Details \u2502 S Rescan \u2502 B Back "
         else:
-            foot = " \u2191\u2193 Nav \u2502 A Select \u2502 X Details \u2502 S Rescan \u2502 B Save+Back "
+            foot = " \u2191\u2193 Nav \u2502 A Select \u2502 D Details \u2502 S Rescan \u2502 B Back "
         tui.put(scr, h - 1, 0, foot.center(w), w, curses.color_pair(C_FOOTER))
         scr.refresh()
 
@@ -439,8 +508,34 @@ def _wifi_scan(scr, mrd):
         elif key == ord("x") or key == ord("X") or gp == "refresh":
             if scanning:
                 stop()
+            elif n_sel:
+                # X when APs selected = select + attack
+                _save_targets()
+                if js:
+                    close_gamepad(js)
+                scr.timeout(100)
+                return "attack"
             elif aps and sel < len(aps):
-                # X when stopped = show AP details
+                # X when no selection = show AP details
+                mrd.clear()
+                mrd.send(f"info -a {sel}")
+                time.sleep(0.5)
+                info = mrd.drain()
+                bw = min(50, w - 4)
+                bh = min(len(info) + 3, h - 4)
+                by, bx = (h - bh) // 2, (w - bw) // 2
+                tui.panel_top(scr, by, bx, bw, aps[sel]["essid"])
+                for ri, ln in enumerate(info[:bh - 3]):
+                    tui.panel_side(scr, by + 1 + ri, bx, bw)
+                    tui.put(scr, by + 1 + ri, bx + 2, ln[:bw - 4], bw - 4, val)
+                tui.panel_bot(scr, by + bh - 1, bx, bw)
+                scr.refresh()
+                scr.timeout(-1)
+                scr.getch()
+                scr.timeout(200)
+        elif key == ord("d") or key == ord("D"):
+            # D = details (moved from X)
+            if not scanning and aps and sel < len(aps):
                 mrd.clear()
                 mrd.send(f"info -a {sel}")
                 time.sleep(0.5)
@@ -464,20 +559,21 @@ def _wifi_scan(scr, mrd):
     if js:
         close_gamepad(js)
     scr.timeout(100)
+    return None
 
 
 # ── WiFi Attack ──────────────────────────────────────────────────────
 
 _ATTACKS = [
-    ("Deauth",        "attack -t deauth",     "Disconnect clients from selected APs"),
-    ("Deauth (tgt)",  "attack -t deauth -c",  "Target specific selected clients"),
-    ("Beacon List",   "attack -t beacon -l",  "Broadcast SSIDs from SSID list"),
-    ("Beacon Random", "attack -t beacon -r",  "Random SSID beacon flood"),
-    ("Beacon Clone",  "attack -t beacon -a",  "Clone selected AP beacons"),
-    ("Probe Flood",   "attack -t probe",      "Probe request flood"),
-    ("Rickroll",      "attack -t rickroll",    "Rickroll SSID beacon spam"),
-    ("CSA",           "attack -t csa",         "Channel Switch Announcement"),
-    ("SAE",           "attack -t sae",         "WPA3 SAE flood"),
+    ("Deauth",        "attack -t deauth",     "Disconnect clients from selected APs", "⚡"),
+    ("Deauth (tgt)",  "attack -t deauth -c",  "Target specific selected clients",     "⚡"),
+    ("Beacon List",   "attack -t beacon -l",  "Broadcast SSIDs from SSID list",       "📡"),
+    ("Beacon Random", "attack -t beacon -r",  "Random SSID beacon flood",             "⁂"),
+    ("Beacon Clone",  "attack -t beacon -a",  "Clone selected AP beacons",            "◎"),
+    ("Probe Flood",   "attack -t probe",      "Probe request flood",                  "⟫"),
+    ("Rickroll",      "attack -t rickroll",    "Rickroll SSID beacon spam",            "♪"),
+    ("CSA",           "attack -t csa",         "Channel Switch Announcement",          "⇋"),
+    ("SAE",           "attack -t sae",         "WPA3 SAE flood",                       "⚿"),
 ]
 
 
@@ -486,36 +582,42 @@ def _wifi_attack(scr, mrd):
     js = open_gamepad()
     scr.timeout(100)
     sel = 0
+    cols = 1
     attacking = False
     status = ""
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
-        dim = curses.color_pair(C_DIM) | curses.A_DIM
 
         st = "ATTACKING" if attacking else "SELECT"
-        tui.panel_top(scr, 0, 0, w, f"WIFI ATTACK  {st}", "")
+        tui.put(scr, 0, 0,
+                f" WIFI ATTACK  {st} ".center(w),
+                w, curses.color_pair(C_HEADER) | curses.A_BOLD)
 
-        for i, (name, _cmd, desc) in enumerate(_ATTACKS):
-            y = i + 2
-            if y >= h - 3:
-                break
-            mk = "\u25b8" if i == sel else " "
-            if attacking:
-                attr = curses.color_pair(C_CRIT) | curses.A_BOLD if i == sel else dim
-            else:
-                attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-            tui.put(scr, y, 1, f"{mk} {name:<16}{desc}", w - 2, attr)
-
-        tui.panel_bot(scr, min(len(_ATTACKS) + 2, h - 3), 0, w)
+        if not attacking:
+            tiles = [{"name": n, "desc": d, "icon": ic}
+                     for n, _cmd, d, ic in _ATTACKS]
+            content_y = 2
+            content_h = h - content_y - 3
+            cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                         tiles, sel)
+        else:
+            dim = curses.color_pair(C_DIM) | curses.A_DIM
+            tui.put(scr, 2, 2, f"Running: {_ATTACKS[sel][0]}",
+                    w - 4, curses.color_pair(C_CRIT) | curses.A_BOLD)
+            for i, ln in enumerate(mrd.snap()[-(h - 6):]):
+                y = 4 + i
+                if y >= h - 3:
+                    break
+                tui.put(scr, y, 2, ln[:w - 4], w - 4, dim)
 
         if status:
             tui.put(scr, h - 2, 1, status[:w - 2], w - 2,
                     curses.color_pair(C_STATUS) | curses.A_BOLD)
 
-        foot = " X Stop \u2502 B Back " if attacking else " \u2191\u2193 Select \u2502 A Launch \u2502 B Back "
+        foot = (" X Stop \u2502 B Back " if attacking
+                else " \u2191\u2193\u2190\u2192 Navigate \u2502 A Launch \u2502 B Back ")
         tui.put(scr, h - 1, 0, foot.center(w), w, curses.color_pair(C_FOOTER))
         scr.refresh()
 
@@ -527,29 +629,34 @@ def _wifi_attack(scr, mrd):
                 mrd.stop_scan()
                 attacking = False
             break
-        elif key == curses.KEY_UP or key == ord("k"):
-            sel = max(0, sel - 1)
-        elif key == curses.KEY_DOWN or key == ord("j"):
-            sel = min(len(_ATTACKS) - 1, sel + 1)
+        elif not attacking:
+            if key == curses.KEY_UP or key == ord("k"):
+                sel = max(0, sel - cols)
+            elif key == curses.KEY_DOWN or key == ord("j"):
+                sel = min(len(_ATTACKS) - 1, sel + cols)
+            elif key == curses.KEY_LEFT or key == ord("h"):
+                sel = max(0, sel - 1)
+            elif key == curses.KEY_RIGHT or key == ord("l"):
+                sel = min(len(_ATTACKS) - 1, sel + 1)
+            elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
+                name, cmd, _desc, _ic = _ATTACKS[sel]
+                if _confirm(scr, "ATTACK", f"Launch {name}?"):
+                    mrd.clear()
+                    mrd.send(cmd)
+                    mrd.state = _ATTACKING
+                    attacking = True
+                    status = f"Running: {name}"
+                    time.sleep(0.3)
+                    for ln in mrd.drain():
+                        if "don't have any" in ln.lower() or "list is empty" in ln.lower():
+                            status = ln
+                            mrd.stop_scan()
+                            attacking = False
+                            break
         elif (key == ord("x") or key == ord("X")) and attacking:
             mrd.stop_scan()
             attacking = False
             status = "Attack stopped"
-        elif (key in (curses.KEY_ENTER, 10, 13) or gp == "enter") and not attacking:
-            name, cmd, _ = _ATTACKS[sel]
-            if _confirm(scr, "ATTACK", f"Launch {name}?"):
-                mrd.clear()
-                mrd.send(cmd)
-                mrd.state = _ATTACKING
-                attacking = True
-                status = f"Running: {name}"
-                time.sleep(0.3)
-                for ln in mrd.drain():
-                    if "don't have any" in ln.lower() or "list is empty" in ln.lower():
-                        status = ln
-                        mrd.stop_scan()
-                        attacking = False
-                        break
 
     if js:
         close_gamepad(js)
@@ -559,15 +666,15 @@ def _wifi_attack(scr, mrd):
 # ── Sniffers ─────────────────────────────────────────────────────────
 
 _SNIFFERS = [
-    ("Deauth",       "sniffdeauth",     "Detect deauth/disassoc frames"),
-    ("PMKID",        "sniffpmkid",      "Capture EAPOL/PMKID handshakes"),
-    ("PMKID+Deauth", "sniffpmkid -d",   "Active PMKID with forced deauth"),
-    ("Beacon",       "sniffbeacon",      "All beacon frames (live feed)"),
-    ("Probe",        "sniffprobe",       "Probe requests from clients"),
-    ("Raw",          "sniffraw",         "Raw 802.11 frame capture"),
-    ("Pwnagotchi",   "sniffpwn",         "Detect nearby pwnagotchis"),
-    ("SAE",          "sniffsae",         "WPA3 SAE commit frames"),
-    ("Pineapple",    "sniffpinescan",    "Detect WiFi Pineapple APs"),
+    ("Deauth",       "sniffdeauth",     "Detect deauth/disassoc frames",     "⚡"),
+    ("PMKID",        "sniffpmkid",      "Capture EAPOL/PMKID handshakes",    "⚿"),
+    ("PMKID+Deauth", "sniffpmkid -d",   "Active PMKID with forced deauth",   "⚿"),
+    ("Beacon",       "sniffbeacon",      "All beacon frames (live feed)",      "◈"),
+    ("Probe",        "sniffprobe",       "Probe requests from clients",       "⟫"),
+    ("Raw",          "sniffraw",         "Raw 802.11 frame capture",          "▤"),
+    ("Pwnagotchi",   "sniffpwn",         "Detect nearby pwnagotchis",        "☺"),
+    ("SAE",          "sniffsae",         "WPA3 SAE commit frames",            "⚿"),
+    ("Pineapple",    "sniffpinescan",    "Detect WiFi Pineapple APs",        "⚠"),
 ]
 
 
@@ -576,6 +683,7 @@ def _sniffers(scr, mrd):
     js = open_gamepad()
     scr.timeout(200)
     sel = 0
+    cols = 1
     sniffing = False
     log = []
     pkt = 0
@@ -583,21 +691,20 @@ def _sniffers(scr, mrd):
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
         dim = curses.color_pair(C_DIM) | curses.A_DIM
 
         if not sniffing:
-            tui.panel_top(scr, 0, 0, w, "SNIFFERS", "select mode")
-            for i, (name, _cmd, desc) in enumerate(_SNIFFERS):
-                y = i + 2
-                if y >= h - 3:
-                    break
-                mk = "\u25b8" if i == sel else " "
-                attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-                tui.put(scr, y, 1, f"{mk} {name:<16}{desc}", w - 2, attr)
-            tui.panel_bot(scr, min(len(_SNIFFERS) + 2, h - 3), 0, w)
+            tui.put(scr, 0, 0,
+                    " SNIFFERS  SELECT ".center(w),
+                    w, curses.color_pair(C_HEADER) | curses.A_BOLD)
+            tiles = [{"name": n, "desc": d, "icon": ic}
+                     for n, _cmd, d, ic in _SNIFFERS]
+            content_y = 2
+            content_h = h - content_y - 3
+            cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                         tiles, sel)
             tui.put(scr, h - 1, 0,
-                    " \u2191\u2193 Select \u2502 A Start \u2502 B Back ".center(w),
+                    " \u2191\u2193\u2190\u2192 Navigate \u2502 A Start \u2502 B Back ".center(w),
                     w, curses.color_pair(C_FOOTER))
         else:
             for ln in mrd.drain():
@@ -654,8 +761,12 @@ def _sniffers(scr, mrd):
                 break
         elif not sniffing:
             if key == curses.KEY_UP or key == ord("k"):
-                sel = max(0, sel - 1)
+                sel = max(0, sel - cols)
             elif key == curses.KEY_DOWN or key == ord("j"):
+                sel = min(len(_SNIFFERS) - 1, sel + cols)
+            elif key == curses.KEY_LEFT or key == ord("h"):
+                sel = max(0, sel - 1)
+            elif key == curses.KEY_RIGHT or key == ord("l"):
                 sel = min(len(_SNIFFERS) - 1, sel + 1)
             elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
                 mrd.clear()
@@ -677,91 +788,312 @@ def _sniffers(scr, mrd):
 # ── BLE Tools ────────────────────────────────────────────────────────
 
 _BLE = [
-    ("Scan AirTags",    "sniffbt -t airtag",   "Detect Apple AirTags"),
-    ("Scan Flippers",   "sniffbt -t flipper",  "Detect Flipper Zero devices"),
-    ("Scan Flock",      "sniffbt -t flock",    "Google Find My trackers"),
-    ("Scan Meta",       "sniffbt -t meta",     "Meta/Facebook BLE devices"),
-    ("Detect Skimmers", "sniffskim",           "Card skimmer BLE detection"),
-    ("Spam All",        "blespam -t all",      "Apple+Samsung+Windows+Flipper"),
-    ("Spam Apple",      "blespam -t apple",    "Apple notification spam"),
-    ("Spam Samsung",    "blespam -t samsung",  "Samsung BLE spam"),
-    ("Spam Windows",    "blespam -t windows",  "Windows Swift Pair spam"),
-    ("Spam Flipper",    "blespam -t flipper",  "Flipper Zero BLE spam"),
+    ("Scan AirTags",    "sniffbt -t airtag",   "Detect Apple AirTags",          "⚠"),
+    ("Scan Flippers",   "sniffbt -t flipper",  "Detect Flipper Zero devices",   "◈"),
+    ("Scan Flock",      "sniffbt -t flock",    "Google Find My trackers",       "◈"),
+    ("Scan Meta",       "sniffbt -t meta",     "Meta/Facebook BLE devices",     "◈"),
+    ("Detect Skimmers", "sniffskim",           "Card skimmer BLE detection",    "⚠"),
+    ("Spam All",        "blespam -t all",      "Apple+Samsung+Windows+Flipper", "☠"),
+    ("Spam Apple",      "blespam -t apple",    "Apple notification spam",       "☠"),
+    ("Spam Samsung",    "blespam -t samsung",  "Samsung BLE spam",              "☠"),
+    ("Spam Windows",    "blespam -t windows",  "Windows Swift Pair spam",       "☠"),
+    ("Spam Flipper",    "blespam -t flipper",  "Flipper Zero BLE spam",         "☠"),
 ]
 
 
+def _ble_parse(ln, devices, now):
+    """Parse a single BLE serial line, update *devices* dict (keyed by MAC)."""
+    dtype, rssi, mac, name = None, None, None, ""
+
+    m = _RE_SKIM.search(ln)
+    if m:
+        rssi, mac = int(m.group(1)), m.group(2).upper()
+        dtype = "Skimmer"
+    if not dtype:
+        m = _RE_BLE_TYPE.search(ln)
+        if m:
+            kw = m.group(1).capitalize()
+            rssi, mac = int(m.group(2)), m.group(3).upper()
+            name = (m.group(4) or "").strip()
+            dtype = {"Airtag": "AirTag", "Flipper": "Flipper",
+                     "Flock": "Flock", "Meta": "Meta"}.get(kw, kw)
+    if not dtype:
+        m = _RE_BLE.search(ln)
+        if m:
+            rssi, mac = int(m.group(1)), m.group(2).upper()
+            name = (m.group(3) or "").strip()
+            dtype = "BLE"
+
+    if dtype is None or mac is None:
+        return
+
+    # Infer type from keywords when generic BLE
+    if dtype == "BLE":
+        ll = ln.lower()
+        if "airtag" in ll:
+            dtype = "AirTag"
+        elif "flipper" in ll:
+            dtype = "Flipper"
+        elif "skimmer" in ll or "potential" in ll:
+            dtype = "Skimmer"
+
+    pct = max(0, min(100, int((rssi + 100) * 100 / 100)))
+
+    if mac in devices:
+        dev = devices[mac]
+        dev["rssi"] = rssi
+        dev["last_seen"] = now
+        if name:
+            dev["name"] = name
+        if dtype != "BLE":
+            dev["type"] = dtype
+        tui.push(dev["history"], pct)
+    else:
+        hist = tui.make_history(120)
+        tui.push(hist, pct)
+        devices[mac] = {
+            "type": dtype,
+            "mac": mac,
+            "name": name,
+            "rssi": rssi,
+            "last_seen": now,
+            "history": hist,
+        }
+
+
 def _ble(scr, mrd):
-    """BLE scan and spam tools."""
+    """BLE scan and spam tools with real-time dashboard."""
     js = open_gamepad()
     scr.timeout(200)
-    sel = 0
+    menu_sel = 0
+    cols = 1
     active = False
-    log = []
-    count = 0
+    is_spam = False
+    devices = {}          # MAC -> device dict
+    dev_sel = 0           # cursor in device list
+    scan_start = 0.0
+    spam_log = []
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
         dim = curses.color_pair(C_DIM) | curses.A_DIM
 
         if not active:
-            tui.panel_top(scr, 0, 0, w, "BLE TOOLS", "scan and spam")
-            for i, (name, _cmd, desc) in enumerate(_BLE):
-                y = i + 2
-                if y >= h - 3:
-                    break
-                mk = "\u25b8" if i == sel else " "
-                if i == sel:
-                    attr = curses.color_pair(C_SEL) | curses.A_BOLD
-                elif "spam" in name.lower():
-                    attr = curses.color_pair(C_WARN)
-                else:
-                    attr = val
-                tui.put(scr, y, 1, f"{mk} {name:<18}{desc}", w - 2, attr)
-            tui.panel_bot(scr, min(len(_BLE) + 2, h - 3), 0, w)
+            # ── Menu mode ────────────────────────────────────────────
+            tui.put(scr, 0, 0,
+                    " BLE TOOLS  SELECT ".center(w),
+                    w, curses.color_pair(C_HEADER) | curses.A_BOLD)
+            tiles = [{"name": n, "desc": d, "icon": ic}
+                     for n, _cmd, d, ic in _BLE]
+            content_y = 2
+            content_h = h - content_y - 3
+            cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                         tiles, menu_sel)
             tui.put(scr, h - 1, 0,
-                    " \u2191\u2193 Select \u2502 A Start \u2502 B Back ".center(w),
+                    " \u2191\u2193\u2190\u2192 Navigate \u2502 A Start \u2502 B Back ".center(w),
                     w, curses.color_pair(C_FOOTER))
-        else:
+
+        elif is_spam:
+            # ── Spam mode: simple raw log ────────────────────────────
             for ln in mrd.drain():
-                count += 1
-                if "airtag" in ln.lower() or "Name: Flipper" in ln:
-                    log.append(("WARN", ln))
-                elif "skimmer" in ln.lower() or "Potential" in ln:
-                    log.append(("CRIT", ln))
-                else:
-                    log.append(("DIM", ln))
-                if len(log) > 2000:
-                    del log[:1000]
+                spam_log.append(ln)
+                if len(spam_log) > 2000:
+                    del spam_log[:1000]
 
-            name = _BLE[sel][0]
-            is_spam = "spam" in _BLE[sel][1]
-            tui.panel_top(scr, 0, 0, w, f"BLE {name.upper()}",
-                          "broadcasting" if is_spam else f"{count} devices")
-
+            sname = _BLE[menu_sel][0]
+            tui.panel_top(scr, 0, 0, w, f"BLE {sname.upper()}",
+                          "broadcasting")
             vis = h - 4
-            start_i = max(0, len(log) - vis)
+            start_i = max(0, len(spam_log) - vis)
             for i in range(vis):
                 y = 1 + i
                 tui.panel_side(scr, y, 0, w)
                 idx = start_i + i
-                if idx < len(log):
-                    tag, text = log[idx]
-                    if tag == "CRIT":
-                        attr = curses.color_pair(C_CRIT) | curses.A_BOLD
-                    elif tag == "WARN":
-                        attr = curses.color_pair(C_WARN)
-                    else:
-                        attr = dim
-                    tui.put(scr, y, 2, text[:w - 4], w - 4, attr)
-                elif is_spam and i == vis // 2 and not log:
-                    tui.put(scr, y, 2, "Broadcasting... (silent mode)", w - 4, dim)
-
+                if idx < len(spam_log):
+                    tui.put(scr, y, 2, spam_log[idx][:w - 4], w - 4, dim)
+                elif i == vis // 2 and not spam_log:
+                    tui.put(scr, y, 2, "Broadcasting... (silent mode)",
+                            w - 4, dim)
             tui.panel_bot(scr, h - 2, 0, w)
             tui.put(scr, h - 1, 0,
                     " X Stop \u2502 B Back ".center(w), w,
                     curses.color_pair(C_FOOTER))
+
+        else:
+            # ── Live BLE Dashboard ───────────────────────────────────
+            now = time.time()
+
+            # Parse incoming lines
+            for ln in mrd.drain():
+                _ble_parse(ln, devices, now)
+
+            # Expire stale devices (>30s)
+            stale = [m for m, d in devices.items()
+                     if now - d["last_seen"] > 30]
+            for m in stale:
+                del devices[m]
+
+            # Sort by RSSI (strongest first)
+            dev_list = sorted(devices.values(),
+                              key=lambda d: d["rssi"], reverse=True)
+
+            # Clamp cursor
+            if dev_list:
+                dev_sel = max(0, min(dev_sel, len(dev_list) - 1))
+            else:
+                dev_sel = 0
+
+            elapsed = int(now - scan_start)
+            el_m, el_s = elapsed // 60, elapsed % 60
+
+            # Graph panel height
+            GR = 4
+            # Alert bar
+            skimmer_alert = None
+            airtag_alert = None
+            for d in dev_list:
+                if d["type"] == "Skimmer":
+                    if skimmer_alert is None or d["rssi"] > skimmer_alert:
+                        skimmer_alert = d["rssi"]
+                if d["type"] in ("AirTag", "Flock"):
+                    if airtag_alert is None or d["rssi"] > airtag_alert:
+                        airtag_alert = d["rssi"]
+            has_alert = skimmer_alert is not None or airtag_alert is not None
+
+            # Layout: hdr(1) + col_hdr(1) + device_rows + alert(0-1)
+            #         + graph_hdr(1) + graph(GR) + graph_bot(1) + footer(1)
+            bot_fixed = GR + 3 + (1 if has_alert else 0)
+            list_rows = max(1, h - 3 - bot_fixed)
+
+            # ── Device List panel ────────────────────────────────────
+            scan_name = _BLE[menu_sel][0]
+            tui.panel_top(scr, 0, 0, w, f"BLE {scan_name.upper()}",
+                          f"{len(dev_list)} devices  {el_m}:{el_s:02d}")
+
+            # Column header
+            hdr_y = 1
+            tui.panel_side(scr, hdr_y, 0, w)
+            col_type = 9
+            col_sig = 10
+            col_rssi = 6
+            col_age = 5
+            hdr_txt = (f" {'TYPE':<{col_type}}"
+                       f"{'SIGNAL':<{col_sig}}"
+                       f"{'RSSI':>{col_rssi}}"
+                       f"  {'MAC':<17}"
+                       f"  {'AGE':>{col_age}}")
+            tui.put(scr, hdr_y, 1, hdr_txt[:w - 2], w - 2,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+
+            # Scrolling window
+            scroll_off = 0
+            if dev_sel >= list_rows:
+                scroll_off = dev_sel - list_rows + 1
+            visible_devs = dev_list[scroll_off:scroll_off + list_rows]
+
+            for i, d in enumerate(visible_devs):
+                y = 2 + i
+                if y >= h - 1:
+                    break
+                tui.panel_side(scr, y, 0, w)
+
+                real_idx = scroll_off + i
+                is_selected = (real_idx == dev_sel)
+
+                # Row color by type
+                if d["type"] == "Skimmer":
+                    row_attr = curses.color_pair(C_CRIT) | curses.A_BOLD
+                elif d["type"] in ("AirTag", "Flipper", "Flock"):
+                    row_attr = curses.color_pair(C_WARN)
+                else:
+                    row_attr = curses.color_pair(C_OK)
+
+                if is_selected:
+                    row_attr |= curses.A_REVERSE
+
+                sig_bar = _rssi_bar(d["rssi"], 8)
+                age = int(now - d["last_seen"])
+                age_s = f"{age}s" if age < 60 else f"{age // 60}m"
+
+                dname = d["name"] or d["type"]
+                row = (f" {dname:<{col_type}}"
+                       f"{sig_bar:<{col_sig}}"
+                       f"{d['rssi']:>{col_rssi}}"
+                       f"  {d['mac']:<17}"
+                       f"  {age_s:>{col_age}}")
+                tui.put(scr, y, 1, row[:w - 2], w - 2, row_attr)
+
+            # Fill remaining list rows
+            for i in range(len(visible_devs), list_rows):
+                y = 2 + i
+                if y >= h - 1:
+                    break
+                tui.panel_side(scr, y, 0, w)
+
+            # ── Alert bar ────────────────────────────────────────────
+            alert_y = 2 + list_rows
+            if has_alert and alert_y < h - 1:
+                tui.panel_side(scr, alert_y, 0, w)
+                if skimmer_alert is not None:
+                    amsg = f" \u26a0 Potential skimmer detected! {skimmer_alert}dBm"
+                    tui.put(scr, alert_y, 1, amsg[:w - 2], w - 2,
+                            curses.color_pair(C_CRIT) | curses.A_BOLD)
+                elif airtag_alert is not None:
+                    amsg = f" \u26a0 AirTag nearby {airtag_alert}dBm"
+                    tui.put(scr, alert_y, 1, amsg[:w - 2], w - 2,
+                            curses.color_pair(C_WARN) | curses.A_BOLD)
+                alert_y += 1
+
+            # ── Signal History panel (selected device) ───────────────
+            graph_y = alert_y
+            if dev_list and dev_sel < len(dev_list):
+                sel_dev = dev_list[dev_sel]
+                sig_detail = f"{sel_dev['rssi']}dBm  {sel_dev['mac']}"
+                tui.panel_top(scr, graph_y, 0, w,
+                              f"{sel_dev['type']} SIGNAL", sig_detail,
+                              detail_pair=(curses.color_pair(
+                                  _rssi_color(sel_dev["rssi"]))
+                                  | curses.A_BOLD))
+                graph_y += 1
+
+                gw = w - 4
+                if len(sel_dev["history"]) > 1:
+                    col = _rssi_color(sel_dev["rssi"])
+                    for row_str in tui.make_area(sel_dev["history"],
+                                                 gw, GR):
+                        if graph_y >= h - 1:
+                            break
+                        tui.panel_side(scr, graph_y, 0, w)
+                        tui.put(scr, graph_y, 2, row_str, gw,
+                                curses.color_pair(col))
+                        graph_y += 1
+                else:
+                    for _ in range(GR):
+                        if graph_y >= h - 1:
+                            break
+                        tui.panel_side(scr, graph_y, 0, w)
+                        tui.put(scr, graph_y, 2, "waiting for data...",
+                                gw, dim)
+                        graph_y += 1
+                if graph_y < h - 1:
+                    tui.panel_bot(scr, graph_y, 0, w)
+            else:
+                tui.panel_top(scr, graph_y, 0, w, "SIGNAL", "no device")
+                graph_y += 1
+                for _ in range(GR):
+                    if graph_y >= h - 1:
+                        break
+                    tui.panel_side(scr, graph_y, 0, w)
+                    tui.put(scr, graph_y, 2, "no devices found",
+                            w - 4, dim)
+                    graph_y += 1
+                if graph_y < h - 1:
+                    tui.panel_bot(scr, graph_y, 0, w)
+
+            tui.put(scr, h - 1, 0,
+                    " \u2191\u2193 Nav \u2502 X Stop \u2502 B Back ".center(w),
+                    w, curses.color_pair(C_FOOTER))
 
         scr.refresh()
 
@@ -772,27 +1104,43 @@ def _ble(scr, mrd):
             if active:
                 mrd.stop_scan()
                 active = False
+                is_spam = False
             else:
                 break
         elif not active:
             if key == curses.KEY_UP or key == ord("k"):
-                sel = max(0, sel - 1)
+                menu_sel = max(0, menu_sel - cols)
             elif key == curses.KEY_DOWN or key == ord("j"):
-                sel = min(len(_BLE) - 1, sel + 1)
+                menu_sel = min(len(_BLE) - 1, menu_sel + cols)
+            elif key == curses.KEY_LEFT or key == ord("h"):
+                menu_sel = max(0, menu_sel - 1)
+            elif key == curses.KEY_RIGHT or key == ord("l"):
+                menu_sel = min(len(_BLE) - 1, menu_sel + 1)
             elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
-                name, cmd, _ = _BLE[sel]
-                if "spam" in cmd and not _confirm(scr, "BLE SPAM", f"Start {name}?"):
+                name, cmd, _desc, _ic = _BLE[menu_sel]
+                if "spam" in cmd and not _confirm(scr, "BLE SPAM",
+                                                  f"Start {name}?"):
                     continue
                 mrd.clear()
                 mrd.send(cmd)
                 mrd.state = _SCANNING
                 active = True
-                log.clear()
-                count = 0
+                is_spam = "spam" in cmd
+                devices.clear()
+                dev_sel = 0
+                scan_start = time.time()
+                spam_log.clear()
         else:
             if key == ord("x") or key == ord("X") or gp == "refresh":
                 mrd.stop_scan()
                 active = False
+                is_spam = False
+            elif not is_spam:
+                # Device list navigation (scan mode only)
+                if key == curses.KEY_UP or key == ord("k"):
+                    dev_sel = max(0, dev_sel - 1)
+                elif key == curses.KEY_DOWN or key == ord("j"):
+                    dev_sel = dev_sel + 1
 
     if js:
         close_gamepad(js)
@@ -806,23 +1154,9 @@ def _sigmon(scr, mrd):
     js = open_gamepad()
     scr.timeout(500)
 
-    mrd.clear()
-    mrd.send("list -a")
-    time.sleep(0.5)
-    raw = mrd.drain()
-
-    targets = []
-    for ln in raw:
-        m = _RE_LIST_AP.match(ln)
-        if m and m.group(5):
-            targets.append({
-                "idx": int(m.group(1)),
-                "bssid": "",
-                "essid": m.group(3),
-                "ch": int(m.group(2)),
-                "rssi": int(m.group(4)),
-                "hist": tui.make_history(120),
-            })
+    # Use module-level targets saved by WiFi Scan (reliable)
+    # instead of Marauder's flaky select -a state
+    targets = list(_selected_targets)  # shallow copy
 
     if not targets:
         h, w = scr.getmaxyx()
@@ -842,14 +1176,6 @@ def _sigmon(scr, mrd):
             close_gamepad(js)
         scr.timeout(100)
         return
-
-    for t in targets:
-        mrd.clear()
-        mrd.send(f"info -a {t['idx']}")
-        time.sleep(0.3)
-        for ln in mrd.drain():
-            if "BSSID:" in ln:
-                t["bssid"] = ln.split("BSSID:")[-1].strip()
 
     mrd.clear()
     mrd.send("sniffbeacon")
@@ -939,37 +1265,40 @@ def _portal(scr, mrd):
     log = []
     sel = 0
     items = [
-        ("Evil Portal",  "evilportal -c start", "Default captive portal"),
-        ("Karma Attack", "karma -p 0",          "Respond to all probes"),
+        ("Evil Portal",  "evilportal -c start", "Default captive portal", "⚠"),
+        ("Karma Attack", "karma -p 0",          "Respond to all probes",  "◎"),
     ]
+
+    cols = 1
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
         dim = curses.color_pair(C_DIM) | curses.A_DIM
 
         if not active:
-            tui.panel_top(scr, 0, 0, w, "EVIL PORTAL", "credential capture")
-            for i, (name, _cmd, desc) in enumerate(items):
-                y = i + 2
-                mk = "\u25b8" if i == sel else " "
-                attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-                tui.put(scr, y, 1, f"{mk} {name:<18}{desc}", w - 2, attr)
-            tui.panel_bot(scr, len(items) + 2, 0, w)
+            tui.put(scr, 0, 0,
+                    " EVIL PORTAL  SELECT ".center(w),
+                    w, curses.color_pair(C_HEADER) | curses.A_BOLD)
+            tiles = [{"name": n, "desc": d, "icon": ic}
+                     for n, _cmd, d, ic in items]
+            content_y = 2
+            content_h = h - content_y - 3
+            cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                         tiles, sel)
 
             if creds:
-                cy = len(items) + 3
-                tui.put(scr, cy, 1, "Captured credentials:", w - 2,
-                        curses.color_pair(C_OK) | curses.A_BOLD)
-                for i, (u, p) in enumerate(creds[-5:]):
-                    if cy + 1 + i >= h - 2:
+                # Show captured creds below tiles
+                cy = h - 3
+                for i, (u, p) in enumerate(creds[-2:]):
+                    if cy - 1 - i < content_y + content_h:
                         break
-                    tui.put(scr, cy + 1 + i, 3, f"user: {u}  pass: {p}",
-                            w - 4, curses.color_pair(C_WARN))
+                tui.put(scr, h - 2, 1,
+                        f"{len(creds)} cred(s) captured"[:w - 2], w - 2,
+                        curses.color_pair(C_OK) | curses.A_BOLD)
 
             tui.put(scr, h - 1, 0,
-                    " \u2191\u2193 Select \u2502 A Start \u2502 B Back ".center(w),
+                    " \u2191\u2193\u2190\u2192 Navigate \u2502 A Start \u2502 B Back ".center(w),
                     w, curses.color_pair(C_FOOTER))
         else:
             for ln in mrd.drain():
@@ -1023,11 +1352,15 @@ def _portal(scr, mrd):
                 break
         elif not active:
             if key == curses.KEY_UP or key == ord("k"):
-                sel = max(0, sel - 1)
+                sel = max(0, sel - cols)
             elif key == curses.KEY_DOWN or key == ord("j"):
+                sel = min(len(items) - 1, sel + cols)
+            elif key == curses.KEY_LEFT or key == ord("h"):
+                sel = max(0, sel - 1)
+            elif key == curses.KEY_RIGHT or key == ord("l"):
                 sel = min(len(items) - 1, sel + 1)
             elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
-                name, cmd, _ = items[sel]
+                name, cmd, _desc, _ic = items[sel]
                 if _confirm(scr, "PORTAL", f"Start {name}?"):
                     mrd.clear()
                     mrd.send(cmd)
@@ -1047,14 +1380,14 @@ def _portal(scr, mrd):
 # ── Network Recon ────────────────────────────────────────────────────
 
 _NETRECON = [
-    ("Ping Scan",  "pingscan",         "ICMP sweep (requires WiFi join)"),
-    ("ARP Scan",   "arpscan",          "ARP sweep for local hosts"),
-    ("ARP Full",   "arpscan -f",       "Full ARP scan (slower)"),
-    ("Port SSH",   "portscan -s ssh",  "Scan for SSH (port 22)"),
-    ("Port HTTP",  "portscan -s http", "Scan for HTTP (port 80)"),
-    ("Port HTTPS", "portscan -s https","Scan for HTTPS (port 443)"),
-    ("Port RDP",   "portscan -s rdp",  "Scan for RDP (port 3389)"),
-    ("List IPs",   "list -i",          "Show discovered IPs"),
+    ("Ping Scan",  "pingscan",         "ICMP sweep (requires WiFi join)",  "⌗"),
+    ("ARP Scan",   "arpscan",          "ARP sweep for local hosts",        "⌗"),
+    ("ARP Full",   "arpscan -f",       "Full ARP scan (slower)",           "⌗"),
+    ("Port SSH",   "portscan -s ssh",  "Scan for SSH (port 22)",           "⚿"),
+    ("Port HTTP",  "portscan -s http", "Scan for HTTP (port 80)",          "◎"),
+    ("Port HTTPS", "portscan -s https","Scan for HTTPS (port 443)",        "⚿"),
+    ("Port RDP",   "portscan -s rdp",  "Scan for RDP (port 3389)",         "◎"),
+    ("List IPs",   "list -i",          "Show discovered IPs",              "▤"),
 ]
 
 
@@ -1063,27 +1396,27 @@ def _netrecon(scr, mrd):
     js = open_gamepad()
     scr.timeout(200)
     sel = 0
+    cols = 1
     active = False
     log = []
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
         dim = curses.color_pair(C_DIM) | curses.A_DIM
 
         if not active:
-            tui.panel_top(scr, 0, 0, w, "NETWORK RECON", "requires WiFi join")
-            for i, (name, _cmd, desc) in enumerate(_NETRECON):
-                y = i + 2
-                if y >= h - 3:
-                    break
-                mk = "\u25b8" if i == sel else " "
-                attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-                tui.put(scr, y, 1, f"{mk} {name:<16}{desc}", w - 2, attr)
-            tui.panel_bot(scr, min(len(_NETRECON) + 2, h - 3), 0, w)
+            tui.put(scr, 0, 0,
+                    " NETWORK RECON  SELECT ".center(w),
+                    w, curses.color_pair(C_HEADER) | curses.A_BOLD)
+            tiles = [{"name": n, "desc": d, "icon": ic}
+                     for n, _cmd, d, ic in _NETRECON]
+            content_y = 2
+            content_h = h - content_y - 3
+            cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                         tiles, sel)
             tui.put(scr, h - 1, 0,
-                    " \u2191\u2193 Select \u2502 A Start \u2502 B Back ".center(w),
+                    " \u2191\u2193\u2190\u2192 Navigate \u2502 A Start \u2502 B Back ".center(w),
                     w, curses.color_pair(C_FOOTER))
         else:
             for ln in mrd.drain():
@@ -1100,7 +1433,8 @@ def _netrecon(scr, mrd):
                 tui.panel_side(scr, y, 0, w)
                 idx = start_i + i
                 if idx < len(log):
-                    tui.put(scr, y, 2, log[idx][:w - 4], w - 4, val)
+                    tui.put(scr, y, 2, log[idx][:w - 4], w - 4,
+                            curses.color_pair(C_ITEM))
             tui.panel_bot(scr, h - 2, 0, w)
             tui.put(scr, h - 1, 0,
                     " X Stop \u2502 B Back ".center(w), w,
@@ -1119,8 +1453,12 @@ def _netrecon(scr, mrd):
                 break
         elif not active:
             if key == curses.KEY_UP or key == ord("k"):
-                sel = max(0, sel - 1)
+                sel = max(0, sel - cols)
             elif key == curses.KEY_DOWN or key == ord("j"):
+                sel = min(len(_NETRECON) - 1, sel + cols)
+            elif key == curses.KEY_LEFT or key == ord("h"):
+                sel = max(0, sel - 1)
+            elif key == curses.KEY_RIGHT or key == ord("l"):
                 sel = min(len(_NETRECON) - 1, sel + 1)
             elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
                 mrd.clear()
@@ -1141,16 +1479,16 @@ def _netrecon(scr, mrd):
 # ── Device Info ──────────────────────────────────────────────────────
 
 _DEV = [
-    ("Device Info",     "info",            "Chip, firmware, MAC, SD card"),
-    ("Settings",        "settings",        "View Marauder settings"),
-    ("Random AP MAC",   "randapmac",       "Randomize AP MAC address"),
-    ("Random STA MAC",  "randstamac",      "Randomize station MAC address"),
-    ("Clear AP List",   "clearlist -a",    "Clear scanned APs"),
-    ("Clear STA List",  "clearlist -c",    "Clear scanned stations"),
-    ("Clear SSID List", "clearlist -s",    "Clear SSID list"),
-    ("LED Rainbow",     "led -p rainbow",  "Rainbow LED mode"),
-    ("LED Off",         "led -s 000000",   "Turn off LED"),
-    ("Reboot",          "reboot",          "Restart ESP32"),
+    ("Device Info",     "info",            "Chip, firmware, MAC, SD card",    "⚙"),
+    ("Settings",        "settings",        "View Marauder settings",          "⚙"),
+    ("Random AP MAC",   "randapmac",       "Randomize AP MAC address",        "⇋"),
+    ("Random STA MAC",  "randstamac",      "Randomize station MAC address",   "⇋"),
+    ("Clear AP List",   "clearlist -a",    "Clear scanned APs",               "▤"),
+    ("Clear STA List",  "clearlist -c",    "Clear scanned stations",          "▤"),
+    ("Clear SSID List", "clearlist -s",    "Clear SSID list",                 "▤"),
+    ("LED Rainbow",     "led -p rainbow",  "Rainbow LED mode",                "⁂"),
+    ("LED Off",         "led -s 000000",   "Turn off LED",                    "⁂"),
+    ("Reboot",          "reboot",          "Restart ESP32",                   "⚡"),
 ]
 
 
@@ -1159,34 +1497,29 @@ def _device(scr, mrd):
     js = open_gamepad()
     scr.timeout(100)
     sel = 0
+    cols = 1
     output = []
     status = ""
 
     while True:
         h, w = scr.getmaxyx()
         scr.erase()
-        val = curses.color_pair(C_ITEM)
         dim = curses.color_pair(C_DIM) | curses.A_DIM
 
-        tui.panel_top(scr, 0, 0, w, "DEVICE", mrd.dev_path)
+        tui.put(scr, 0, 0,
+                f" DEVICE  {mrd.dev_path} ".center(w),
+                w, curses.color_pair(C_HEADER) | curses.A_BOLD)
 
-        for i, (name, _cmd, desc) in enumerate(_DEV):
-            y = i + 2
-            if y >= h - 3:
-                break
-            mk = "\u25b8" if i == sel else " "
-            if name == "Reboot":
-                attr = curses.color_pair(C_CRIT) | curses.A_BOLD if i == sel else curses.color_pair(C_CRIT)
-            else:
-                attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else val
-            tui.put(scr, y, 1, f"{mk} {name:<18}{desc}", w - 2, attr)
-
-        list_bot = min(len(_DEV) + 2, h - 3)
-        tui.panel_bot(scr, list_bot, 0, w)
+        tiles = [{"name": n, "desc": d, "icon": ic}
+                 for n, _cmd, d, ic in _DEV]
+        content_y = 2
+        content_h = h - content_y - 3
+        cols, _rows = draw_tile_grid(scr, content_y, w, content_h,
+                                     tiles, sel)
 
         if output:
-            oy = list_bot + 1
-            for i, ln in enumerate(output[-(h - oy - 2):]):
+            oy = h - 3
+            for i, ln in enumerate(output[-2:]):
                 if oy + i >= h - 2:
                     break
                 tui.put(scr, oy + i, 2, ln[:w - 4], w - 4, dim)
@@ -1196,7 +1529,7 @@ def _device(scr, mrd):
                     curses.color_pair(C_STATUS) | curses.A_BOLD)
 
         tui.put(scr, h - 1, 0,
-                " \u2191\u2193 Select \u2502 A Run \u2502 B Back ".center(w),
+                " \u2191\u2193\u2190\u2192 Navigate \u2502 A Run \u2502 B Back ".center(w),
                 w, curses.color_pair(C_FOOTER))
         scr.refresh()
 
@@ -1206,11 +1539,15 @@ def _device(scr, mrd):
         if key == ord("q") or key == ord("Q") or gp == "back":
             break
         elif key == curses.KEY_UP or key == ord("k"):
-            sel = max(0, sel - 1)
+            sel = max(0, sel - cols)
         elif key == curses.KEY_DOWN or key == ord("j"):
+            sel = min(len(_DEV) - 1, sel + cols)
+        elif key == curses.KEY_LEFT or key == ord("h"):
+            sel = max(0, sel - 1)
+        elif key == curses.KEY_RIGHT or key == ord("l"):
             sel = min(len(_DEV) - 1, sel + 1)
         elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
-            name, cmd, _ = _DEV[sel]
+            name, cmd, _desc, _ic = _DEV[sel]
             if name == "Reboot":
                 if not _confirm(scr, "REBOOT", "Reboot ESP32?"):
                     continue
@@ -1288,3 +1625,25 @@ def _console(scr, mrd):
     if js:
         close_gamepad(js)
     scr.timeout(100)
+
+
+# ── Menu → function dispatch (index-synced with _MENU) ─────────────
+
+_MENU_FNS = None
+
+def _get_menu_fns():
+    """Lazy-init menu dispatch dict so forward refs are resolved."""
+    global _MENU_FNS
+    if _MENU_FNS is None:
+        _MENU_FNS = {
+            0: _wifi_scan,
+            1: _wifi_attack,
+            2: _sniffers,
+            3: _ble,
+            4: _sigmon,
+            5: _portal,
+            6: _netrecon,
+            7: _device,
+            8: _console,
+        }
+    return _MENU_FNS

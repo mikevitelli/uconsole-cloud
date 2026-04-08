@@ -232,7 +232,7 @@ CATEGORIES = [
             ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu"),
             ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu"),
             ("LoRa Radio",       "sub:lora",            "send, receive, range test",              "submenu"),
-            ("ESP32 Sensor",     "sub:esp32",           "hall, touch, serial, flash",             "submenu"),
+            ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action"),
         ],
     },
     {
@@ -627,8 +627,9 @@ def draw_menu(scr, y_start, w, items, sel_idx, scroll=0):
             scr.clrtoeol()
             continue
 
-        name, _script, desc, mode = items[idx]
-        icon = MODE_ICONS.get(mode, " ")
+        name, _script, desc, mode = items[idx][:4]
+        custom_icon = items[idx][4] if len(items[idx]) > 4 else None
+        icon = custom_icon or MODE_ICONS.get(mode, " ")
 
         if idx == sel_idx:
             marker = "▸"
@@ -1135,7 +1136,7 @@ def _submenu_run_selected(scr, items, sel_idx, js):
     if not items:
         return None, js
     h, w = scr.getmaxyx()
-    name, script, _desc, mode = items[sel_idx]
+    name, script, _desc, mode = items[sel_idx][:4]
 
     # Confirmation gate for dangerous commands
     if script in CONFIRM_SCRIPTS:
@@ -1161,11 +1162,7 @@ def _submenu_run_selected(scr, items, sel_idx, js):
                         curses.color_pair(C_HEADER) | curses.A_BOLD)
         scr.refresh()
         time.sleep(3)
-    if js:
-        close_gamepad(js)
-    js = open_gamepad()
-    read_gamepad(js)  # flush lingering button presses
-    _gp_set_cooldown()
+    js = _reopen_gamepad(js)
     return None, js
 
 
@@ -1195,11 +1192,13 @@ def run_submenu(scr, submenu_key, parent_title):
         if use_tiles:
             # Build tile dicts from items
             tiles = []
-            for name, script, desc, mode in items:
+            for item in items:
+                name, script, desc, mode = item[:4]
+                custom_icon = item[4] if len(item) > 4 else None
                 tiles.append({
                     "name": name,
                     "desc": desc,
-                    "icon": MODE_ICONS.get(mode, ""),
+                    "icon": custom_icon or MODE_ICONS.get(mode, ""),
                 })
             content_y = 2
             content_h = h - content_y - 3
@@ -1228,7 +1227,7 @@ def run_submenu(scr, submenu_key, parent_title):
 
             # Status hint
             if items:
-                _name, script, _desc, mode = items[sel_idx]
+                _name, script, _desc, mode = items[sel_idx][:4]
                 mode_label = {"panel": "view", "stream": "live", "action": "quick", "fullscreen": "terminal"}
                 draw_status_bar(scr, h, w, f"  {script}  [{mode_label.get(mode, mode)}]")
 
@@ -1286,22 +1285,38 @@ def run_submenu(scr, submenu_key, parent_title):
 
 _gp_back_cooldown = 0  # monotonic timestamp — ignore "back" until this time
 
-def _gp_set_cooldown(secs=0.35):
+def _gp_set_cooldown(secs=0.5):
     """Suppress gamepad 'back' for a short window after returning from a sub-view."""
     global _gp_back_cooldown
     _gp_back_cooldown = time.monotonic() + secs
 
 
-def _reopen_gamepad(js, scr=None):
+def _reopen_gamepad(js):
     """Close old gamepad, open fresh one, flush all input. Returns new js."""
     if js:
         close_gamepad(js)
     js = open_gamepad()
     read_gamepad(js)
-    if scr:
-        curses.flushinp()
+    curses.flushinp()
     _gp_set_cooldown()
     return js
+
+
+def _run_subview(scr, js, fn, *args):
+    """Call a sub-view function with full input-flush protection on return.
+
+    Closes the parent's gamepad before entering the sub-view (so the child
+    can open its own), then reopens + flushes + cooldowns on return.
+    Returns (result, new_js).
+    """
+    if js:
+        close_gamepad(js)
+    result = fn(scr, *args)
+    js = open_gamepad()
+    read_gamepad(js)
+    curses.flushinp()
+    _gp_set_cooldown()
+    return result, js
 
 
 def _tui_input_loop(scr, js, map_y_quit=False):
@@ -1637,11 +1652,13 @@ def main_tiles(scr):
             # Show items for selected category
             cat = CATEGORIES[cat_sel]
             tiles = []
-            for name, script, desc, mode in cat["items"]:
+            for item in cat["items"]:
+                name, script, desc, mode = item[:4]
+                custom_icon = item[4] if len(item) > 4 else None
                 tiles.append({
                     "name": name,
                     "desc": desc,
-                    "icon": MODE_ICONS.get(mode, ""),
+                    "icon": custom_icon or MODE_ICONS.get(mode, ""),
                 })
 
             cur_sel = (item_sel, level)
@@ -1736,7 +1753,7 @@ def main_tiles(scr):
                 # Run the selected item
                 items = CATEGORIES[cat_sel]["items"]
                 if items:
-                    name, script, _desc, mode = items[sel]
+                    name, script, _desc, mode = items[sel][:4]
                     draw_status_bar(scr, h, w, f"  ▶ Running {script}...",
                                     curses.color_pair(C_STATUS) | curses.A_BOLD)
                     scr.refresh()
@@ -1752,11 +1769,7 @@ def main_tiles(scr):
                                         curses.color_pair(C_HEADER) | curses.A_BOLD)
                         scr.refresh()
                         time.sleep(3)
-                    if js:
-                        close_gamepad(js)
-                    js = open_gamepad()
-                    read_gamepad(js)
-                    _gp_set_cooldown()
+                    js = _reopen_gamepad(js)
                     info = get_quick_info()
                     last_info_time = time.time()
         elif key == 27:  # ESC
@@ -1772,6 +1785,226 @@ def main_tiles(scr):
 
     close_gamepad(js)
     return None
+
+
+# ── ESP32 dynamic submenu items ──────────────────────────────────────────
+
+_ESP32_MICROPYTHON_ITEMS = [
+    ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel",      "📡"),
+    ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📊"),
+    ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "⌨"),
+    ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "⟩⟩"),
+    ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⇪"),
+    ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action",     "⟳"),
+    ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "✎"),
+    ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel",      "ℹ"),
+]
+
+_ESP32_MARAUDER_ITEMS = [
+    ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
+    ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
+    ("Scan APs",         "radio/esp32-marauder.sh scan ap", "scan nearby access points",             "stream",     "◎"),
+    ("Device Info",      "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "ℹ"),
+    ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
+    ("Reboot",           "radio/esp32-marauder.sh reboot",  "reboot ESP32",                          "action",     "⟳"),
+]
+
+_ESP32_COMMON_ITEMS = [
+    ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
+    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython or Marauder",          "action",     "⇄"),
+    ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
+]
+
+
+def _esp32_menu_for(firmware):
+    """Return submenu items for the detected firmware mode."""
+    from tui.esp32_detect import Firmware
+    if firmware == Firmware.MICROPYTHON:
+        items = list(_ESP32_MICROPYTHON_ITEMS)
+    elif firmware == Firmware.MARAUDER:
+        items = list(_ESP32_MARAUDER_ITEMS)
+    else:
+        items = [
+            ("Manual: MicroPython", "_esp32_force_mp",  "assume MicroPython firmware",  "action", "🐍"),
+            ("Manual: Marauder",    "_esp32_force_mrd", "assume Marauder firmware",     "action", "☠"),
+        ]
+    items.extend(_ESP32_COMMON_ITEMS)
+    return items
+
+
+def run_esp32_hub(scr):
+    """ESP32 hub — detect firmware, show appropriate submenu."""
+    from tui.esp32_detect import Firmware, detect, invalidate_cache
+
+    # Release Marauder serial connection if held (so detect() can open the port)
+    try:
+        from tui.marauder import _inst as _mrd_inst
+        if _mrd_inst and getattr(_mrd_inst, 'port', None):
+            _mrd_inst.close()
+    except Exception:
+        pass
+
+    h, w = scr.getmaxyx()
+    scr.erase()
+
+    # Detection splash
+    msg = " Detecting ESP32 firmware... "
+    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                curses.color_pair(C_HEADER) | curses.A_BOLD)
+    scr.refresh()
+
+    firmware = detect()
+
+    # Build dynamic submenu
+    SUBMENUS["sub:esp32"] = _esp32_menu_for(firmware)
+
+    # Show mode badge in title
+    badge = {
+        Firmware.MICROPYTHON: "MicroPython",
+        Firmware.MARAUDER: "Marauder",
+        Firmware.UNKNOWN: "Unknown",
+    }.get(firmware, "Unknown")
+
+    run_submenu(scr, "sub:esp32", f"ESP32 [{badge}]")
+
+
+def run_esp32_flash_picker(scr):
+    """Switch firmware — pick target and flash with safety gates."""
+    from tui.esp32_detect import Firmware, detect, invalidate_cache
+    from tui.esp32_flash import FlashError, flash
+
+    current = detect()
+
+    # Determine target (opposite of current)
+    if current == Firmware.MICROPYTHON:
+        target = Firmware.MARAUDER
+        target_name = "Marauder"
+    elif current == Firmware.MARAUDER:
+        target = Firmware.MICROPYTHON
+        target_name = "MicroPython"
+    else:
+        # Unknown — ask user to pick
+        target = Firmware.MARAUDER
+        target_name = "Marauder"
+
+    h, w = scr.getmaxyx()
+    scr.erase()
+
+    # Confirmation
+    msg = f" Flash {target_name}? (Y/N) "
+    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                curses.color_pair(C_HEADER) | curses.A_BOLD)
+    scr.refresh()
+    scr.timeout(-1)
+    key = scr.getch()
+    scr.timeout(100)
+    if key not in (ord("y"), ord("Y")):
+        return
+
+    # Flash with progress
+    scr.erase()
+    lines = []
+
+    def on_output(line):
+        lines.append(line)
+        y = min(len(lines), h - 2)
+        try:
+            scr.addnstr(y, 1, line[:w - 2], w - 2, curses.color_pair(C_DIM))
+            scr.refresh()
+        except curses.error:
+            pass
+
+    try:
+        scr.addnstr(0, 0, f" Flashing {target_name}... ".center(w), w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+        scr.refresh()
+        flash(target, on_output=on_output)
+        msg = f" Flash complete — {target_name} installed. Press any key. "
+    except FlashError as e:
+        msg = f" Flash failed: {e} "
+
+    scr.addnstr(h - 1, 0, msg[:w], w,
+                curses.color_pair(C_STATUS) | curses.A_BOLD)
+    scr.refresh()
+    scr.timeout(-1)
+    scr.getch()
+    scr.timeout(100)
+
+    # Invalidate cache so hub re-detects on return
+    invalidate_cache()
+
+
+def run_esp32_force(scr, firmware):
+    """Force-set detection to a specific firmware and re-enter hub."""
+    from tui.esp32_detect import Firmware, invalidate_cache, _cache
+    import time as _time
+    # Manually populate cache with forced value
+    _cache["firmware"] = firmware
+    _cache["port"] = "/dev/esp32"
+    _cache["timestamp"] = _time.time()
+    run_esp32_hub(scr)
+
+
+def _esp32_usb_reset(scr):
+    """USB-reset the ESP32 to recover from a hung state."""
+    from tui.esp32_detect import invalidate_cache
+    import subprocess
+
+    h, w = scr.getmaxyx()
+    scr.erase()
+    msg = " Resetting ESP32 via USB... "
+    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                curses.color_pair(C_HEADER) | curses.A_BOLD)
+    scr.refresh()
+
+    # Close Marauder connection if held
+    try:
+        from tui.marauder import _inst as _mrd_inst
+        if _mrd_inst and getattr(_mrd_inst, 'port', None):
+            _mrd_inst.close()
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(
+            ["usbreset", "CP2102 USB to UART Bridge Controller"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            import time
+            time.sleep(2)  # wait for device to re-enumerate
+            invalidate_cache()
+            msg = " ESP32 reset OK "
+        else:
+            msg = f" Reset failed: {result.stderr.strip()[:40]} "
+    except FileNotFoundError:
+        msg = " usbreset not installed "
+    except subprocess.TimeoutExpired:
+        msg = " Reset timed out "
+
+    scr.addnstr(h // 2 + 1, max(0, (w - len(msg)) // 2), msg, w,
+                curses.color_pair(C_STATUS) | curses.A_BOLD)
+    scr.refresh()
+    scr.timeout(-1)
+    scr.getch()
+    scr.timeout(100)
+
+
+def _esp32_redetect(scr):
+    """Invalidate cache and re-enter ESP32 hub."""
+    from tui.esp32_detect import invalidate_cache
+    invalidate_cache()
+    run_esp32_hub(scr)
+
+
+def _Firmware_MP():
+    from tui.esp32_detect import Firmware
+    return Firmware.MICROPYTHON
+
+
+def _Firmware_MRD():
+    from tui.esp32_detect import Firmware
+    return Firmware.MARAUDER
 
 
 def _get_native_tools():
@@ -1823,6 +2056,12 @@ def _get_native_tools():
         "_2048":        lambda scr: run_2048(scr),
         "_romlauncher": lambda scr: run_romlauncher(scr),
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
+        "_esp32_hub":     lambda scr: run_esp32_hub(scr),
+        "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
+        "_esp32_usb_reset": lambda scr: _esp32_usb_reset(scr),
+        "_esp32_redetect": lambda scr: _esp32_redetect(scr),
+        "_esp32_force_mp":  lambda scr: run_esp32_force(scr, _Firmware_MP()),
+        "_esp32_force_mrd": lambda scr: run_esp32_force(scr, _Firmware_MRD()),
         "_marauder":      lambda scr: run_marauder(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
@@ -2029,7 +2268,7 @@ def main(scr):
 
         # Status: selected item hint
         if items:
-            _name, script, _desc, mode = items[sel_idx]
+            _name, script, _desc, mode = items[sel_idx][:4]
             mode_label = {"panel": "view", "stream": "live", "action": "quick", "fullscreen": "terminal"}
             draw_status_bar(scr, h, w, f"  {script}  [{mode_label.get(mode, mode)}]")
 
@@ -2068,7 +2307,7 @@ def main(scr):
         # Run script
         elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "enter":
             if items:
-                name, script, _desc, mode = items[sel_idx]
+                name, script, _desc, mode = items[sel_idx][:4]
                 draw_status_bar(scr, h, w, f"  ▶ Running {script}...",
                                 curses.color_pair(C_STATUS) | curses.A_BOLD)
                 scr.refresh()
@@ -2085,11 +2324,7 @@ def main(scr):
                     scr.refresh()
                     time.sleep(3)
                 # Re-open gamepad (fd may be stale after curses endwin/reinit)
-                if js:
-                    close_gamepad(js)
-                js = open_gamepad()
-                read_gamepad(js)
-                _gp_set_cooldown()
+                js = _reopen_gamepad(js)
                 # Refresh info after running a script
                 info = get_quick_info()
                 last_info_time = time.time()
