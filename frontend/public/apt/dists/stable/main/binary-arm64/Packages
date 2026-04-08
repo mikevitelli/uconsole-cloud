@@ -7,10 +7,10 @@ Depends: python3 (>= 3.9), python3-flask (>= 2.2), python3-bcrypt, python3-socke
 Recommends: avahi-daemon, network-manager
 Suggests: gpsd, rtl-sdr, gh
 Filename: pool/main/u/uconsole-cloud/uconsole-cloud_0.1.5_arm64.deb
-Size: 847056
-MD5sum: e325b92a77bdec9d50034b8cbbc70055
-SHA1: 6fa8910718c87c45fe51650ee24b5510d485ed2d
-SHA256: 46f7b1583e3adece8d1166e5e54c6f70d6b5df7eceb4fdb64125e2afa002b427
+Size: 990148
+MD5sum: bf7658a12f528b8f125c7c8c694be816
+SHA1: 87a3ba525e45de9c018a2e2e95eb0d4267a5e704
+SHA256: 11faf617d3170c71240ef3091dca34f23b6284305d41be60f72718ea3a9cf8d3
 Section: utils
 Priority: optional
 Homepage: https://uconsole.cloud
