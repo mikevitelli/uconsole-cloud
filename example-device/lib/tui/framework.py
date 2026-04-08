@@ -134,17 +134,6 @@ SUBMENUS = {
         ("Discharge: Samsung-30Q","util/discharge-test.sh samsung-30q",        "overnight 30s log + git push","stream"),
         ("Discharge: Panasonic",  "util/discharge-test.sh panasonic-ga",       "overnight 30s log + git push","stream"),
     ],
-    "sub:esp32": [
-        ("Marauder",         "_marauder",                 "WiFi/BLE attack toolkit (ESP32)",        "action"),
-        ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel"),
-        ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action"),
-        ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen"),
-        ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen"),
-        ("Flash",            "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream"),
-        ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action"),
-        ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action"),
-        ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel"),
-    ],
     "sub:gps": [
         ("Status",           "radio/gps.sh status",       "position, altitude, satellites",          "panel"),
         ("Live Dashboard",   "radio/gps.sh live",         "real-time GPS display",                  "fullscreen"),
