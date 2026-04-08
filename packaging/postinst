@@ -80,6 +80,17 @@ case "$1" in
             fi
         fi
 
+        # Add Ctrl+` keybind for console TUI if labwc is installed
+        REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+        LABWC_RC="${REAL_HOME}/.config/labwc/rc.xml"
+        if [ -f "$LABWC_RC" ] && ! grep -q 'C-grave' "$LABWC_RC" 2>/dev/null; then
+            SNIPPET="/opt/uconsole/share/defaults/labwc-keybind.xml"
+            if [ -f "$SNIPPET" ]; then
+                sed -i '/<keyboard>/r '"$SNIPPET" "$LABWC_RC"
+                echo "Added Ctrl+\` keybind for console TUI"
+            fi
+        fi
+
         echo ""
         echo "========================================"
         echo "  uconsole-cloud installed!"
