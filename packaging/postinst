@@ -37,11 +37,17 @@ case "$1" in
         chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 
         # Inject actual username into all service units
-        REAL_USER="${SUDO_USER:-$(whoami)}"
-        if [ "$REAL_USER" != "root" ]; then
+        REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+        if [ "$REAL_USER" = "root" ]; then
+            # Fallback: find the first non-root user with a home directory
+            REAL_USER="$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1; exit}')"
+        fi
+        if [ -n "$REAL_USER" ] && [ "$REAL_USER" != "root" ]; then
             for unit in /etc/systemd/system/uconsole-*.service; do
                 [ -f "$unit" ] && sed -i "s/UCONSOLE_USER/${REAL_USER}/g" "$unit"
             done
+        else
+            echo "WARNING: Could not determine non-root user. Service units may need manual User= configuration." >&2
         fi
 
         # Enable nginx site

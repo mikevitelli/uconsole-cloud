@@ -1,4 +1,4 @@
-.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release clean
+.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install clean
 
 VERSION_FILE := VERSION
 VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
@@ -23,6 +23,19 @@ bump-major:
 	major=$$((major + 1)); \
 	echo "$$major.0.0" > $(VERSION_FILE); \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
+
+install:
+	@echo "Deploying device/ → /opt/uconsole/"
+	@sudo rsync -a --delete --exclude __pycache__ --exclude tests --exclude .pytest_cache \
+		--exclude .flake8 --exclude Makefile --exclude .git device/lib/ /opt/uconsole/lib/
+	@sudo rsync -a --delete --exclude __pycache__ device/scripts/ /opt/uconsole/scripts/
+	@sudo rsync -a --delete --exclude __pycache__ device/webdash/ /opt/uconsole/webdash/
+	@sudo rsync -a --delete device/bin/ /opt/uconsole/bin/
+	@sudo rsync -a --delete device/share/ /opt/uconsole/share/
+	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
+	@echo "Syncing device/ → ~/pkg/"
+	@rsync -a --delete --exclude __pycache__ --exclude .pytest_cache device/ $(HOME)/pkg/
+	@echo "Done. Restart webdash: sudo systemctl restart uconsole-webdash"
 
 build-deb:
 	bash packaging/build-deb.sh
