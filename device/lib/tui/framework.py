@@ -34,13 +34,16 @@ CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
 # Package version — read from VERSION file next to package root
 _VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
+_IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
 if not os.path.isfile(_VERSION_FILE):
     _VERSION_FILE = '/opt/uconsole/VERSION'
 try:
     with open(_VERSION_FILE) as _f:
         PKG_VERSION = _f.read().strip()
+        if _IS_DEV:
+            PKG_VERSION += '-dev'
 except OSError:
-    PKG_VERSION = ""
+    PKG_VERSION = "dev" if _IS_DEV else ""
 
 # ── Menu structure ──────────────────────────────────────────────────────────
 # Display modes:
