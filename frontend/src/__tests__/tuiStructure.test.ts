@@ -346,7 +346,7 @@ describe("TUI category coverage", () => {
     expect(scripts).toContain("sub:gps");
     expect(scripts).toContain("sub:sdr");
     expect(scripts).toContain("sub:lora");
-    expect(scripts).toContain("sub:esp32");
+    expect(scripts).toContain("_esp32_hub");
   });
 });
 
