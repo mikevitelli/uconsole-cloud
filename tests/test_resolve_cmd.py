@@ -8,9 +8,9 @@ import os
 import sys
 import pytest
 
-EXAMPLE_DEVICE = os.path.join(os.path.dirname(__file__), '..', 'example-device')
-LIB_DIR = os.path.join(EXAMPLE_DEVICE, 'lib')
-SCRIPTS_DIR = os.path.join(EXAMPLE_DEVICE, 'scripts')
+DEVICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'device')
+LIB_DIR = os.path.join(DEVICE_DIR, 'lib')
+SCRIPTS_DIR = os.path.join(DEVICE_DIR, 'scripts')
 
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
@@ -73,7 +73,7 @@ ALL_SCRIPT_REFS = _extract_all_script_names()
 
 
 class TestResolveCmdWithExampleDevice:
-    """Test _resolve_cmd using SCRIPTS_DIR = example-device/scripts/."""
+    """Test _resolve_cmd using SCRIPTS_DIR = device/scripts/."""
 
     @pytest.mark.parametrize("script_ref", ALL_SCRIPT_REFS)
     def test_resolves(self, script_ref):

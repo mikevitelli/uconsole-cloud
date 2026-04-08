@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add example-device/lib to path so we can import tui modules
-EXAMPLE_DEVICE = os.path.join(os.path.dirname(__file__), '..', 'example-device')
-LIB_DIR = os.path.join(EXAMPLE_DEVICE, 'lib')
-TUI_DIR = os.path.join(EXAMPLE_DEVICE, 'lib', 'tui')
-SCRIPTS_DIR = os.path.join(EXAMPLE_DEVICE, 'scripts')
+# Add device/lib to path so we can import tui modules
+DEVICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'device')
+LIB_DIR = os.path.join(DEVICE_DIR, 'lib')
+TUI_DIR = os.path.join(DEVICE_DIR, 'lib', 'tui')
+SCRIPTS_DIR = os.path.join(DEVICE_DIR, 'scripts')
 
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
@@ -78,13 +78,13 @@ def mock_stdscr_small():
 
 @pytest.fixture
 def scripts_dir():
-    """Return path to example-device/scripts/."""
+    """Return path to device/scripts/."""
     return SCRIPTS_DIR
 
 
 @pytest.fixture
 def tui_dir():
-    """Return path to example-device/lib/tui/."""
+    """Return path to device/lib/tui/."""
     return TUI_DIR
 
 

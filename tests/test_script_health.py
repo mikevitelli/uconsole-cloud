@@ -1,6 +1,6 @@
 """Tests for shell script health.
 
-Verifies every .sh script in example-device/scripts/ passes syntax checks,
+Verifies every .sh script in device/scripts/ passes syntax checks,
 has correct permissions, and follows conventions.
 """
 
@@ -8,7 +8,7 @@ import os
 import subprocess
 import pytest
 
-SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'example-device', 'scripts')
+SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'device', 'scripts')
 
 
 # Files that are sourced (not executed directly) and may be symlinks

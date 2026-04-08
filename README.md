@@ -273,7 +273,7 @@ uconsole-cloud/
 │   │   ├── install.sh              APT bootstrap installer
 │   │   └── apt/                    GPG-signed APT repository (Packages, Release, .deb)
 │   └── next.config.ts              Security headers, APT MIME types, image config
-├── example-device/                 Scrubbed device tree for contributors
+├── device/                         Canonical device source (TUI, webdash, scripts)
 │   ├── bin/                        uconsole CLI, console TUI launcher
 │   ├── lib/                        tui_lib.py, lib.sh, shared modules
 │   ├── scripts/                    46 scripts (system, power, network, radio, util)

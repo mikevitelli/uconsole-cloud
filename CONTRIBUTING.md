@@ -87,7 +87,7 @@ The device-side code targets arm64 Debian Bookworm. Scripts are organized under 
 | `radio/` | sdr, lora, gps, rtc, marauder | AIO board features (optional hardware) |
 | `util/` | forum browser, games, misc tools | Everything else |
 
-The `example-device/` directory contains a scrubbed copy of the device tree that allows `.deb` builds without access to the private backup repo.
+The `device/` directory is the canonical source for the device package (TUI, webdash, scripts). The `.deb` package is built directly from this directory.
 
 If you're modifying device-side code, test on actual hardware or an arm64 VM when possible.
 
