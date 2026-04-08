@@ -7,7 +7,7 @@ import sys
 
 # Add module paths — prefer dev tree over installed package
 _pkg_lib = '/opt/uconsole/lib'
-_dev_lib = os.path.expanduser('~/pkg/lib')
+_dev_lib = os.path.expanduser('~/uconsole-cloud/device/lib')
 if os.path.isdir(_pkg_lib):
     sys.path.insert(0, _pkg_lib)
 if os.path.isdir(_dev_lib):
