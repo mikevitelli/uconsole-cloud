@@ -1,4 +1,4 @@
-.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install clean
+.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode clean
 
 VERSION_FILE := VERSION
 VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
@@ -35,7 +35,29 @@ install:
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
 	@rsync -a --exclude __pycache__ --exclude .pytest_cache device/ $(HOME)/pkg/
-	@echo "Done. Restart webdash: sudo systemctl restart uconsole-webdash"
+	@if systemctl is-active --quiet uconsole-webdash 2>/dev/null; then \
+		sudo systemctl restart uconsole-webdash; \
+		echo "Done. Webdash restarted."; \
+	else \
+		echo "Done."; \
+	fi
+
+dev-mode:
+	@REAL_USER=$$(logname 2>/dev/null || whoami); \
+	REAL_HOME=$$(getent passwd "$$REAL_USER" | cut -d: -f6); \
+	REPO_ROOT=$$(pwd); \
+	sudo mkdir -p /etc/systemd/system/uconsole-webdash.service.d; \
+	printf '[Service]\nExecStart=\nExecStart=/usr/bin/python3 %s/device/webdash/app.py\nWorkingDirectory=%s/device/webdash\n' \
+		"$$REPO_ROOT" "$$REPO_ROOT" | sudo tee /etc/systemd/system/uconsole-webdash.service.d/dev.conf >/dev/null; \
+	sudo systemctl daemon-reload; \
+	sudo systemctl restart uconsole-webdash 2>/dev/null || true; \
+	echo "Dev mode: webdash running from $$REPO_ROOT/device/webdash/"
+
+pkg-mode:
+	@sudo rm -f /etc/systemd/system/uconsole-webdash.service.d/dev.conf; \
+	sudo systemctl daemon-reload; \
+	sudo systemctl restart uconsole-webdash 2>/dev/null || true; \
+	echo "Package mode: webdash running from /opt/uconsole/webdash/"
 
 build-deb:
 	bash packaging/build-deb.sh
