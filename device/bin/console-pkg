@@ -1,0 +1,10 @@
+#!/bin/bash
+# Launch console using only the installed package (no dev tree)
+export UCONSOLE_PKG_ONLY=1
+/usr/bin/console
+ret=$?
+if [ $ret -ne 0 ]; then
+    echo "console-pkg exited with code $ret"
+    echo "Press Enter to close..."
+    read
+fi
