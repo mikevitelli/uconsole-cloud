@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.5 (2026-04-08)
+
+Canonical source restructure, dev workflow, and TUI polish.
+
+### Changed
+- **Canonical source**: `example-device/` renamed to `device/` — this is now the source of truth for the device package, not a copy
+- **Branching**: `dev`/`main` workflow — `dev` for active work, `main` for released state only
+- **Default view**: TUI default view mode changed from list to tiles
+- **CI**: triggers on `dev` branch instead of `staging`
+- **build-deb.sh**: reads from `device/` by default instead of `~/uconsole/pkg`
+
+### Added
+- `make install` target — rsyncs `device/` to `/opt/uconsole/` and `~/pkg/` for rapid dev iteration
+- Version number displayed in TUI footer on all screens (tiles, list, submenus, panel, stream, process manager)
+- `device/VERSION` file for dev-tree version display
+
+### Fixed
+- **postinst**: `User=UCONSOLE_USER` substitution when `SUDO_USER` is unset — falls back to `logname`, then first non-root user (UID >= 1000). Previously left the placeholder in systemd units, causing crash loop.
+- **rsync**: removed `--delete` from `~/pkg/` sync to preserve backup-only files (configs, package manifests, SSH keys, WiFi connections)
+
+---
+
 ## v0.1.4 (2026-04-06)
 
 Security hardening release. Backfills the full security audit from 2026-04-04 that was missed in v0.1.3.
