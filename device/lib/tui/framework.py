@@ -32,6 +32,16 @@ SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
     else '/opt/uconsole/scripts')
 CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
+# Package version — read from VERSION file next to package root
+_VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
+if not os.path.isfile(_VERSION_FILE):
+    _VERSION_FILE = '/opt/uconsole/VERSION'
+try:
+    with open(_VERSION_FILE) as _f:
+        PKG_VERSION = _f.read().strip()
+except OSError:
+    PKG_VERSION = ""
+
 # ── Menu structure ──────────────────────────────────────────────────────────
 # Display modes:
 #   "panel"    — capture output, show in scrollable curses panel
@@ -535,7 +545,7 @@ def load_theme():
 
 
 def load_view_mode():
-    return load_config().get("view_mode", "list")
+    return load_config().get("view_mode", "tiles")
 
 
 def _resolve_theme(name=None):
@@ -579,10 +589,19 @@ def draw_header(scr, w):
         scr.addnstr(i, x, line, w, curses.color_pair(C_HEADER) | curses.A_BOLD)
 
 
+def _footer_bar(help_text, w):
+    """Build a footer string with version on the left and help centered."""
+    ver = f" v{PKG_VERSION}" if PKG_VERSION else ""
+    pad = w - len(ver)
+    if pad > len(help_text):
+        return ver + help_text.center(pad)
+    return (ver + help_text)[:w]
+
+
 def draw_footer(scr, h, w):
-    bar = FOOTER_HELP.center(w)
+    bar = _footer_bar(FOOTER_HELP, w)
     try:
-        scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+        scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
     except curses.error:
         pass
 
@@ -872,9 +891,9 @@ def run_panel(scr, script_name, title):
             if len(lines) > view_h:
                 pct = min(100, (scroll + view_h) * 100 // len(lines))
                 more = f" {pct}%"
-            bar = f" ↑↓ Scroll │ X Refresh │ B Back{more} ".center(w)
+            bar = _footer_bar(f" ↑↓ Scroll │ X Refresh │ B Back{more} ", w)
             try:
-                scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+                scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
             except curses.error:
                 pass
 
@@ -981,11 +1000,11 @@ def run_stream(scr, script_name, title):
 
             # Footer
             if running:
-                bar = f" {len(snap)} lines │ running... ".center(w)
+                bar = _footer_bar(f" {len(snap)} lines │ running... ", w)
             else:
-                bar = f" Done ({len(snap)} lines) │ X Re-run │ B/q Back ".center(w)
+                bar = _footer_bar(f" Done ({len(snap)} lines) │ X Re-run │ B/q Back ", w)
             try:
-                scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+                scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
             except curses.error:
                 pass
 
@@ -1212,7 +1231,7 @@ def run_submenu(scr, submenu_key, parent_title):
             except curses.error:
                 pass
 
-            bar = " ↑↓←→ Navigate │ A Run │ B Back ".center(w)
+            bar = _footer_bar(" ↑↓←→ Navigate │ A Run │ B Back ", w)
         else:
             # List mode
             menu_y = 2
@@ -1231,11 +1250,11 @@ def run_submenu(scr, submenu_key, parent_title):
                 mode_label = {"panel": "view", "stream": "live", "action": "quick", "fullscreen": "terminal"}
                 draw_status_bar(scr, h, w, f"  {script}  [{mode_label.get(mode, mode)}]")
 
-            bar = " ↑↓ Navigate │ Enter Run │ B/ESC Back ".center(w)
+            bar = _footer_bar(" ↑↓ Navigate │ Enter Run │ B/ESC Back ", w)
 
         # Footer
         try:
-            scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+            scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
         except curses.error:
             pass
 
@@ -1395,9 +1414,9 @@ def run_process_manager(scr):
             except curses.error:
                 pass
 
-        bar = " ↑↓ Select │ A Kill │ X Sort │ B Back ".center(w)
+        bar = _footer_bar(" ↑↓ Select │ A Kill │ X Sort │ B Back ", w)
         try:
-            scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+            scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
         except curses.error:
             pass
         scr.refresh()
@@ -1646,7 +1665,7 @@ def main_tiles(scr):
                 pass
 
             # Footer
-            bar = " ↑↓←→ Navigate │ A Select │ X Refresh │ Y Quit ".center(w)
+            bar = _footer_bar(" ↑↓←→ Navigate │ A Select │ X Refresh │ Y Quit ", w)
 
         else:
             # Show items for selected category
@@ -1677,10 +1696,10 @@ def main_tiles(scr):
                 pass
 
             # Footer
-            bar = " ↑↓←→ Navigate │ A Run │ B Back │ X Refresh │ Y Quit ".center(w)
+            bar = _footer_bar(" ↑↓←→ Navigate │ A Run │ B Back │ X Refresh │ Y Quit ", w)
 
         try:
-            scr.addnstr(h - 1, 0, bar, w, curses.color_pair(C_FOOTER))
+            scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
         except curses.error:
             pass
 
