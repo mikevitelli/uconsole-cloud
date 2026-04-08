@@ -33,8 +33,8 @@ install:
 	@sudo rsync -a --delete device/bin/ /opt/uconsole/bin/
 	@sudo rsync -a --delete device/share/ /opt/uconsole/share/
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
-	@echo "Syncing device/ → ~/pkg/"
-	@rsync -a --delete --exclude __pycache__ --exclude .pytest_cache device/ $(HOME)/pkg/
+	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
+	@rsync -a --exclude __pycache__ --exclude .pytest_cache device/ $(HOME)/pkg/
 	@echo "Done. Restart webdash: sudo systemctl restart uconsole-webdash"
 
 build-deb:
