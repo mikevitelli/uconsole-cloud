@@ -35,7 +35,7 @@ def invalidate_cache():
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
-_PORTS = ["/dev/esp32", "/dev/ttyUSB0"]
+_PORTS = ["/dev/esp32", "/dev/ttyACM0", "/dev/ttyUSB0"]
 
 
 def get_port():

@@ -21,6 +21,7 @@ from tui.esp32_detect import (
 # ── Firmware binary paths ──────────────────────────────────────────
 
 _MARAUDER_DIR = os.path.expanduser("~/marauder")
+_MARAUDER_S3_DIR = os.path.join(_MARAUDER_DIR, "s3")
 _MICROPYTHON_DIR = os.path.expanduser("~/esp32")
 
 _MICROPYTHON_BIN = os.path.join(_MICROPYTHON_DIR, "micropython.bin")
@@ -28,9 +29,17 @@ _MICROPYTHON_BIN = os.path.join(_MICROPYTHON_DIR, "micropython.bin")
 # Marauder flash layout (app-only update at 0x10000)
 _MARAUDER_OFFSET = "0x10000"
 
-# Full flash from scratch (bootloader + partition table + OTA + app)
+# Full flash from scratch — ESP32 original (bootloader at 0x1000)
 _MARAUDER_FULL_LAYOUT = [
     ("0x1000", "esp32_marauder.ino.bootloader.bin"),
+    ("0x8000", "esp32_marauder.ino.partitions.bin"),
+    ("0xe000", "boot_app0.bin"),
+    ("0x10000", None),  # filled dynamically with latest firmware bin
+]
+
+# Full flash from scratch — ESP32-S3 (bootloader at 0x0)
+_MARAUDER_S3_FULL_LAYOUT = [
+    ("0x0", "esp32_marauder.ino.bootloader.bin"),
     ("0x8000", "esp32_marauder.ino.partitions.bin"),
     ("0xe000", "boot_app0.bin"),
     ("0x10000", None),  # filled dynamically with latest firmware bin
@@ -49,7 +58,16 @@ class FlashError(Exception):
 
 
 def find_marauder_bin():
-    """Return the path to the latest Marauder firmware .bin, or None."""
+    """Return the path to the latest Marauder firmware .bin, or None.
+
+    Checks the S3 custom build directory first (~/marauder/s3/build/),
+    then falls back to prebuilt binaries in ~/marauder/.
+    """
+    # S3 custom HWCDC build
+    s3_bin = os.path.join(_MARAUDER_S3_DIR, "build", "esp32_marauder.ino.bin")
+    if os.path.isfile(s3_bin):
+        return s3_bin
+    # Prebuilt LDDB binaries
     pattern = os.path.join(_MARAUDER_DIR, "esp32_marauder_v*_esp32_lddb.bin")
     bins = sorted(glob.glob(pattern))
     return bins[-1] if bins else None
