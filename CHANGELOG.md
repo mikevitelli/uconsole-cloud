@@ -14,7 +14,7 @@ Security hardening release. Backfills the full security audit from 2026-04-04 th
 - Updated trackball-scroll.py
 
 ### Fixed
-- Sanitized example-device: removed SSH keys, pulse cookie, GitHub repo list, device-specific configs from published package
+- Sanitized device source (formerly example-device): removed SSH keys, pulse cookie, GitHub repo list, device-specific configs from published package
 - Test assertions updated for SCRIPT_DIR refactor
 
 ---

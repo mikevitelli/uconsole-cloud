@@ -1,18 +1,18 @@
 /**
  * Tests that device-side script references match the actual script directory layout.
  * Validates that webdash ALLOWED_SCRIPTS, TUI menu entries, and CLI push paths
- * all point to scripts that exist in example-device/scripts/.
+ * all point to scripts that exist in device/scripts/.
  */
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../");
-const EXAMPLE_DEVICE = path.join(REPO_ROOT, "example-device");
-const SCRIPTS_DIR = path.join(EXAMPLE_DEVICE, "scripts");
-const WEBDASH_APP = path.join(EXAMPLE_DEVICE, "webdash", "app.py");
-const TUI_FRAMEWORK = path.join(EXAMPLE_DEVICE, "lib", "tui", "framework.py");
-const TUI_NETWORK = path.join(EXAMPLE_DEVICE, "lib", "tui", "network.py");
+const DEVICE_DIR = path.join(REPO_ROOT, "device");
+const SCRIPTS_DIR = path.join(DEVICE_DIR, "scripts");
+const WEBDASH_APP = path.join(DEVICE_DIR, "webdash", "app.py");
+const TUI_FRAMEWORK = path.join(DEVICE_DIR, "lib", "tui", "framework.py");
+const TUI_NETWORK = path.join(DEVICE_DIR, "lib", "tui", "network.py");
 const CLI_SCRIPT = path.join(
   REPO_ROOT,
   "frontend",
@@ -21,7 +21,7 @@ const CLI_SCRIPT = path.join(
   "uconsole"
 );
 
-// Collect all .sh files in example-device/scripts/ recursively
+// Collect all .sh files in device/scripts/ recursively
 function getScriptFiles(dir: string): Set<string> {
   const files = new Set<string>();
   function walk(d: string) {
@@ -74,7 +74,7 @@ describe("webdash ALLOWED_SCRIPTS paths", () => {
     expect(referencedScripts.length).toBeGreaterThanOrEqual(50);
   });
 
-  it("all referenced scripts exist in example-device/scripts/", () => {
+  it("all referenced scripts exist in device/scripts/", () => {
     const missing: string[] = [];
     for (const { subdir, name } of referencedScripts) {
       const relPath = `${subdir}/${name}`;
@@ -135,7 +135,7 @@ describe("TUI framework script paths", () => {
     expect(flat).toEqual([]);
   });
 
-  it("all referenced scripts exist in example-device/scripts/", () => {
+  it("all referenced scripts exist in device/scripts/", () => {
     const missing: string[] = [];
     for (const scriptPath of referencedPaths) {
       if (!existingScripts.has(scriptPath)) {

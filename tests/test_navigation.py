@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-EXAMPLE_DEVICE = os.path.join(os.path.dirname(__file__), '..', 'example-device')
-LIB_DIR = os.path.join(EXAMPLE_DEVICE, 'lib')
-TUI_DIR = os.path.join(EXAMPLE_DEVICE, 'lib', 'tui')
+DEVICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'device')
+LIB_DIR = os.path.join(DEVICE_DIR, 'lib')
+TUI_DIR = os.path.join(DEVICE_DIR, 'lib', 'tui')
 
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)

@@ -96,7 +96,7 @@
 - [x] `curl -s https://uconsole.cloud/install | sudo bash` bootstrap story
 - [x] GitHub Actions release workflow (build .deb, publish to APT repo)
 - [x] Makefile targets: build-deb, publish-apt, release, version bumps
-- [x] example-device/ bundled for self-contained builds without private repo
+- [x] device/ is the canonical source for self-contained builds
 
 ---
 

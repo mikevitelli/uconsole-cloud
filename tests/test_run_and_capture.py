@@ -7,8 +7,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-EXAMPLE_DEVICE = os.path.join(os.path.dirname(__file__), '..', 'example-device')
-LIB_DIR = os.path.join(EXAMPLE_DEVICE, 'lib')
+DEVICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'device')
+LIB_DIR = os.path.join(DEVICE_DIR, 'lib')
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
 
@@ -92,9 +92,9 @@ class TestRunAndCapture:
 
 
 class TestRunAndCaptureWithRealScripts:
-    """Run actual scripts from example-device/scripts/ and verify output."""
+    """Run actual scripts from device/scripts/ and verify output."""
 
-    SCRIPTS_DIR = os.path.join(EXAMPLE_DEVICE, 'scripts')
+    SCRIPTS_DIR = os.path.join(DEVICE_DIR, 'scripts')
 
     def _script_path(self, rel):
         return os.path.join(self.SCRIPTS_DIR, rel)
