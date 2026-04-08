@@ -139,8 +139,10 @@ class TestTUIModuleExports:
     @pytest.mark.parametrize("module_file", TUI_MODULES)
     def test_module_has_run_functions(self, module_file):
         """Each non-framework module should export at least one run_ function."""
-        if module_file == 'framework.py':
-            pytest.skip("framework.py is the main module")
+        # Utility modules that support TUI handlers but aren't handlers themselves
+        UTILITY_MODULES = {'framework.py', 'esp32_detect.py', 'esp32_flash.py'}
+        if module_file in UTILITY_MODULES:
+            pytest.skip(f"{module_file} is a utility module")
         module_name = f"tui.{module_file[:-3]}"
         mod = importlib.import_module(module_name)
         run_funcs = [x for x in dir(mod) if x.startswith('run_')]
