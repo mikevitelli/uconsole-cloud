@@ -8,7 +8,7 @@ import time
 
 from tui.framework import (
     C_BORDER, C_CAT, C_DIM, C_FOOTER, C_HEADER, C_ITEM, C_SEL, C_STATUS,
-    _tui_input_loop, open_gamepad, wait_for_input,
+    _gp_set_cooldown, _tui_input_loop, open_gamepad, read_gamepad, wait_for_input,
 )
 import tui_lib as tui
 
@@ -1369,6 +1369,9 @@ def run_romlauncher(scr):
             in_system = False
         elif key == ord("y"):
             _emulator_config_menu(scr, js)
+            read_gamepad(js)
+            curses.flushinp()
+            _gp_set_cooldown()
         elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter" or key == ord("a"):
             if not system_names:
                 continue

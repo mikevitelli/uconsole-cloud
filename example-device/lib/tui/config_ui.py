@@ -31,6 +31,9 @@ from tui.framework import (
     load_config,
     load_theme,
     load_view_mode,
+    _reopen_gamepad,
+    _tui_input_loop,
+    close_gamepad,
     open_gamepad,
     read_gamepad,
     save_config,
@@ -125,17 +128,7 @@ def run_custom_theme_picker(scr):
 
         scr.refresh()
 
-        try:
-            key = scr.getch()
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_A:
-                gp_action = "apply"
-            elif btn == GP_B or btn == GP_Y:
-                gp_action = "back"
+        key, gp_action = _tui_input_loop(scr, js)
 
         if key == -1 and gp_action is None:
             continue
@@ -155,7 +148,7 @@ def run_custom_theme_picker(scr):
                 pri_sel = (pri_sel + 1) % len(COLOR_NAMES)
             else:
                 sec_sel = (sec_sel + 1) % len(COLOR_NAMES)
-        elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "apply":
+        elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "enter":
             save_config_multi({
                 "custom_primary": COLOR_NAMES[pri_sel],
                 "custom_secondary": COLOR_NAMES[sec_sel],
@@ -166,7 +159,7 @@ def run_custom_theme_picker(scr):
 
     apply_theme()
     if js:
-        js.close()
+        close_gamepad(js)
 
 def _draw_theme_tile(scr, y, x, tw, th, name, tile_idx, selected, active):
     """Draw a single theme tile with color preview swatch.
@@ -311,25 +304,13 @@ def run_theme_picker(scr):
 
         scr.refresh()
 
-        try:
-            key = scr.getch()
-        except curses.error:
-            key = -1
-
-        gp_action = None
-        for btn in read_gamepad(js):
-            if btn == GP_A:
-                gp_action = "apply"
-            elif btn == GP_B or btn == GP_Y:
-                gp_action = "back"
-            elif btn == GP_X:
-                gp_action = "next_folder"
+        key, gp_action = _tui_input_loop(scr, js)
 
         if key == -1 and gp_action is None:
             continue
         elif key == ord("q") or key == ord("Q") or key == 27 or gp_action == "back":
             break
-        elif key == ord("\t") or key == curses.KEY_NPAGE or key == ord("]") or gp_action == "next_folder":
+        elif key == ord("\t") or key == curses.KEY_NPAGE or key == ord("]") or gp_action == "refresh":
             folder_idx = (folder_idx + 1) % len(THEME_FOLDERS)
             sel = 0
         elif key == curses.KEY_BTAB or key == curses.KEY_PPAGE or key == ord("["):
@@ -347,15 +328,14 @@ def run_theme_picker(scr):
         elif key == curses.KEY_UP or key == ord("k"):
             if sel - cols >= 0:
                 sel -= cols
-        elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "apply":
+        elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "enter":
             name = folder_themes[sel]
             if name == "custom":
                 if js:
-                    js.close()
-                    js = None
+                    close_gamepad(js)
                 run_custom_theme_picker(scr)
                 current = load_theme()
-                js = open_gamepad()
+                js = _reopen_gamepad(None)
             else:
                 save_config("theme", name)
                 apply_theme(name)
@@ -363,7 +343,7 @@ def run_theme_picker(scr):
 
     apply_theme()
     if js:
-        js.close()
+        close_gamepad(js)
 
 def run_bat_gauge_toggle(scr):
     """Toggle battery gauge mode: auto (vest when discharging, capacity when charging), vest-only, or capacity-only."""
