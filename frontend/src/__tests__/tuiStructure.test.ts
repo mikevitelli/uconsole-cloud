@@ -8,14 +8,14 @@ import fs from "fs";
 import path from "path";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../");
-const EXAMPLE_DEVICE = path.join(REPO_ROOT, "example-device");
-const SCRIPTS_DIR = path.join(EXAMPLE_DEVICE, "scripts");
-const TUI_DIR = path.join(EXAMPLE_DEVICE, "lib", "tui");
+const DEVICE_DIR = path.join(REPO_ROOT, "device");
+const SCRIPTS_DIR = path.join(DEVICE_DIR, "scripts");
+const TUI_DIR = path.join(DEVICE_DIR, "lib", "tui");
 const FRAMEWORK = fs.readFileSync(path.join(TUI_DIR, "framework.py"), "utf-8");
 const NETWORK = fs.readFileSync(path.join(TUI_DIR, "network.py"), "utf-8");
 const SERVICES = fs.readFileSync(path.join(TUI_DIR, "services.py"), "utf-8");
 
-// All .sh files in example-device/scripts/ (relative paths)
+// All .sh files in device/scripts/ (relative paths)
 function getScriptFiles(): Set<string> {
   const files = new Set<string>();
   function walk(dir: string) {
@@ -188,7 +188,7 @@ describe("TUI script references resolve to real files", () => {
     expect(flat.map((e) => `${e.label}: ${e.script}`)).toEqual([]);
   });
 
-  it("all referenced .sh files exist in example-device/scripts/", () => {
+  it("all referenced .sh files exist in device/scripts/", () => {
     const missing: string[] = [];
     for (const entry of scriptEntries) {
       const scriptFile = entry.script.split(/\s+/)[0]; // strip args

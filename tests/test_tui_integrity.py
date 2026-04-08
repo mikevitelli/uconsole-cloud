@@ -3,7 +3,7 @@
 
 Verifies that every import, native tool, script path, and menu reference
 in framework.py actually resolves. Catches the class of bug where the
-cloud repo's example-device/ and the device's installed files diverge.
+cloud repo's device/ and the device's installed files diverge.
 
 Run: python3 -m pytest tests/test_tui_integrity.py -v
 """
@@ -17,13 +17,13 @@ import pytest
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 
-EXAMPLE_DEVICE = os.path.join(os.path.dirname(__file__), '..', 'example-device')
-TUI_DIR = os.path.join(EXAMPLE_DEVICE, 'lib', 'tui')
-SCRIPTS_DIR = os.path.join(EXAMPLE_DEVICE, 'scripts')
+DEVICE_DIR = os.path.join(os.path.dirname(__file__), '..', 'device')
+TUI_DIR = os.path.join(DEVICE_DIR, 'lib', 'tui')
+SCRIPTS_DIR = os.path.join(DEVICE_DIR, 'scripts')
 FRAMEWORK_PY = os.path.join(TUI_DIR, 'framework.py')
 
 # Ensure we can import tui modules
-LIB_DIR = os.path.join(EXAMPLE_DEVICE, 'lib')
+LIB_DIR = os.path.join(DEVICE_DIR, 'lib')
 if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
 
@@ -329,7 +329,7 @@ class TestScriptPaths:
         assert len(self.script_refs) > 0
 
     def test_each_script_exists(self):
-        """Every script path referenced in menus must exist in example-device/scripts/."""
+        """Every script path referenced in menus must exist in device/scripts/."""
         missing = []
         for script_path in self.script_refs:
             full_path = os.path.join(SCRIPTS_DIR, script_path)
@@ -338,7 +338,7 @@ class TestScriptPaths:
         if missing:
             pytest.fail(
                 f"{len(missing)} script(s) referenced in menus but not found in "
-                f"example-device/scripts/:\n" + "\n".join(f"  - {s}" for s in sorted(missing))
+                f"device/scripts/:\n" + "\n".join(f"  - {s}" for s in sorted(missing))
             )
 
     def test_scripts_are_executable(self):
