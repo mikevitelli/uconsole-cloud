@@ -297,9 +297,12 @@ class TestSubmenuIntegrity:
         if missing:
             pytest.fail(f"Submenu references with no definition: {missing}")
 
+    # Submenus populated dynamically at runtime (not visible to static AST check)
+    DYNAMIC_SUBMENUS = {"sub:esp32"}
+
     def test_all_submenu_defs_are_referenced(self):
         """Every SUBMENUS key should be referenced somewhere in CATEGORIES."""
-        unreferenced = self.submenu_keys - self.submenu_refs
+        unreferenced = self.submenu_keys - self.submenu_refs - self.DYNAMIC_SUBMENUS
         if unreferenced:
             pytest.fail(f"Submenu definitions never referenced: {unreferenced}")
 

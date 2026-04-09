@@ -34,6 +34,7 @@ install:
 	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
 	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
 	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
+	@sudo cp frontend/public/scripts/uconsole /opt/uconsole/bin/uconsole 2>/dev/null || true
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
 	@rsync -a $(RSYNC_EXCLUDE) device/ $(HOME)/pkg/
