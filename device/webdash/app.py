@@ -246,7 +246,7 @@ def api_set_password():
 
 @app.route('/api/change-password', methods=['POST'])
 def api_change_password():
-    if not _is_authenticated(request):
+    if not _is_authenticated():
         return jsonify({'error': 'Not authenticated'}), 401
     pw = request.form.get('password', '')
     confirm = request.form.get('confirm', '')
