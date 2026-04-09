@@ -398,6 +398,18 @@ cmd_update() {
   echo "Updated to latest versions."
 }
 
+cmd_passwd() {
+  if [ "$INSTALL_MODE" = "package" ]; then
+    if [ -x /opt/uconsole/bin/uconsole-passwd ]; then
+      exec /opt/uconsole/bin/uconsole-passwd "$@"
+    else
+      die "uconsole-passwd not found"
+    fi
+  else
+    die "Password management requires package install"
+  fi
+}
+
 cmd_doctor() {
   echo "uconsole doctor (${INSTALL_MODE} mode)"
   echo ""
@@ -654,6 +666,7 @@ cmd_help() {
   echo "  push     Push status now"
   echo "  status   Show current config and last push"
   echo "  logs     Show service logs (webdash, status, backup, update)"
+  echo "  passwd   Change webdash password"
   echo "  doctor   Diagnose connectivity and configuration"
   echo "  restore  Run restore.sh from backup repo"
   echo "  unlink   Remove config and stop timer"
@@ -677,6 +690,7 @@ case "$COMMAND" in
   push)    cmd_push ;;
   status)  cmd_status ;;
   logs)    cmd_logs "$@" ;;
+  passwd)  cmd_passwd "$@" ;;
   doctor)  cmd_doctor ;;
   restore) cmd_restore ;;
   unlink)  cmd_unlink ;;
