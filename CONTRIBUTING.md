@@ -74,28 +74,85 @@ If you don't have a uConsole, you can still run the Python tests and lint the sh
 
 ## Testing
 
+The project has 4 test layers, from fast/local to slow/device-specific:
+
+### 1. Source tests (runs anywhere, no hardware needed)
+
 ```bash
-# Frontend (requires Node 22+)
-npm test                                    # 117 vitest tests
-npm run lint                                # ESLint
-npx -w @uconsole/frontend tsc --noEmit     # typecheck
-
-# Device (Python 3.9+, runs on any platform)
-pip install pytest
-python3 -m pytest tests/ -v                # 821 tests
-
-# Shell scripts
-find device/scripts -name "*.sh" -exec bash -n {} \;
-
-# Python syntax
-find device -name "*.py" -exec python3 -m py_compile {} \;
-
-# Full build check
-npm run build -w @uconsole/frontend
-make build-deb                              # builds the .deb (arm64)
+make test-device                    # 821 pytest tests + bash syntax + py_compile
+make test-frontend                  # vitest + eslint + typecheck (requires Node 22)
+make test                           # both of the above
 ```
 
-The Python test suite checks structural integrity — every menu entry resolves to a real script, every import resolves, every native tool handler exists, scripts have correct permissions and shebangs. It catches the class of bug where you rename a function and forget to update the menu that references it.
+What these catch: broken imports, missing scripts, menu/handler mismatches, shell syntax errors, TypeScript type errors, frontend regressions.
+
+### 2. Docker install test (requires Docker, no hardware needed)
+
+```bash
+make test-install                   # builds .deb, installs in arm64 Debian Bookworm container
+```
+
+Runs 30+ tests in a fresh Debian container via QEMU arm64 emulation:
+- Package installs cleanly
+- postinst runs (User= substitution, SSL certs, default password, nginx, config)
+- Upgrade preserves config and passwords
+- Uninstall removes CLI/completion but keeps config
+- Purge removes everything
+- Reinstall after purge works
+
+On Apple Silicon or arm64 Linux, this runs natively (~40s). On x86, QEMU emulates (~3 min).
+
+To explore the container interactively:
+```bash
+sudo docker run --rm -it uconsole-test bash
+```
+
+### 3. End-to-end test (requires the real device)
+
+```bash
+make test-e2e                       # installs .deb, tests live system
+```
+
+Tests on the actual uConsole with real systemd, nginx, mDNS:
+- Installs the .deb (prompts for confirmation)
+- Runs `uconsole doctor`
+- Tests default password login
+- Tests password change + set-password guard
+- Verifies mDNS (uconsole.local resolves)
+- Verifies HTTPS (webdash responds)
+- Tests CLI commands (version, help, logs)
+- Verifies systemd services are running
+
+Only runs on the device — requires sudo.
+
+### 4. CI (automatic on every push)
+
+GitHub Actions runs on every push to `dev` or `main`:
+
+| Job | What | Time |
+|-----|------|------|
+| `ci` | shellcheck, pytest, bash syntax, lint, typecheck, vitest, Next.js build | ~90s |
+| `install-test` | Docker arm64 install test via QEMU | ~2.5min |
+
+The e2e test is NOT in CI (requires real hardware).
+
+### Running a single test file
+
+```bash
+python3 -m pytest tests/test_tui_integrity.py -v    # one test file
+python3 -m pytest tests/ -k "test_each_script"      # filter by name
+npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts  # one frontend test
+```
+
+### When to run what
+
+| Scenario | Command |
+|----------|---------|
+| Editing device Python/bash | `make test-device` |
+| Editing frontend TypeScript | `make test-frontend` |
+| Before opening a PR | `make test` |
+| Changed packaging/postinst | `make test-install` |
+| Before a release | `make test-install && make test-e2e` |
 
 ## Versioning
 
