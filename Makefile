@@ -1,4 +1,4 @@
-.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode test test-device test-frontend clean
+.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode test test-device test-frontend test-install clean
 
 VERSION_FILE := VERSION
 VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
@@ -99,6 +99,10 @@ test-device:
 	@echo "=== py_compile ==="
 	@find device/ -name "*.py" ! -path "*__pycache__*" -exec python3 -m py_compile {} \;
 	@echo "All Python files OK"
+
+test-install: build-deb
+	@echo "=== Docker install test ==="
+	docker build -f Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
 
 test-frontend:
 	@echo "=== vitest ==="
