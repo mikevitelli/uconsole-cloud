@@ -10,18 +10,21 @@ bump-patch:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	patch=$$((patch + 1)); \
 	echo "$$major.$$minor.$$patch" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 bump-minor:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	minor=$$((minor + 1)); \
 	echo "$$major.$$minor.0" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 bump-major:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	major=$$((major + 1)); \
 	echo "$$major.0.0" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 RSYNC_EXCLUDE := --exclude __pycache__ --exclude .pytest_cache --exclude tests \
