@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.1.6 (2026-04-08)
+
+Developer experience and diagnostics.
+
+### Added
+- `make dev-mode` / `make pkg-mode` — toggle webdash between dev tree and installed package
+- `make install` copies the `uconsole` CLI wrapper and auto-restarts webdash if running
+- `uconsole doctor` verifies webdash actually responds (catches crash loops)
+- `uconsole doctor` checks avahi-daemon and uconsole.local mDNS resolution
+- `uconsole --version` shows `(dev)` suffix when dev.conf drop-in is active
+- `Ctrl+`` keybind for console TUI shipped with install (injected into labwc rc.xml)
+- Dev vs package version display — footer shows `v0.1.6-dev` from dev tree, `v0.1.6` from package
+- `console-pkg` wrapper and `UCONSOLE_PKG_ONLY` env var for testing the installed version
+- `.console-config.json.example` with default TUI preferences
+- Self-hosting documentation in README
+
+### Fixed
+- `build-deb.sh` symlink chmod warnings silenced (skip symlinks)
+- `make install` uses consistent `RSYNC_EXCLUDE` variable across all targets
+- Dynamic `sub:esp32` submenu exempted from static reference check
+
+### Refactored
+- `postinst`: extracted `get_real_user()` / `get_real_home()` — replaces 3 inconsistent inline user detections
+- `Makefile`: shared `RSYNC_EXCLUDE` variable for all rsync calls
+
+### Testing
+- ESP32 utility modules (`esp32_detect`, `esp32_flash`) exempted from `run_*` handler check
+- 821 tests passing, 0 failures
+
+---
+
+## What's next (v0.1.7+)
+
+- **ESP32 smart detection** — flexible chip detection, multi-firmware flash support, CFW compatibility
+- **Runtime tests** — curses TUI rendering tests, Flask webdash route tests, CLI integration tests
+- **uconsole CLI refactor** — extract path resolution into shared helper, reduce 24 `INSTALL_MODE` branches
+- **Database abstraction** — support self-hosted Redis (ioredis) alongside Upstash REST API
+- **Webdash improvements** — live reload in dev mode, better error pages
+- **CI on device** — arm64 test runner for device-side tests (pytest + bash)
+
+---
+
 ## v0.1.5 (2026-04-08)
 
 Canonical source restructure, dev workflow, and TUI polish.

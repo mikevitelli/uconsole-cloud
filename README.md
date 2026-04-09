@@ -409,6 +409,56 @@ make clean         Remove build artifacts
 
 ---
 
+## Self-hosting
+
+You can run your own instance of the cloud dashboard instead of using `uconsole.cloud`.
+
+### 1. Deploy the dashboard
+
+```bash
+git clone https://github.com/mikevitelli/uconsole-cloud.git
+cd uconsole-cloud
+npm install
+```
+
+Deploy to Vercel, Netlify, or any platform that runs Next.js. Set these environment variables:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GITHUB_ID` | Yes | GitHub OAuth app ID |
+| `GITHUB_SECRET` | Yes | GitHub OAuth app secret |
+| `AUTH_SECRET` | Yes | NextAuth JWT secret (`openssl rand -base64 33`) |
+| `UPSTASH_REDIS_REST_URL` | Yes | Redis REST endpoint ([Upstash](https://upstash.com) free tier works) |
+| `UPSTASH_REDIS_REST_TOKEN` | Yes | Redis auth token |
+| `NEXT_PUBLIC_SANITY_PROJECT_ID` | No | Sanity CMS for landing page (optional) |
+
+Create a [GitHub OAuth App](https://github.com/settings/developers) with your deployment URL as the callback.
+
+### 2. Point your device at it
+
+After installing the .deb on your uConsole, edit the cloud API URL:
+
+```bash
+sudo nano /etc/uconsole/status.env
+# Change DEVICE_API_URL to your instance:
+# DEVICE_API_URL="https://your-domain.com/api/device/push"
+```
+
+Then run `uconsole setup` to link your device.
+
+### 3. APT repo (optional)
+
+If you want to host your own APT repository, build and sign the .deb:
+
+```bash
+make build-deb
+make publish-apt    # requires GPG key: bash packaging/scripts/generate-gpg-key.sh
+```
+
+The signed repo lives in `frontend/public/apt/` and is served by whatever hosts your frontend.
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — especially from uConsole owners who can test device-side changes on real hardware.

@@ -63,9 +63,9 @@ cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/etc/uco
 # Write VERSION file for uconsole --version
 echo "${VERSION}" > "${BUILD_DIR}/opt/uconsole/VERSION"
 
-# Make all scripts executable
-find "${BUILD_DIR}/opt/uconsole/" -name "*.sh" -exec chmod +x {} \;
-find "${BUILD_DIR}/opt/uconsole/" -name "*.py" -exec chmod +x {} \;
+# Make all scripts executable (skip symlinks)
+find "${BUILD_DIR}/opt/uconsole/" -name "*.sh" ! -type l -exec chmod +x {} \;
+find "${BUILD_DIR}/opt/uconsole/" -name "*.py" ! -type l -exec chmod +x {} \;
 chmod +x "${BUILD_DIR}/opt/uconsole/bin/"* 2>/dev/null || true
 
 # ── Symlinks into PATH ──
