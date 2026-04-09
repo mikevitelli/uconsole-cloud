@@ -19,7 +19,7 @@ case "$1" in
         systemctl disable uconsole-update.timer 2>/dev/null || true
 
         # Remove bash completion
-        rm -f /etc/bash_completion.d/uconsole
+        rm -f /usr/share/bash-completion/completions/uconsole
 
         # Disable nginx site
         rm -f /etc/nginx/sites-enabled/uconsole-webdash
