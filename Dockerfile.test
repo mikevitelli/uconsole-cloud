@@ -1,0 +1,129 @@
+FROM debian:bookworm-slim
+
+# Simulate a real uConsole: install the same deps the .deb requires
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-flask python3-bcrypt python3-socketio \
+    curl nginx systemd bash qrencode \
+    avahi-daemon network-manager \
+    openssl sudo procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user (simulates the real install scenario)
+RUN useradd -m -s /bin/bash -u 1000 uconsole
+
+# Copy the .deb (built by make build-deb)
+COPY dist/uconsole-cloud_*_arm64.deb /tmp/uconsole-cloud.deb
+
+# Install the .deb as root with SUDO_USER set (simulates sudo dpkg -i)
+ENV SUDO_USER=uconsole
+# Install the .deb (postinst may warn about systemd not running — that's expected in Docker)
+RUN dpkg -i /tmp/uconsole-cloud.deb 2>&1; exit 0
+
+# ── Verification tests ──────────────────────────────────────
+
+RUN echo "=== TEST: Package installed ===" \
+    && dpkg -s uconsole-cloud | grep "Status: install ok installed" \
+    && echo "PASS"
+
+RUN echo "=== TEST: VERSION file exists ===" \
+    && test -f /opt/uconsole/VERSION \
+    && echo "Version: $(cat /opt/uconsole/VERSION)" \
+    && echo "PASS"
+
+RUN echo "=== TEST: CLI symlink works ===" \
+    && test -L /usr/bin/uconsole \
+    && test -L /usr/bin/console \
+    && /usr/bin/uconsole --version \
+    && echo "PASS"
+
+RUN echo "=== TEST: User= substituted in service units ===" \
+    && ! grep -r "UCONSOLE_USER" /etc/systemd/system/uconsole-*.service \
+    && grep -q "User=uconsole" /etc/systemd/system/uconsole-webdash.service \
+    && echo "PASS"
+
+RUN echo "=== TEST: SSL certificate generated ===" \
+    && test -f /etc/uconsole/ssl/uconsole.crt \
+    && test -f /etc/uconsole/ssl/uconsole.key \
+    && openssl x509 -in /etc/uconsole/ssl/uconsole.crt -noout -subject | grep -q "uconsole.local" \
+    && echo "PASS"
+
+RUN echo "=== TEST: Default config installed ===" \
+    && test -f /etc/uconsole/uconsole.conf \
+    && grep -q "webdash" /etc/uconsole/uconsole.conf \
+    && echo "PASS"
+
+RUN echo "=== TEST: User config directory created ===" \
+    && test -d /home/uconsole/.config/uconsole \
+    && echo "PASS"
+
+RUN echo "=== TEST: nginx site installed ===" \
+    && test -f /etc/nginx/sites-available/uconsole-webdash \
+    && test -L /etc/nginx/sites-enabled/uconsole-webdash \
+    && echo "PASS"
+
+RUN echo "=== TEST: avahi service installed ===" \
+    && test -f /etc/avahi/services/uconsole-webdash.service \
+    && echo "PASS"
+
+RUN echo "=== TEST: systemd units installed (not enabled) ===" \
+    && test -f /etc/systemd/system/uconsole-webdash.service \
+    && test -f /etc/systemd/system/uconsole-status.service \
+    && test -f /etc/systemd/system/uconsole-status.timer \
+    && test -f /etc/systemd/system/uconsole-backup.service \
+    && test -f /etc/systemd/system/uconsole-backup.timer \
+    && echo "PASS"
+
+RUN echo "=== TEST: Bash completion installed ===" \
+    && test -f /usr/share/bash-completion/completions/uconsole \
+    && echo "PASS"
+
+RUN echo "=== TEST: labwc keybind snippet exists ===" \
+    && test -f /opt/uconsole/share/defaults/labwc-keybind.xml \
+    && grep -q "C-grave" /opt/uconsole/share/defaults/labwc-keybind.xml \
+    && echo "PASS"
+
+RUN echo "=== TEST: Scripts are executable ===" \
+    && test -x /opt/uconsole/bin/console \
+    && test -x /opt/uconsole/bin/webdash \
+    && test -x /opt/uconsole/bin/uconsole \
+    && test -x /opt/uconsole/scripts/system/push-status.sh \
+    && test -x /opt/uconsole/scripts/power/battery.sh \
+    && test -x /opt/uconsole/scripts/network/wifi.sh \
+    && echo "PASS"
+
+RUN echo "=== TEST: Script directories exist ===" \
+    && test -d /opt/uconsole/scripts/system \
+    && test -d /opt/uconsole/scripts/power \
+    && test -d /opt/uconsole/scripts/network \
+    && test -d /opt/uconsole/scripts/radio \
+    && test -d /opt/uconsole/scripts/util \
+    && echo "PASS"
+
+RUN echo "=== TEST: Webdash app exists ===" \
+    && test -f /opt/uconsole/webdash/app.py \
+    && test -d /opt/uconsole/webdash/templates \
+    && test -d /opt/uconsole/webdash/static \
+    && echo "PASS"
+
+RUN echo "=== TEST: TUI modules importable ===" \
+    && python3 -c "import sys; sys.path.insert(0, '/opt/uconsole/lib'); from tui.framework import entry; print('framework OK')" \
+    && python3 -c "import sys; sys.path.insert(0, '/opt/uconsole/lib'); from tui.tools import run_calculator; print('tools OK')" \
+    && python3 -c "import sys; sys.path.insert(0, '/opt/uconsole/lib'); from tui.monitor import run_live_monitor; print('monitor OK')" \
+    && echo "PASS"
+
+RUN echo "=== TEST: No personal data in package ===" \
+    && ! grep -r "mikevitelli\|tardis\|dalek\|192\.168\.1\." /opt/uconsole/ 2>/dev/null | grep -v __pycache__ | grep -q . \
+    && echo "PASS"
+
+RUN echo "=== TEST: uconsole help lists all commands ===" \
+    && /usr/bin/uconsole help | grep -q "setup" \
+    && /usr/bin/uconsole help | grep -q "logs" \
+    && /usr/bin/uconsole help | grep -q "doctor" \
+    && /usr/bin/uconsole help | grep -q "restore" \
+    && echo "PASS"
+
+RUN echo "=== TEST: uconsole version shows version ===" \
+    && /usr/bin/uconsole --version | grep -q "uconsole-cloud" \
+    && echo "PASS"
+
+RUN echo "" && echo "==============================" && echo "  ALL INSTALL TESTS PASSED" && echo "=============================="

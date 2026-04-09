@@ -72,7 +72,7 @@ case "$1" in
         fi
 
         # Reload systemd to pick up new unit files (but do NOT enable or start)
-        systemctl daemon-reload
+        systemctl daemon-reload 2>/dev/null || true
 
         # Detect and stop old user-level webdash service
         if [ -n "$REAL_HOME" ]; then

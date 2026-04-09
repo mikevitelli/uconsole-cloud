@@ -351,6 +351,9 @@ npm run dev        # frontend :3000, studio :3333
 npm test           # 117 tests (vitest)
 npm run build      # production build
 npm run lint       # ESLint
+
+# Install verification (requires Docker)
+make test-install  # builds .deb, installs in Debian Bookworm container, runs 18 checks
 ```
 
 ### Branching
@@ -386,15 +389,21 @@ Publishing a release merges `dev` → `main`, bumps VERSION, builds the `.deb`, 
 ### Makefile targets
 
 ```
-make version       Print current version
-make bump-patch    Bump patch version (x.y.z → x.y.z+1)
-make bump-minor    Bump minor version (x.y.z → x.y+1.0)
-make bump-major    Bump major version (x.y.z → x+1.0.0)
-make install       Deploy device/ to /opt/uconsole/ and ~/pkg/
-make build-deb     Build .deb package to dist/
-make publish-apt   Update APT repo from latest .deb
-make release       Bump + build + publish + commit + tag
-make clean         Remove build artifacts
+make version        Print current version
+make bump-patch     Bump patch version (x.y.z → x.y.z+1)
+make bump-minor     Bump minor version (x.y.z → x.y+1.0)
+make bump-major     Bump major version (x.y.z → x+1.0.0)
+make install        Deploy device/ to /opt/uconsole/ and ~/pkg/
+make dev-mode       Enable dev.conf override (webdash runs from repo)
+make pkg-mode       Disable dev.conf (webdash runs from /opt/uconsole/)
+make build-deb      Build .deb package to dist/
+make publish-apt    Update APT repo from latest .deb
+make release        Bump + build + publish + commit + tag
+make test           Run all tests (device + frontend)
+make test-device    Run pytest + bash syntax + py_compile
+make test-frontend  Run vitest + lint + typecheck
+make test-install   Build .deb + verify install in Docker (arm64)
+make clean          Remove build artifacts
 ```
 
 ---
@@ -406,6 +415,7 @@ make clean         Remove build artifacts
 | Production | [`uconsole.cloud`](https://uconsole.cloud) | Push to `main` |
 | Preview | `*.vercel.app` | PRs and branches |
 | Local | `localhost:3000` | `npm run dev` |
+| Install test | Docker (arm64 QEMU) | `make test-install` or CI |
 
 ---
 

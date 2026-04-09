@@ -1,4 +1,4 @@
-.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode clean
+.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode test test-device test-frontend test-install clean
 
 VERSION_FILE := VERSION
 VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
@@ -10,18 +10,21 @@ bump-patch:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	patch=$$((patch + 1)); \
 	echo "$$major.$$minor.$$patch" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 bump-minor:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	minor=$$((minor + 1)); \
 	echo "$$major.$$minor.0" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 bump-major:
 	@IFS='.' read -r major minor patch < $(VERSION_FILE); \
 	major=$$((major + 1)); \
 	echo "$$major.0.0" > $(VERSION_FILE); \
+	cp $(VERSION_FILE) device/VERSION; \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
 RSYNC_EXCLUDE := --exclude __pycache__ --exclude .pytest_cache --exclude tests \
@@ -81,6 +84,35 @@ release: bump-patch build-deb publish-apt
 	@echo ""
 	@echo "Release v$$(cat $(VERSION_FILE)) created (not pushed)."
 	@echo "  git push origin main --tags"
+
+test: test-device test-frontend
+
+test-device:
+	@echo "=== pytest ==="
+	python3 -m pytest tests/ -v
+	@echo ""
+	@echo "=== bash syntax ==="
+	@bash -n frontend/public/scripts/uconsole
+	@find device/scripts -name "*.sh" ! -type l -exec bash -n {} \;
+	@echo "All shell scripts OK"
+	@echo ""
+	@echo "=== py_compile ==="
+	@find device/ -name "*.py" ! -path "*__pycache__*" -exec python3 -m py_compile {} \;
+	@echo "All Python files OK"
+
+test-install: build-deb
+	@echo "=== Docker install test ==="
+	docker build -f Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
+
+test-frontend:
+	@echo "=== vitest ==="
+	npm test -w @uconsole/frontend
+	@echo ""
+	@echo "=== lint ==="
+	npm run lint -w @uconsole/frontend
+	@echo ""
+	@echo "=== typecheck ==="
+	npx -w @uconsole/frontend tsc --noEmit
 
 clean:
 	rm -rf dist/ build/
