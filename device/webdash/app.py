@@ -224,6 +224,8 @@ def setup_password_page():
 
 @app.route('/api/set-password', methods=['POST'])
 def api_set_password():
+    if _password_is_set():
+        return redirect('/login')
     pw = request.form.get('password', '')
     confirm = request.form.get('confirm', '')
     if len(pw) < 4:
@@ -240,6 +242,23 @@ def api_set_password():
                     max_age=SESSION_DAYS * 86400, httponly=True,
                     secure=True, samesite='Lax')
     return resp
+
+
+@app.route('/api/change-password', methods=['POST'])
+def api_change_password():
+    if not _is_authenticated(request):
+        return jsonify({'error': 'Not authenticated'}), 401
+    pw = request.form.get('password', '')
+    confirm = request.form.get('confirm', '')
+    if len(pw) < 4:
+        return jsonify({'error': 'Password must be at least 4 characters'}), 400
+    if pw != confirm:
+        return jsonify({'error': 'Passwords do not match'}), 400
+    h = _hash_password(pw)
+    conf = _load_user_conf()
+    conf['webdash_password_hash'] = h
+    _save_user_conf(conf)
+    return jsonify({'ok': True})
 
 
 @app.route('/logout')
