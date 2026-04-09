@@ -31,10 +31,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: TUI integrity tests
+      - name: Device tests (pytest)
         run: |
           pip install pytest
-          python -m pytest tests/test_tui_integrity.py -v
+          python -m pytest tests/ -v
+
+      - name: Shell script checks
+        run: |
+          bash -n frontend/public/scripts/uconsole
+          find device/scripts -name "*.sh" ! -type l -exec bash -n {} \;
 
       - name: Lint
         run: npm run lint -w @uconsole/frontend
