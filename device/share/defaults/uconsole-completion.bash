@@ -9,7 +9,7 @@ _uconsole() {
 
   case "$prev" in
     uconsole)
-      COMPREPLY=( $(compgen -W "setup link push status logs doctor restore unlink update version help --version --help -v -h" -- "$cur") )
+      COMPREPLY=( $(compgen -W "setup link push status logs passwd doctor restore unlink update version help --version --help -v -h" -- "$cur") )
       return 0
       ;;
     logs)
