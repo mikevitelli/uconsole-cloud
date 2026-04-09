@@ -1,5 +1,5 @@
 # Bash completion for uconsole CLI
-# Installed to /etc/bash_completion.d/uconsole
+# Installed to /usr/share/bash-completion/completions/uconsole
 
 _uconsole() {
   local cur prev
