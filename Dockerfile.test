@@ -16,7 +16,8 @@ COPY dist/uconsole-cloud_*_arm64.deb /tmp/uconsole-cloud.deb
 
 # Install the .deb as root with SUDO_USER set (simulates sudo dpkg -i)
 ENV SUDO_USER=uconsole
-RUN dpkg -i /tmp/uconsole-cloud.deb || true && apt-get install -f -y
+# Install the .deb (postinst may warn about systemd not running — that's expected in Docker)
+RUN dpkg -i /tmp/uconsole-cloud.deb 2>&1; exit 0
 
 # ── Verification tests ──────────────────────────────────────
 
