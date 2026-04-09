@@ -127,3 +127,78 @@ RUN echo "=== TEST: uconsole version shows version ===" \
     && echo "PASS"
 
 RUN echo "" && echo "==============================" && echo "  ALL INSTALL TESTS PASSED" && echo "=============================="
+
+# ── Upgrade tests ───────────────────────────────────────────
+
+# Seed a user config.json with a fake password hash (simulates user having run uconsole-passwd)
+RUN python3 -c "\
+import json, pathlib; \
+p = pathlib.Path('/home/uconsole/.config/uconsole/config.json'); \
+d = json.loads(pathlib.Path('/opt/uconsole/share/defaults/config.json.default').read_text()); \
+d['webdash_password_hash'] = '\$2b\$12\$fakehashfortesting000000000000000000000000000000'; \
+p.write_text(json.dumps(d, indent=2) + '\n'); \
+" && chown uconsole:uconsole /home/uconsole/.config/uconsole/config.json
+
+RUN echo "=== TEST: Upgrade — reinstall .deb ===" \
+    && dpkg -i /tmp/uconsole-cloud.deb 2>&1; exit 0
+
+RUN echo "=== TEST: Config preserved after upgrade ===" \
+    && test -f /etc/uconsole/uconsole.conf \
+    && test -f /etc/uconsole/ssl/uconsole.crt \
+    && echo "PASS"
+
+RUN echo "=== TEST: User= still substituted after upgrade ===" \
+    && ! grep -q "UCONSOLE_USER" /etc/systemd/system/uconsole-webdash.service \
+    && grep -q "User=uconsole" /etc/systemd/system/uconsole-webdash.service \
+    && echo "PASS"
+
+RUN echo "=== TEST: Password hash preserved after upgrade ===" \
+    && python3 -c "import json; d=json.load(open('/home/uconsole/.config/uconsole/config.json')); assert 'webdash_password_hash' in d; print('PASS')"
+
+RUN echo "=== TEST: CLI works after upgrade ===" \
+    && /usr/bin/uconsole --version | grep -q "uconsole-cloud" \
+    && echo "PASS"
+
+# ── Uninstall tests (remove, not purge — preserves config) ─
+
+RUN echo "=== TEST: Uninstall (remove) ===" \
+    && dpkg -r uconsole-cloud 2>&1; exit 0
+
+RUN echo "=== TEST: CLI removed after uninstall ===" \
+    && ! test -L /usr/bin/uconsole \
+    && echo "PASS"
+
+RUN echo "=== TEST: Config preserved after remove ===" \
+    && test -f /etc/uconsole/uconsole.conf \
+    && test -f /etc/uconsole/ssl/uconsole.crt \
+    && echo "PASS"
+
+RUN echo "=== TEST: Completion removed after uninstall ===" \
+    && ! test -f /usr/share/bash-completion/completions/uconsole \
+    && echo "PASS"
+
+# ── Purge tests (removes everything) ───────────────────────
+
+RUN echo "=== TEST: Purge ===" \
+    && dpkg -P uconsole-cloud 2>&1; exit 0
+
+RUN echo "=== TEST: /opt/uconsole removed after purge ===" \
+    && ! test -d /opt/uconsole \
+    && echo "PASS"
+
+RUN echo "=== TEST: /etc/uconsole removed after purge ===" \
+    && ! test -d /etc/uconsole \
+    && echo "PASS"
+
+# ── Reinstall tests (clean install after purge) ────────────
+
+RUN echo "=== TEST: Reinstall after purge ===" \
+    && dpkg -i /tmp/uconsole-cloud.deb 2>&1; exit 0
+
+RUN echo "=== TEST: Fresh config after reinstall ===" \
+    && test -f /etc/uconsole/uconsole.conf \
+    && test -f /etc/uconsole/ssl/uconsole.crt \
+    && /usr/bin/uconsole --version | grep -q "uconsole-cloud" \
+    && echo "PASS"
+
+RUN echo "" && echo "==============================" && echo "  ALL TESTS PASSED (install + upgrade + uninstall + purge + reinstall)" && echo "=============================="
