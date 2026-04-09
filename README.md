@@ -351,6 +351,9 @@ npm run dev        # frontend :3000, studio :3333
 npm test           # 117 tests (vitest)
 npm run build      # production build
 npm run lint       # ESLint
+
+# Install verification (requires Docker)
+make test-install  # builds .deb, installs in Debian Bookworm container, runs 18 checks
 ```
 
 ### Branching
@@ -399,6 +402,7 @@ make release        Bump + build + publish + commit + tag
 make test           Run all tests (device + frontend)
 make test-device    Run pytest + bash syntax + py_compile
 make test-frontend  Run vitest + lint + typecheck
+make test-install   Build .deb + verify install in Docker (arm64)
 make clean          Remove build artifacts
 ```
 
@@ -411,6 +415,7 @@ make clean          Remove build artifacts
 | Production | [`uconsole.cloud`](https://uconsole.cloud) | Push to `main` |
 | Preview | `*.vercel.app` | PRs and branches |
 | Local | `localhost:3000` | `npm run dev` |
+| Install test | Docker (arm64 QEMU) | `make test-install` or CI |
 
 ---
 
