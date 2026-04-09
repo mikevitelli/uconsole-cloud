@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.1.7 (2026-04-08)
+
+CLI logs command, tab completion, test targets, and CLI refactor.
+
+### Added
+- `uconsole logs [service] [-f]` — show service logs, defaults to webdash, supports follow mode
+- Tab completion for all CLI commands + logs service names (installed to /usr/share/bash-completion/completions/)
+- `make test` / `make test-device` / `make test-frontend` — unified test targets
+- `make dev-mode` / `make pkg-mode` in CONTRIBUTING docs
+- Dynamic dev version from `git describe` — TUI footer shows `v0.1.7-dev` automatically
+- `make test-install` — Docker-based install verification (18 tests on Debian Bookworm arm64)
+- ARM64 Docker install test in CI via QEMU emulation
+
+### Changed
+- `uconsole doctor` shows dev.conf override status (informational `[--]` marker)
+- `uconsole doctor` references `uconsole logs` in error hints
+- CI runs full pytest suite (821 tests) instead of just TUI integrity, plus shell syntax checks
+
+### Refactored
+- CLI: extracted `maybe_sudo()`, `run_journalctl()`, `manage_timer()`, `get_push_script()`, `service_to_unit()` — reduced INSTALL_MODE branches from 24 to ~10
+- Completion script follows Debian policy (`/usr/share/bash-completion/completions/`)
+- `make bump-*` auto-syncs `device/VERSION` from root `VERSION`
+
+### Fixed
+- Dynamic `sub:esp32` submenu exempted from static reference check in tests
+- postinst tolerates missing systemd (Docker/chroot installs)
+- Bash completion installed to `/usr/share/bash-completion/completions/` (Debian policy)
+- Frontend devicePaths test updated for CLI refactor
+
+---
+
+## What's next (v0.1.8+)
+
+- **ESP32 smart detection** — flexible chip detection, CFW compatibility
+- **Runtime tests** — curses TUI, Flask webdash, CLI integration tests
+- **Database abstraction** — support self-hosted Redis alongside Upstash
+- **CI on device** — self-hosted arm64 runner (optional)
+
+---
+
 ## v0.1.6 (2026-04-08)
 
 Developer experience and diagnostics.
@@ -28,17 +68,6 @@ Developer experience and diagnostics.
 ### Testing
 - ESP32 utility modules (`esp32_detect`, `esp32_flash`) exempted from `run_*` handler check
 - 821 tests passing, 0 failures
-
----
-
-## What's next (v0.1.7+)
-
-- **ESP32 smart detection** — flexible chip detection, multi-firmware flash support, CFW compatibility
-- **Runtime tests** — curses TUI rendering tests, Flask webdash route tests, CLI integration tests
-- **uconsole CLI refactor** — extract path resolution into shared helper, reduce 24 `INSTALL_MODE` branches
-- **Database abstraction** — support self-hosted Redis (ioredis) alongside Upstash REST API
-- **Webdash improvements** — live reload in dev mode, better error pages
-- **CI on device** — arm64 test runner for device-side tests (pytest + bash)
 
 ---
 
