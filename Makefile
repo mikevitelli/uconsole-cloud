@@ -1,4 +1,4 @@
-.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode test test-device test-frontend test-install clean
+.PHONY: version bump-patch bump-minor bump-major build-deb publish-apt release install dev-mode pkg-mode test test-device test-frontend test-install test-e2e clean
 
 VERSION_FILE := VERSION
 VERSION := $(shell cat $(VERSION_FILE) | tr -d '[:space:]')
@@ -103,6 +103,9 @@ test-device:
 test-install: build-deb
 	@echo "=== Docker install test ==="
 	docker build -f Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
+
+test-e2e: build-deb
+	@bash scripts/test-e2e.sh
 
 test-frontend:
 	@echo "=== vitest ==="
