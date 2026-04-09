@@ -23,8 +23,8 @@ case "$1" in
 
         # Disable nginx site
         rm -f /etc/nginx/sites-enabled/uconsole-webdash
-        nginx -t 2>/dev/null && systemctl reload nginx || true
+        nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
 
-        systemctl daemon-reload
+        systemctl daemon-reload 2>/dev/null || true
         ;;
 esac
