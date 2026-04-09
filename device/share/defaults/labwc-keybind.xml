@@ -1,0 +1,4 @@
+    <!-- uConsole Command Center -->
+    <keybind key="C-grave">
+      <action name="Execute" command="lxterminal --title=uConsole -e /usr/bin/console"/>
+    </keybind>
