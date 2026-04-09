@@ -10,10 +10,13 @@ CLI logs command, tab completion, test targets, and CLI refactor.
 - `make test` / `make test-device` / `make test-frontend` — unified test targets
 - `make dev-mode` / `make pkg-mode` in CONTRIBUTING docs
 - Dynamic dev version from `git describe` — TUI footer shows `v0.1.7-dev` automatically
+- `make test-install` — Docker-based install verification (18 tests on Debian Bookworm arm64)
+- ARM64 Docker install test in CI via QEMU emulation
 
 ### Changed
 - `uconsole doctor` shows dev.conf override status (informational `[--]` marker)
 - `uconsole doctor` references `uconsole logs` in error hints
+- CI runs full pytest suite (821 tests) instead of just TUI integrity, plus shell syntax checks
 
 ### Refactored
 - CLI: extracted `maybe_sudo()`, `run_journalctl()`, `manage_timer()`, `get_push_script()`, `service_to_unit()` — reduced INSTALL_MODE branches from 24 to ~10
@@ -22,6 +25,9 @@ CLI logs command, tab completion, test targets, and CLI refactor.
 
 ### Fixed
 - Dynamic `sub:esp32` submenu exempted from static reference check in tests
+- postinst tolerates missing systemd (Docker/chroot installs)
+- Bash completion installed to `/usr/share/bash-completion/completions/` (Debian policy)
+- Frontend devicePaths test updated for CLI refactor
 
 ---
 
@@ -30,7 +36,7 @@ CLI logs command, tab completion, test targets, and CLI refactor.
 - **ESP32 smart detection** — flexible chip detection, CFW compatibility
 - **Runtime tests** — curses TUI, Flask webdash, CLI integration tests
 - **Database abstraction** — support self-hosted Redis alongside Upstash
-- **CI on device** — arm64 test runner
+- **CI on device** — self-hosted arm64 runner (optional)
 
 ---
 
