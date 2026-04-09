@@ -46,6 +46,65 @@ show_qr() {
   fi
 }
 
+# Run a command with sudo in package mode, directly in standalone
+maybe_sudo() {
+  if [ "$INSTALL_MODE" = "package" ]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+# Run journalctl with --user in standalone mode
+run_journalctl() {
+  local args=()
+  [ "$INSTALL_MODE" = "standalone" ] && args+=(--user)
+  args+=("$@")
+  journalctl "${args[@]}"
+}
+
+# Manage systemd timers/services (system in package mode, user in standalone)
+manage_timer() {
+  local action="$1" unit="$2"
+  if [ "$INSTALL_MODE" = "package" ]; then
+    sudo systemctl "$action" "$unit" 2>/dev/null
+  else
+    systemctl --user "$action" "$unit" 2>/dev/null
+  fi
+}
+
+# Resolve push-status.sh path
+get_push_script() {
+  if [ "$INSTALL_MODE" = "package" ]; then
+    echo "${SCRIPTS_DIR}/system/push-status.sh"
+  else
+    # Try well-known locations in order
+    local candidates=(
+      "${SCRIPTS_DIR}/push-status.sh"
+      "${HOME}/uconsole/scripts/system/push-status.sh"
+      "${HOME}/uconsole/scripts/push-status.sh"
+    )
+    for path in "${candidates[@]}"; do
+      if [ -x "$path" ]; then
+        echo "$path"
+        return 0
+      fi
+    done
+    echo "${SCRIPTS_DIR}/push-status.sh"
+  fi
+}
+
+# Map friendly service name to systemd unit
+service_to_unit() {
+  case "$1" in
+    webdash) echo "uconsole-webdash" ;;
+    status)  echo "uconsole-status" ;;
+    backup)  echo "uconsole-backup" ;;
+    update)  echo "uconsole-update" ;;
+    *) die "Unknown service: $1. Valid: webdash, status, backup, update" ;;
+  esac
+}
+
 # ── Commands ─────────────────────────────────────────────
 
 cmd_setup() {
@@ -71,13 +130,9 @@ cmd_link() {
 
   # Check for existing config
   local env_readable=false
-  if [ "$INSTALL_MODE" = "package" ] && sudo test -f "${ENV_FILE}" 2>/dev/null; then
+  if maybe_sudo test -f "${ENV_FILE}" 2>/dev/null; then
     env_readable=true
-    eval "$(sudo cat "${ENV_FILE}" 2>/dev/null)"
-  elif [ -f "${ENV_FILE}" ]; then
-    env_readable=true
-    # shellcheck source=/dev/null
-    source "${ENV_FILE}"
+    eval "$(maybe_sudo cat "${ENV_FILE}" 2>/dev/null)"
   fi
   if [ "$env_readable" = true ]; then
     echo "This device is already linked."
@@ -157,7 +212,7 @@ EOF
       if [ "$INSTALL_MODE" = "package" ]; then
         # Package mode: system services are already installed by postinst.
         # Restart the timer so it picks up the new env file.
-        sudo systemctl restart uconsole-status.timer 2>/dev/null || true
+        manage_timer restart uconsole-status.timer || true
         echo "Status timer restarted"
       else
         # Standalone mode: create user services or cron
@@ -170,8 +225,8 @@ EOF
         SYSTEMD_DIR="${HOME}/.config/systemd/user"
         if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
           mkdir -p "${SYSTEMD_DIR}"
-          PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
-          [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
+          local push_path
+          push_path="$(get_push_script)"
 
           cat > "${SYSTEMD_DIR}/uconsole-status.service" << SVCEOF
 [Unit]
@@ -181,7 +236,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=${PUSH_SCRIPT}
+ExecStart=${push_path}
 Environment=HOME=${HOME}
 WorkingDirectory=${HOME}
 SVCEOF
@@ -205,23 +260,20 @@ TMREOF
           echo "Systemd timer enabled (every 5 minutes)"
         else
           # Fallback: cron (non-systemd systems)
-          CRON_CMD="*/5 * * * * ${SCRIPTS_DIR}/push-status.sh >> /tmp/uconsole-push.log 2>&1"
+          local push_path
+          push_path="$(get_push_script)"
+          CRON_CMD="*/5 * * * * ${push_path} >> /tmp/uconsole-push.log 2>&1"
           ( crontab -l 2>/dev/null | grep -v "push-status.sh" ; echo "$CRON_CMD" ) | crontab -
           echo "Cron job set (every 5 minutes)"
         fi
       fi
 
       # First push
-      if [ "$INSTALL_MODE" = "package" ]; then
-        PUSH_SCRIPT="${SCRIPTS_DIR}/system/push-status.sh"
-      else
-        PUSH_SCRIPT="${SCRIPTS_DIR}/push-status.sh"
-        [ -x "${HOME}/uconsole/scripts/system/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/system/push-status.sh"
-        [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && PUSH_SCRIPT="${HOME}/uconsole/scripts/push-status.sh"
-      fi
-      if [ -x "$PUSH_SCRIPT" ]; then
+      local push_script
+      push_script="$(get_push_script)"
+      if [ -x "$push_script" ]; then
         echo "Running first status push..."
-        "$PUSH_SCRIPT" && echo "First status pushed!" || echo "Push failed (will retry via timer)"
+        "$push_script" && echo "First status pushed!" || echo "Push failed (will retry via timer)"
       fi
 
       echo ""
@@ -249,13 +301,8 @@ cmd_push() {
   if [ ! -f "${ENV_FILE}" ]; then
     die "Not configured. Run 'uconsole setup' first."
   fi
-  local push_script="${SCRIPTS_DIR}/push-status.sh"
-  if [ "$INSTALL_MODE" = "package" ]; then
-    push_script="${SCRIPTS_DIR}/system/push-status.sh"
-  elif [ "$INSTALL_MODE" = "standalone" ]; then
-    [ -x "${HOME}/uconsole/scripts/system/push-status.sh" ] && push_script="${HOME}/uconsole/scripts/system/push-status.sh"
-    [ -x "${HOME}/uconsole/scripts/push-status.sh" ] && push_script="${HOME}/uconsole/scripts/push-status.sh"
-  fi
+  local push_script
+  push_script="$(get_push_script)"
   if [ ! -x "$push_script" ]; then
     die "push-status.sh not found. Run 'uconsole update' to download."
   fi
@@ -276,28 +323,20 @@ cmd_status() {
   echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
   echo "  Repo:  ${DEVICE_REPO:-not set}"
 
-  # Check scheduling — system services for package, user services for standalone
-  if [ "$INSTALL_MODE" = "package" ]; then
-    if systemctl is-active --quiet uconsole-status.timer 2>/dev/null; then
-      echo "  Timer: active (system, every 5 min)"
-    else
-      echo "  Timer: not active"
-    fi
+  # Check scheduling
+  if manage_timer is-active uconsole-status.timer; then
+    local timer_type="system"
+    [ "$INSTALL_MODE" = "standalone" ] && timer_type="user"
+    echo "  Timer: active (${timer_type}, every 5 min)"
+  elif crontab -l 2>/dev/null | grep -q "push-status.sh"; then
+    echo "  Cron:  active (every 5 min)"
   else
-    if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
-      echo "  Timer: active (user, every 5 min)"
-    elif crontab -l 2>/dev/null | grep -q "push-status.sh"; then
-      echo "  Cron:  active (every 5 min)"
-    else
-      echo "  Timer: not set"
-    fi
+    echo "  Timer: not set"
   fi
 
   # Last push
   if command -v journalctl &>/dev/null; then
-    local jctl_args=(-u uconsole-status -n 1 --no-pager -q)
-    [ "$INSTALL_MODE" = "standalone" ] && jctl_args=(--user "${jctl_args[@]}")
-    LAST_PUSH=$(journalctl "${jctl_args[@]}" 2>/dev/null | tail -1)
+    LAST_PUSH=$(run_journalctl -u uconsole-status -n 1 --no-pager -q 2>/dev/null | tail -1)
     if [ -n "$LAST_PUSH" ]; then
       echo "  Last:  ${LAST_PUSH}"
     fi
@@ -311,21 +350,20 @@ cmd_unlink() {
   if [ "$INSTALL_MODE" = "package" ]; then
     # Package mode: don't touch system services, just remove config
     if [ -f "${ENV_FILE}" ]; then
-      sudo rm -f "${ENV_FILE}"
+      maybe_sudo rm -f "${ENV_FILE}"
       echo "Removed device config"
     fi
     echo "Device unlinked. Services still installed (managed by package)."
     echo "Run 'uconsole link' to reconnect."
   else
     # Standalone mode: stop user services and clean up
-    if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
-      systemctl --user stop uconsole-status.timer
-      systemctl --user disable uconsole-status.timer
-      echo "Stopped systemd timer"
-    fi
+    manage_timer stop uconsole-status.timer || true
+    manage_timer disable uconsole-status.timer || true
+    echo "Stopped systemd timer"
+
     SYSTEMD_DIR="${HOME}/.config/systemd/user"
     rm -f "${SYSTEMD_DIR}/uconsole-status.service" "${SYSTEMD_DIR}/uconsole-status.timer"
-    systemctl --user daemon-reload 2>/dev/null
+    systemctl --user daemon-reload 2>/dev/null || true
 
     if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
       crontab -l 2>/dev/null | grep -v "push-status.sh" | crontab -
@@ -367,15 +405,13 @@ cmd_doctor() {
 
   # Config
   local env_exists=false
-  if [ "$INSTALL_MODE" = "package" ]; then
-    sudo test -f "${ENV_FILE}" 2>/dev/null && env_exists=true
-  else
-    [ -f "${ENV_FILE}" ] && env_exists=true
+  if maybe_sudo test -f "${ENV_FILE}" 2>/dev/null; then
+    env_exists=true
   fi
   if [ "$env_exists" = true ]; then
     echo "  [OK] Config file exists (${ENV_FILE})"
     pass=$((pass + 1))
-    PERMS=$(sudo stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FILE}" 2>/dev/null)
+    PERMS=$(maybe_sudo stat -c '%a' "${ENV_FILE}" 2>/dev/null || stat -f '%Lp' "${ENV_FILE}" 2>/dev/null)
     if [ "$PERMS" = "600" ]; then
       echo "  [OK] Config permissions (600)"
       pass=$((pass + 1))
@@ -389,13 +425,10 @@ cmd_doctor() {
   fi
 
   # Push script
-  local push_script="${SCRIPTS_DIR}/push-status.sh"
-  [ "$INSTALL_MODE" = "package" ] && push_script="${SCRIPTS_DIR}/system/push-status.sh"
+  local push_script
+  push_script="$(get_push_script)"
   if [ -x "$push_script" ]; then
     echo "  [OK] push-status.sh found ($push_script)"
-    pass=$((pass + 1))
-  elif [ "$INSTALL_MODE" = "standalone" ] && [ -x "${HOME}/uconsole/scripts/push-status.sh" ]; then
-    echo "  [OK] push-status.sh found (${HOME}/uconsole/scripts/push-status.sh)"
     pass=$((pass + 1))
   else
     echo "  [!!] push-status.sh not found or not executable"
@@ -404,7 +437,6 @@ cmd_doctor() {
 
   # Systemd services
   if [ "$INSTALL_MODE" = "package" ]; then
-    # Check system services
     for svc in uconsole-webdash.service uconsole-status.timer uconsole-backup.timer uconsole-update.timer; do
       if systemctl is-active --quiet "$svc" 2>/dev/null; then
         echo "  [OK] ${svc} active"
@@ -423,20 +455,22 @@ cmd_doctor() {
         echo "  [OK] webdash responding on HTTPS"
         pass=$((pass + 1))
       else
-        echo "  [!!] webdash service active but not responding — check: journalctl -u uconsole-webdash"
+        echo "  [!!] webdash service active but not responding — check: uconsole logs webdash"
         fail=$((fail + 1))
       fi
     fi
+
+    # Dev mode check
+    local dev_conf="/etc/systemd/system/uconsole-webdash.service.d/dev.conf"
+    if [ -f "$dev_conf" ]; then
+      local dev_path
+      dev_path=$(grep -o 'WorkingDirectory=.*' "$dev_conf" 2>/dev/null | sed 's/WorkingDirectory=//' || echo "unknown")
+      echo "  [--] Dev mode active — webdash running from ${dev_path}"
+    fi
   else
-    # Check user services
-    if command -v systemctl &>/dev/null; then
-      if systemctl --user is-active --quiet uconsole-status.timer 2>/dev/null; then
-        echo "  [OK] Status timer active"
-        pass=$((pass + 1))
-      else
-        echo "  [!!] Status timer not active"
-        fail=$((fail + 1))
-      fi
+    if manage_timer is-active uconsole-status.timer; then
+      echo "  [OK] Status timer active"
+      pass=$((pass + 1))
     elif crontab -l 2>/dev/null | grep -q "push-status.sh"; then
       echo "  [OK] Cron job active (legacy)"
       pass=$((pass + 1))
@@ -494,9 +528,7 @@ cmd_doctor() {
 
   # Last push
   if command -v journalctl &>/dev/null; then
-    local jctl_args=(-u uconsole-status -n 1 --no-pager -q)
-    [ "$INSTALL_MODE" = "standalone" ] && jctl_args=(--user "${jctl_args[@]}")
-    LAST_PUSH=$(journalctl "${jctl_args[@]}" 2>/dev/null | tail -1)
+    LAST_PUSH=$(run_journalctl -u uconsole-status -n 1 --no-pager -q 2>/dev/null | tail -1)
     if [ -n "$LAST_PUSH" ]; then
       echo "  [OK] Last push: ${LAST_PUSH}"
       pass=$((pass + 1))
@@ -522,12 +554,10 @@ cmd_doctor() {
       echo "  [!!] Found old config at ${OLD_ENV} — run 'sudo cp ${OLD_ENV} ${ENV_FILE} && sudo chmod 600 ${ENV_FILE}' to migrate"
       fail=$((fail + 1))
     fi
-    # Check for old user-level services
     if systemctl --user is-active --quiet webdash.service 2>/dev/null; then
       echo "  [!!] Old user-level webdash.service still running — run 'systemctl --user stop webdash && systemctl --user disable webdash'"
       fail=$((fail + 1))
     fi
-    # Check for stale cron job (package mode uses systemd timer, cron causes double-firing)
     if crontab -l 2>/dev/null | grep -q "push-status.sh"; then
       echo "  [!!] Stale cron job found — push-status running via both cron and systemd timer"
       echo "       Fix: uconsole link (auto-cleans cron) or: crontab -l | grep -v push-status | crontab -"
@@ -537,6 +567,32 @@ cmd_doctor() {
 
   echo ""
   echo "  ${pass} passed, ${fail} failed"
+}
+
+cmd_logs() {
+  local service="" follow=false
+
+  for arg in "$@"; do
+    case "$arg" in
+      -f|--follow) follow=true ;;
+      *) service="$arg" ;;
+    esac
+  done
+
+  # Default to webdash
+  [ -z "$service" ] && service="webdash"
+
+  local unit
+  unit="$(service_to_unit "$service")"
+
+  local args=(-u "$unit" --no-pager)
+  if [ "$follow" = true ]; then
+    args+=(-f)
+  else
+    args+=(-n 50)
+  fi
+
+  run_journalctl "${args[@]}"
 }
 
 cmd_restore() {
@@ -597,6 +653,7 @@ cmd_help() {
   echo "  link     Link device to uconsole.cloud"
   echo "  push     Push status now"
   echo "  status   Show current config and last push"
+  echo "  logs     Show service logs (webdash, status, backup, update)"
   echo "  doctor   Diagnose connectivity and configuration"
   echo "  restore  Run restore.sh from backup repo"
   echo "  unlink   Remove config and stop timer"
@@ -619,6 +676,7 @@ case "$COMMAND" in
   link)    cmd_link "$@" ;;
   push)    cmd_push ;;
   status)  cmd_status ;;
+  logs)    cmd_logs "$@" ;;
   doctor)  cmd_doctor ;;
   restore) cmd_restore ;;
   unlink)  cmd_unlink ;;

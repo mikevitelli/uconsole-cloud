@@ -165,17 +165,12 @@ describe("TUI network.py script paths", () => {
 describe("CLI push-status.sh path resolution", () => {
   const cli = fs.readFileSync(CLI_SCRIPT, "utf-8");
 
-  it("uses system/ subdir for push-status.sh in package mode", () => {
+  it("has get_push_script helper with system/ subdir for package mode", () => {
+    expect(cli).toContain("get_push_script()");
     expect(cli).toContain("${SCRIPTS_DIR}/system/push-status.sh");
   });
 
-  it("cmd_doctor already uses system/ subdir for package mode", () => {
-    expect(cli).toContain(
-      '[ "$INSTALL_MODE" = "package" ] && push_script="${SCRIPTS_DIR}/system/push-status.sh"'
-    );
-  });
-
-  it("standalone mode checks both old flat and new subdir paths", () => {
+  it("standalone fallback checks both subdir and flat paths", () => {
     expect(cli).toContain("uconsole/scripts/system/push-status.sh");
     expect(cli).toContain("uconsole/scripts/push-status.sh");
   });

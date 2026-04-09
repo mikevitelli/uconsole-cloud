@@ -38,6 +38,7 @@ mkdir -p "${BUILD_DIR}/etc/uconsole/ssl"
 mkdir -p "${BUILD_DIR}/etc/systemd/system"
 mkdir -p "${BUILD_DIR}/etc/nginx/sites-available"
 mkdir -p "${BUILD_DIR}/etc/avahi/services"
+mkdir -p "${BUILD_DIR}/usr/share/bash-completion/completions"
 
 # ── Copy from device repo pkg/ tree ──
 
@@ -95,6 +96,10 @@ cp "${REPO_ROOT}/packaging/nginx/uconsole-webdash" "${BUILD_DIR}/etc/nginx/sites
 # ── Avahi mDNS service ──
 
 cp "${REPO_ROOT}/packaging/avahi/uconsole-webdash.service" "${BUILD_DIR}/etc/avahi/services/"
+
+# ── Bash completion ──
+
+cp "${BUILD_DIR}/opt/uconsole/share/defaults/uconsole-completion.bash" "${BUILD_DIR}/usr/share/bash-completion/completions/uconsole"
 
 # ── Build the .deb ──
 
