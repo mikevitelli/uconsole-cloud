@@ -24,17 +24,19 @@ bump-major:
 	echo "$$major.0.0" > $(VERSION_FILE); \
 	echo "Bumped to $$(cat $(VERSION_FILE))"
 
+RSYNC_EXCLUDE := --exclude __pycache__ --exclude .pytest_cache --exclude tests \
+	--exclude .flake8 --exclude Makefile --exclude .git
+
 install:
 	@echo "Deploying device/ → /opt/uconsole/"
-	@sudo rsync -a --delete --exclude __pycache__ --exclude tests --exclude .pytest_cache \
-		--exclude .flake8 --exclude Makefile --exclude .git device/lib/ /opt/uconsole/lib/
-	@sudo rsync -a --delete --exclude __pycache__ device/scripts/ /opt/uconsole/scripts/
-	@sudo rsync -a --delete --exclude __pycache__ device/webdash/ /opt/uconsole/webdash/
-	@sudo rsync -a --delete device/bin/ /opt/uconsole/bin/
-	@sudo rsync -a --delete device/share/ /opt/uconsole/share/
+	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/lib/ /opt/uconsole/lib/
+	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/scripts/ /opt/uconsole/scripts/
+	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
+	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
+	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
-	@rsync -a --exclude __pycache__ --exclude .pytest_cache device/ $(HOME)/pkg/
+	@rsync -a $(RSYNC_EXCLUDE) device/ $(HOME)/pkg/
 	@if systemctl is-active --quiet uconsole-webdash 2>/dev/null; then \
 		sudo systemctl restart uconsole-webdash; \
 		echo "Done. Webdash restarted."; \
