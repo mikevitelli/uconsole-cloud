@@ -41,6 +41,43 @@ case "$1" in
             chown "$REAL_USER":"$(id -gn "$REAL_USER")" "${REAL_HOME}/.config/uconsole"
         fi
 
+        # Set default webdash password if not already configured
+        USER_CONF="${REAL_HOME}/.config/uconsole/config.json"
+        if [ -f "$USER_CONF" ]; then
+            HAS_PW=$(python3 -c "
+import json
+try:
+    with open('$USER_CONF') as f:
+        d = json.load(f)
+    print('yes' if d.get('webdash_password_hash') else 'no')
+except: print('no')
+" 2>/dev/null || echo "no")
+        else
+            HAS_PW="no"
+            mkdir -p "$(dirname "$USER_CONF")"
+            echo '{}' > "$USER_CONF"
+            chown "$REAL_USER":"$(id -gn "$REAL_USER")" "$USER_CONF"
+        fi
+
+        if [ "$HAS_PW" = "no" ] && python3 -c "import bcrypt" 2>/dev/null; then
+            python3 -c "
+import bcrypt, json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+h = bcrypt.hashpw(b'clockwork', bcrypt.gensalt()).decode()
+data['webdash_password_hash'] = h
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$USER_CONF"
+            chown "$REAL_USER":"$(id -gn "$REAL_USER")" "$USER_CONF"
+            echo "Default webdash password set (clockwork)"
+        fi
+
         # Generate self-signed SSL cert if not present
         if [ ! -f /etc/uconsole/ssl/uconsole.crt ]; then
             openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
