@@ -386,15 +386,20 @@ Publishing a release merges `dev` → `main`, bumps VERSION, builds the `.deb`, 
 ### Makefile targets
 
 ```
-make version       Print current version
-make bump-patch    Bump patch version (x.y.z → x.y.z+1)
-make bump-minor    Bump minor version (x.y.z → x.y+1.0)
-make bump-major    Bump major version (x.y.z → x+1.0.0)
-make install       Deploy device/ to /opt/uconsole/ and ~/pkg/
-make build-deb     Build .deb package to dist/
-make publish-apt   Update APT repo from latest .deb
-make release       Bump + build + publish + commit + tag
-make clean         Remove build artifacts
+make version        Print current version
+make bump-patch     Bump patch version (x.y.z → x.y.z+1)
+make bump-minor     Bump minor version (x.y.z → x.y+1.0)
+make bump-major     Bump major version (x.y.z → x+1.0.0)
+make install        Deploy device/ to /opt/uconsole/ and ~/pkg/
+make dev-mode       Enable dev.conf override (webdash runs from repo)
+make pkg-mode       Disable dev.conf (webdash runs from /opt/uconsole/)
+make build-deb      Build .deb package to dist/
+make publish-apt    Update APT repo from latest .deb
+make release        Bump + build + publish + commit + tag
+make test           Run all tests (device + frontend)
+make test-device    Run pytest + bash syntax + py_compile
+make test-frontend  Run vitest + lint + typecheck
+make clean          Remove build artifacts
 ```
 
 ---
