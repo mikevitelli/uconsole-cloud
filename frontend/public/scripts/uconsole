@@ -416,6 +416,17 @@ cmd_doctor() {
         fail=$((fail + 1))
       fi
     done
+
+    # Verify webdash actually responds (catches crash loops, bad User=, etc.)
+    if systemctl is-active --quiet uconsole-webdash.service 2>/dev/null; then
+      if curl -sk --max-time 3 -o /dev/null -w '' https://localhost 2>/dev/null; then
+        echo "  [OK] webdash responding on HTTPS"
+        pass=$((pass + 1))
+      else
+        echo "  [!!] webdash service active but not responding — check: journalctl -u uconsole-webdash"
+        fail=$((fail + 1))
+      fi
+    fi
   else
     # Check user services
     if command -v systemctl &>/dev/null; then
@@ -459,6 +470,26 @@ cmd_doctor() {
       echo "  [!!] SSL certificate missing"
       fail=$((fail + 1))
     fi
+  fi
+
+  # mDNS / avahi
+  if command -v avahi-daemon &>/dev/null; then
+    if systemctl is-active --quiet avahi-daemon 2>/dev/null; then
+      echo "  [OK] avahi-daemon active"
+      pass=$((pass + 1))
+      if avahi-resolve -n uconsole.local &>/dev/null; then
+        echo "  [OK] uconsole.local resolves"
+        pass=$((pass + 1))
+      else
+        echo "  [!!] uconsole.local does not resolve"
+        fail=$((fail + 1))
+      fi
+    else
+      echo "  [!!] avahi-daemon not running — uconsole.local won't work"
+      fail=$((fail + 1))
+    fi
+  else
+    echo "  [--] avahi not installed (uconsole.local won't resolve)"
   fi
 
   # Last push
@@ -546,9 +577,15 @@ cmd_restore() {
 
 cmd_version() {
   if [ -f /opt/uconsole/VERSION ]; then
-    echo "uconsole-cloud $(cat /opt/uconsole/VERSION)"
+    local ver
+    ver=$(cat /opt/uconsole/VERSION)
+    if [ -f /etc/systemd/system/uconsole-webdash.service.d/dev.conf ]; then
+      echo "uconsole-cloud ${ver} (dev)"
+    else
+      echo "uconsole-cloud ${ver}"
+    fi
   else
-    echo "uconsole-cloud (dev — standalone mode)"
+    echo "uconsole-cloud (standalone — no package installed)"
   fi
 }
 
