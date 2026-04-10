@@ -111,6 +111,18 @@ with open(path, 'w') as f:
         # Reload systemd to pick up new unit files (but do NOT enable or start)
         systemctl daemon-reload 2>/dev/null || true
 
+        # ── gpsd config for AIO board GPS ──
+        # Only configure if: gpsd is installed, UART exists, config file present
+        if command -v gpsd >/dev/null 2>&1 && [ -e /dev/ttyS0 ] && [ -f /etc/default/gpsd ]; then
+            if grep -q 'GPSD_OPTIONS=' /etc/default/gpsd 2>/dev/null; then
+                if ! grep -q -- '-b' /etc/default/gpsd 2>/dev/null; then
+                    sed -i '/^GPSD_OPTIONS=/ s/"$/ -b"/' /etc/default/gpsd
+                    systemctl restart gpsd 2>/dev/null || true
+                    echo "Added -b flag to gpsd (keeps NMEA mode for satellite data)"
+                fi
+            fi
+        fi
+
         # Detect and stop old user-level webdash service
         if [ -n "$REAL_HOME" ]; then
             OLD_SVC="${REAL_HOME}/.config/systemd/user/webdash.service"

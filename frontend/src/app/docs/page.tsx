@@ -421,9 +421,9 @@ Phone / Browser            │
               },
               {
                 name: "power/",
-                count: 10,
+                count: 11,
                 scripts:
-                  "battery.sh, battery-test.sh, cellhealth.sh, charge.sh, cpu-freq-cap.sh, fix-voltage-cutoff.sh, low-battery-shutdown.sh, pmu-voltage-min.sh, power.sh, lib.sh",
+                  "battery.sh, battery-test.sh, cellhealth.sh, charge.sh, cpu-freq-cap.sh, fix-battery-boot.sh, fix-voltage-cutoff.sh, low-battery-shutdown.sh, pmu-voltage-min.sh, power.sh, lib.sh",
               },
               {
                 name: "radio/",
@@ -739,6 +739,51 @@ uconsole setup`}</Code>
                 <InlineCode>/opt/uconsole/scripts/</InlineCode> has the expected
                 scripts. Also check that PATH includes{" "}
                 <InlineCode>/opt/uconsole/bin</InlineCode>.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                uConsole won&apos;t boot on battery
+              </p>
+              <p className="text-sub text-sm mb-2">
+                The AXP228 PMU defaults to a 3.3V undervoltage cutoff. 18650
+                cells sag below this during boot inrush. Install the battery
+                boot fix from TUI (Power &gt; Power Config &gt; Install Boot
+                Fix) or run{" "}
+                <InlineCode>
+                  sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh
+                  install
+                </InlineCode>
+                . This sets a 2.9V cutoff via udev rule, initramfs hook, and
+                shutdown service.
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                GPS satellite globe shows &quot;No Signal&quot;
+              </p>
+              <p className="text-sub text-sm mb-2">
+                The u-blox GPS module needs gpsd&apos;s{" "}
+                <InlineCode>-b</InlineCode> flag to stay in NMEA mode for
+                satellite visibility data. The package adds this automatically
+                on install. To fix manually:{" "}
+                <InlineCode>
+                  sudo sed -i &apos;/^GPSD_OPTIONS=/ s/&quot;$/ -b&quot;/&apos;
+                  /etc/default/gpsd &amp;&amp; sudo systemctl restart gpsd
+                </InlineCode>
+              </p>
+            </div>
+            <div>
+              <p className="text-bright font-medium text-sm mb-1">
+                LoRa SX1262 not detected
+              </p>
+              <p className="text-sub text-sm mb-2">
+                The SX1262 is on SPI1 (<InlineCode>/dev/spidev1.0</InlineCode>),
+                not SPI4. The <InlineCode>lora.sh</InlineCode> script loads the{" "}
+                <InlineCode>spi1-1cs</InlineCode> overlay on demand and unloads
+                it after use to avoid audio interference. Do not add{" "}
+                <InlineCode>dtoverlay=spi1-1cs</InlineCode> to config.txt
+                permanently.
               </p>
             </div>
             <div>
