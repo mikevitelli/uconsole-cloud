@@ -61,6 +61,75 @@ The system defaults at `/etc/xdg/labwc/autostart` are overridden entirely when a
    ```
 4. Restart: `sudo systemctl daemon-reload && sudo systemctl restart uconsole-webdash`
 
+## GPS Satellite Globe Shows "No Signal" Despite Having a Fix
+
+**Cause:** gpsd switches the u-blox GPS module to native UBX binary protocol, which doesn't support satellite visibility messages on the AIO board's module.
+
+**Fix:** Add the `-b` flag to gpsd to keep NMEA mode:
+
+```bash
+# Check current config
+grep GPSD_OPTIONS /etc/default/gpsd
+
+# Add -b if missing
+sudo sed -i '/^GPSD_OPTIONS=/ s/"$/ -b"/' /etc/default/gpsd
+sudo systemctl restart gpsd
+```
+
+The package installer adds `-b` automatically on install if gpsd and `/dev/ttyS0` are detected.
+
+## LoRa SX1262 Not Detected / SPI Returns 0x00
+
+**Cause:** The SX1262 is on SPI1 (`/dev/spidev1.0`), not the GPIO bit-banged SPI4. The `spi1-1cs` overlay must be loaded, and the chip needs a GPIO hardware reset.
+
+**Fix:** `lora.sh` loads the overlay on demand. If manual testing:
+
+```bash
+# Load SPI1 overlay
+sudo dtoverlay spi1-1cs
+
+# Reset the chip (GPIO 25) and probe
+python3 -c "
+import subprocess, time, spidev
+subprocess.run(['gpioset','-m','exit','gpiochip0','25=0'])
+time.sleep(0.05)
+subprocess.run(['gpioset','-m','exit','gpiochip0','25=1'])
+time.sleep(0.1)
+spi = spidev.SpiDev(); spi.open(1,0); spi.max_speed_hz=1000000; spi.mode=0
+resp = spi.xfer2([0x1D,0x03,0x20,0x00,0x00])
+print(f'Version: 0x{resp[-1]:02X}')  # expect 0x53 or 0x58
+"
+
+# Unload when done (avoids audio interference)
+sudo dtoverlay -r spi1-1cs
+```
+
+**Note:** Do NOT add `spi1-1cs` to `/boot/firmware/config.txt` — SPI1 (GPIO 18-21) causes static on the PWM audio output (GPIO 12-13). The overlay is loaded/unloaded on demand.
+
+## uConsole Won't Boot on Battery
+
+**Cause:** The AXP228 PMU defaults to a 3.3V undervoltage cutoff (VOFF). 18650 cells sag below 3.3V during boot inrush current, and the PMU kills power before the OS starts.
+
+**Fix:** Install the battery boot fix from the TUI:
+
+```
+Power > Power Config > Install Boot Fix
+```
+
+Or from the command line:
+
+```bash
+sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh install
+```
+
+This installs three layers: a udev rule, an initramfs hook (sets VOFF before heavy boot loads), and a shutdown service (persists VOFF through reboot). Check status with:
+
+```bash
+bash /opt/uconsole/scripts/power/fix-battery-boot.sh status
+```
+
+To revert: `sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh remove`
+
 ## WiFi Fallback AP Not Starting
 
 **Cause:** The NetworkManager dispatcher script (`wifi-fallback.sh`) isn't installed, or the hotspot connection profile is missing.

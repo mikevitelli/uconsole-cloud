@@ -87,7 +87,21 @@ chmod 755 "${BUILD_DIR}/DEBIAN/postinst" "${BUILD_DIR}/DEBIAN/prerm" "${BUILD_DI
 
 # ── Systemd units (installed but NOT enabled — setup wizard handles that) ──
 
-cp "${REPO_ROOT}/packaging/systemd/"* "${BUILD_DIR}/etc/systemd/system/"
+# Copy systemd units except battery fix (user opt-in via TUI)
+for unit in "${REPO_ROOT}/packaging/systemd/"*; do
+    [ "$(basename "$unit")" = "axp-voff-shutdown.service" ] && continue
+    cp "$unit" "${BUILD_DIR}/etc/systemd/system/"
+done
+
+# ── Battery boot fix templates (user applies via TUI Power Config) ──
+
+mkdir -p "${BUILD_DIR}/opt/uconsole/share/battery-fix"
+cp "${REPO_ROOT}/packaging/udev/99-uconsole-battery.rules" "${BUILD_DIR}/opt/uconsole/share/battery-fix/"
+cp "${REPO_ROOT}/packaging/initramfs/axp-voff-hook" "${BUILD_DIR}/opt/uconsole/share/battery-fix/"
+cp "${REPO_ROOT}/packaging/initramfs/axp-voff-premount" "${BUILD_DIR}/opt/uconsole/share/battery-fix/"
+cp "${REPO_ROOT}/packaging/systemd/axp-voff-shutdown.service" "${BUILD_DIR}/opt/uconsole/share/battery-fix/"
+chmod +x "${BUILD_DIR}/opt/uconsole/share/battery-fix/axp-voff-hook"
+chmod +x "${BUILD_DIR}/opt/uconsole/share/battery-fix/axp-voff-premount"
 
 # ── Nginx config (installed but NOT enabled) ──
 
