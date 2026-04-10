@@ -8,15 +8,41 @@ Usage:
     lora_helper.py chat <freq> <bw> <sf> <power>
     lora_helper.py bridge <freq> <bw> <sf> <api_url>
 """
+import subprocess
 import sys
 import time
 import json
 import spidev
 import struct
 
-SPI_BUS = 4
+SPI_BUS = 1
 SPI_CS = 0
 SPI_SPEED = 2_000_000
+
+# SX1262 GPIO pins (active-low reset, active-high busy)
+GPIO_RESET = 25
+GPIO_BUSY = 24
+GPIO_IRQ = 26
+
+
+def _gpioset(pin, value):
+    try:
+        subprocess.run(
+            ["gpioset", "-m", "exit", "gpiochip0", f"{pin}={value}"],
+            check=True, capture_output=True,
+        )
+    except FileNotFoundError:
+        pass  # gpiod not installed — skip hardware reset
+
+
+def _gpioget(pin):
+    try:
+        r = subprocess.run(
+            ["gpioget", "gpiochip0", str(pin)], capture_output=True, text=True
+        )
+        return int(r.stdout.strip())
+    except (FileNotFoundError, ValueError):
+        return 0  # assume ready if gpiod not available
 
 # SX1262 commands
 CMD_SET_STANDBY = 0x80
@@ -52,17 +78,24 @@ class SX1262:
         return self.spi.xfer2(payload)
 
     def _wait_busy(self, timeout=1.0):
-        """Wait for SX1262 to be ready (busy pin low). With SPI-only, use status poll."""
+        """Wait for SX1262 BUSY pin to go low."""
         start = time.time()
         while time.time() - start < timeout:
-            status = self._cmd(CMD_GET_STATUS, [0x00])
-            chip_mode = (status[1] >> 4) & 0x07
-            if chip_mode != 0:  # Not in startup
+            if _gpioget(GPIO_BUSY) == 0:
                 return
             time.sleep(0.001)
 
+    def _reset(self):
+        """Hardware reset via NRST pin."""
+        _gpioset(GPIO_RESET, 0)
+        time.sleep(0.05)
+        _gpioset(GPIO_RESET, 1)
+        time.sleep(0.1)
+        self._wait_busy()
+
     def init(self):
         """Initialize SX1262 for LoRa mode."""
+        self._reset()
         self._cmd(CMD_SET_STANDBY, [0x00])  # STDBY_RC
         self._wait_busy()
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# LoRa radio — SX1262 on SPI, transmit/receive/range-test
+# LoRa radio — SX1262 on SPI1 (/dev/spidev1.0), transmit/receive/range-test
+# SPI1 overlay loaded on demand to avoid audio interference with GPIO 12/13
 set -euo pipefail
 
 source "$(dirname "$0")/lib.sh"
 
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-SPI_DEV="/dev/spidev4.0"
+SPI_DEV="/dev/spidev1.0"
 LORA_CONF="$HOME/.config/uconsole/lora.conf"
 WEBDASH_API="http://localhost:8080/api/lora"
 
@@ -26,10 +27,18 @@ EOF
 
 check_spi() {
     if [ ! -e "$SPI_DEV" ]; then
-        err "SPI device not found at $SPI_DEV"
-        echo "  Check dtoverlay=spi1-1cs in /boot/config.txt"
-        exit 1
+        # Load SPI1 overlay on demand (not in config.txt to avoid audio interference)
+        sudo dtoverlay spi1-1cs 2>/dev/null
+        sleep 0.5
+        if [ ! -e "$SPI_DEV" ]; then
+            err "SPI device not found at $SPI_DEV"
+            exit 1
+        fi
     fi
+}
+
+unload_spi() {
+    sudo dtoverlay -r spi1-1cs 2>/dev/null || true
 }
 
 load_config() {
@@ -66,6 +75,7 @@ lora_py() {
 
 cmd_status() {
     section "LoRa Status (SX1262)"
+    check_spi
     if [ -e "$SPI_DEV" ]; then
         ok "SPI device present at $SPI_DEV"
     else
@@ -85,19 +95,22 @@ cmd_status() {
     if [ -e "$SPI_DEV" ] && command -v python3 &>/dev/null; then
         printf "\nHardware check:\n"
         python3 -c "
-import spidev
+import spidev, subprocess, time
+def gpioset(pin, val):
+    subprocess.run(['gpioset','-m','exit','gpiochip0',f'{pin}={val}'],capture_output=True)
+gpioset(25,0); time.sleep(0.05); gpioset(25,1); time.sleep(0.1)
 spi = spidev.SpiDev()
 try:
-    spi.open(4, 0)
+    spi.open(1, 0)
     spi.max_speed_hz = 1000000
     spi.mode = 0
     # Read VersionCode register (0x0320)
     resp = spi.xfer2([0x1D, 0x03, 0x20, 0x00, 0x00])
     version = resp[-1]
-    if version == 0x58:
-        print('  SX1262 chip confirmed (version 0x58)')
+    if version in (0x53, 0x58):
+        print(f'  SX1262 chip confirmed (version 0x{version:02X})')
     elif version == 0x00 or version == 0xFF:
-        print('  SPI bus responsive but no valid chip ID (antenna may be needed)')
+        print('  SPI bus responsive but no valid chip ID')
     else:
         print(f'  SPI response: 0x{version:02X} (unexpected)')
     spi.close()
@@ -105,6 +118,7 @@ except Exception as e:
     print(f'  SPI error: {e}')
 " 2>/dev/null || warn "Could not query SX1262 over SPI"
     fi
+    unload_spi
 }
 
 cmd_config() {
@@ -148,6 +162,7 @@ cmd_send() {
     printf "Sending: %s\n" "$msg"
     printf "  Freq: %.1f MHz  SF%s  BW%s  %s dBm\n" "$LORA_FREQ" "$LORA_SF" "$LORA_BW" "$LORA_POWER"
     lora_py send "$msg" "$LORA_FREQ" "$LORA_BW" "$LORA_SF" "$LORA_POWER"
+    unload_spi
 }
 
 cmd_listen() {
@@ -156,6 +171,7 @@ cmd_listen() {
     section "LoRa RX — Listening"
     printf "Freq: %.1f MHz  SF%s  BW%s  (Ctrl-C to stop)\n\n" "$LORA_FREQ" "$LORA_SF" "$LORA_BW"
     lora_py listen "$LORA_FREQ" "$LORA_BW" "$LORA_SF"
+    unload_spi
 }
 
 cmd_ping() {
@@ -164,6 +180,7 @@ cmd_ping() {
     section "LoRa Ping"
     printf "Freq: %.1f MHz  SF%s  BW%s  %s dBm\n" "$LORA_FREQ" "$LORA_SF" "$LORA_BW" "$LORA_POWER"
     lora_py ping "$LORA_FREQ" "$LORA_BW" "$LORA_SF" "$LORA_POWER"
+    unload_spi
 }
 
 cmd_chat() {
@@ -172,6 +189,7 @@ cmd_chat() {
     section "LoRa Chat"
     printf "Freq: %.1f MHz  SF%s  BW%s  (Ctrl-C to exit)\n\n" "$LORA_FREQ" "$LORA_SF" "$LORA_BW"
     lora_py chat "$LORA_FREQ" "$LORA_BW" "$LORA_SF" "$LORA_POWER"
+    unload_spi
 }
 
 cmd_bridge() {
@@ -181,6 +199,7 @@ cmd_bridge() {
     printf "Forwarding received messages to %s\n" "$WEBDASH_API/push"
     printf "Freq: %.1f MHz  SF%s  BW%s  (Ctrl-C to stop)\n\n" "$LORA_FREQ" "$LORA_SF" "$LORA_BW"
     lora_py bridge "$LORA_FREQ" "$LORA_BW" "$LORA_SF" "$WEBDASH_API/push"
+    unload_spi
 }
 
 case "${1:-status}" in

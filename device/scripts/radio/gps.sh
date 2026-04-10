@@ -27,9 +27,17 @@ EOF
 ensure_gps_dir() { mkdir -p "$GPS_DIR"; }
 
 check_gpsd() {
-    if ! systemctl is-active --quiet gpsd 2>/dev/null; then
-        err "gpsd is not running — start with: sudo systemctl start gpsd"
+    if ! command -v gpspipe &>/dev/null; then
+        err "gpspipe not found — install gpsd-clients"
         exit 1
+    fi
+    if ! systemctl is-active --quiet gpsd 2>/dev/null; then
+        # Try to start it
+        sudo systemctl start gpsd 2>/dev/null
+        if ! systemctl is-active --quiet gpsd 2>/dev/null; then
+            err "gpsd is not running — start with: sudo systemctl start gpsd"
+            exit 1
+        fi
     fi
 }
 
