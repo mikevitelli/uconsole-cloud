@@ -120,10 +120,12 @@ SUBMENUS = {
         ("Push Interval",    "_push_interval",               "set cloud status push frequency",    "action"),
     ],
     "sub:hw_config": [
+        ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel"),
+        ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action"),
+        ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action"),
         ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action"),
         ("CPU Freq Cap",     "power/cpu-freq-cap.sh",     "cap CPU at 1.2 GHz for battery",        "action"),
         ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen"),
-        ("Fix Voltage Cutoff","power/fix-voltage-cutoff.sh","install 2.9 V cutoff (community fix)", "action"),
     ],
     "sub:power_ctl": [
         ("Power Status",     "power/power.sh status",     "current power state",                    "panel"),
