@@ -1,0 +1,15 @@
+#!/bin/sh
+# initramfs premount: set AXP228 VOFF to 2.9V before main boot
+# Prevents false shutdown from 18650 voltage sag during boot inrush
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+
+modprobe i2c_bcm2835 2>/dev/null || true
+modprobe i2c_dev 2>/dev/null || true
+sleep 0.5
+
+# AXP228: register 0x31 bits 2:0 = 011 = 2.9V VOFF
+if [ -e /dev/i2c-0 ]; then
+    i2cset -f -y 0 0x34 0x31 0x03 2>/dev/null || true
+fi

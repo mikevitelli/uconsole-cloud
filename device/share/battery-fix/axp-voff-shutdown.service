@@ -1,0 +1,11 @@
+[Unit]
+Description=Set AXP228 VOFF to 2.9V before shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/i2cset -f -y 0 0x34 0x31 0x03
+
+[Install]
+WantedBy=shutdown.target reboot.target halt.target
