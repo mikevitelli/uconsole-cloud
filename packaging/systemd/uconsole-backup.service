@@ -5,7 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/uconsole/scripts/system/backup.sh
+# Pass `all` explicitly — without an argument backup.sh drops into an
+# interactive menu, reads EOF from stdin, prints "Invalid selection",
+# and loops forever. See 2026-04-13 incident.
+ExecStart=/opt/uconsole/scripts/system/backup.sh all
 WorkingDirectory=/opt/uconsole/scripts/system
+# Hard-close stdin and provide a minimal TERM so tput calls inside the
+# script can't trap it into interactive mode even if the argument is
+# ever dropped again.
+StandardInput=null
+Environment=TERM=dumb
 User=UCONSOLE_USER
 Group=UCONSOLE_USER
