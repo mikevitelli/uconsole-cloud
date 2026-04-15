@@ -298,12 +298,12 @@ CATEGORIES = [
     {
         "name": "GAMES",
         "items": [
+            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action"),
             ("Minesweeper",      "_minesweeper",        "classic mine-clearing game",             "action"),
             ("Snake",            "_snake",              "eat food, grow, don't hit walls",        "action"),
             ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action"),
             ("2048",             "_2048",               "slide and merge number tiles",           "action"),
             ("ROM Launcher",     "_romlauncher",        "launch Game Boy / N64 ROMs",             "action"),
-            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action"),
         ],
     },
     {
