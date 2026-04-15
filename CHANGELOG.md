@@ -1,5 +1,77 @@
 # Changelog
 
+## v0.2.0 (2026-04-15)
+
+Watch Dogs Go TUI launcher, ADS-B global basemap, Telegram TUI client,
+shared detached-spawn helper, and ROM Launcher crash fix.
+
+### Added
+- **Watch Dogs Go launcher** (`tui.watchdogs`) — new GAMES entry with
+  install-on-first-run flow, config page under CONFIG (install path,
+  auto-update, repo URL), smart path detection ($WATCHDOGS_HOME → ~/python
+  → ~/ → ~/git → /opt), and auto-detected terminal emulator for the
+  install window (lxterminal/foot/kitty/xterm/alacritty/xfce4/gnome-terminal).
+- **`tui.launcher`** — shared detached-spawn helper used by Watch Dogs Go
+  and the ROM Launcher. `launch_gui()` for GUI apps (retroarch, mgba,
+  gearboy), `launch_in_terminal()` for TTY-needing commands. Uses
+  `start_new_session=True` + DEVNULL stdio so child exit/crash cannot
+  propagate signals to the curses parent. PID lockfile helper with
+  stale cleanup and symlink-safe atomic write via `tempfile.mkstemp`.
+- **ADS-B global basemap** (from feature/adsb-global-basemap) — global
+  layered basemap (`adsb_basemap_global.json`), hi-res fetch
+  (`adsb_hires.py`), layer picker, home picker, basemap info panel.
+  New builder script `scripts/build_adsb_basemap.py` and planning doc.
+- **Telegram TUI client** (`tui.telegram`) — terminal chat client using
+  the official `tg` CLI with tdlib. New installer `install-tdlib.sh`
+  and validator `validate-telegram.sh` under `device/scripts/system/`.
+  Wired into the TOOLS section and covered by 682 lines of tests.
+
+### Changed
+- **GAMES section ordering** — Watch Dogs Go now appears first, above
+  Minesweeper/Snake/Tetris/2048/ROM Launcher.
+- **`_get_native_tools()`** wraps the watchdogs import in try/except so
+  a broken submodule can no longer brick the entire native-tools
+  registry; falls back to a stub on import failure.
+
+### Fixed
+- **ROM Launcher crash-on-close** (`tui.games.run_romlauncher`) — removed
+  the `curses.endwin()` + blocking `subprocess.run()` pattern that
+  invalidated the curses state, causing `scr.refresh()` / `curses.doupdate()`
+  to crash when the emulator exited. Now uses a detached `Popen` with
+  the same hardened kwargs as `launch_gui`, closes the gamepad fd
+  before spawning (prevents /dev/input/js0 race), normalizes ROM path
+  to absolute, and draws a launch toast before returning so the user
+  sees success/failure feedback.
+- **webdash 502 in dev mode** — `app.py` now adds `device/lib/` to the
+  `sys.path` search list, so running webdash directly from the source
+  tree (via the `dev.conf` drop-in) can find `ascii_logos.py`. Installed
+  `/opt/uconsole` mode was unaffected.
+- **Login page banner** — hardcoded "uConsole" ASCII now reads
+  "uConsole.local", matching the dashboard's randomized pool.
+
+### Security
+- **Path allowlist** for `find_watchdogs_path` — `realpath` + home/opt
+  prefix check blocks malicious `$WATCHDOGS_HOME` redirects.
+- **Terminal allowlist** for `$WATCHDOGS_TERMINAL` — basename must match
+  `KNOWN_TERMINALS`; executable file check required.
+- **git clone injection** — install flow uses `git clone --` + repo URL
+  regex allowlist (`^(https?://|git@)…\.git$`) with silent fallback to
+  the default LOCOSP/WatchDogsGo upstream.
+- **Lockfile hardening** — atomic `tempfile.mkstemp` with per-process
+  suffix, 0o600 perms, stale-PID cleanup; no symlink follow, no retry
+  on collision.
+
+### Tests
+- 997 tests passing (up from 946). New test-suite fixes:
+  - `test_native_tools.py`: allow `from tui import <submodule>` style
+    imports (module objects skipped for the callable assertion);
+    orphan-module check extended to match the alternate import form;
+    `launcher.py` exempted as a helper library.
+- `install-tdlib.sh` and `validate-telegram.sh` moved under
+  `device/scripts/system/` to satisfy the script-subdirectory check.
+
+---
+
 ## v0.1.7 (2026-04-08)
 
 CLI logs command, tab completion, test targets, and CLI refactor.
