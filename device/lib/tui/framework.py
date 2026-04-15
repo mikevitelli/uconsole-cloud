@@ -2084,12 +2084,26 @@ def _get_native_tools():
     from tui import adsb as _adsb_mod
     from tui.marauder import run_marauder
     from tui.telegram import run_telegram
+    # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
+    # launcher.py on a deployed device) can't brick the entire native-tools
+    # registry. On import failure both entries short-circuit to a stub via
+    # the ternaries below.
     try:
         from tui.watchdogs import run_watchdogs, run_watchdogs_config
         _have_watchdogs = True
     except ImportError:
         _have_watchdogs = False
-    tools = {
+        def _watchdogs_missing_stub(scr):
+            import curses
+            try:
+                scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
+                scr.refresh()
+                scr.getch()
+            except curses.error:
+                pass
+        run_watchdogs = _watchdogs_missing_stub
+        run_watchdogs_config = _watchdogs_missing_stub
+    return {
         "_theme":       lambda scr: run_theme_picker(scr),
         "_viewmode":    lambda scr: run_viewmode_toggle(scr),
         "_bat_gauge":   lambda scr: run_bat_gauge_toggle(scr),
@@ -2144,15 +2158,6 @@ def _get_native_tools():
         "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
         "_adsb_basemap_info": lambda scr: run_basemap_info(scr),
     }
-    if not _have_watchdogs:
-        def _watchdogs_missing(scr):
-            import curses
-            scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
-            scr.refresh()
-            scr.getch()
-        tools["_watchdogs"] = lambda scr: _watchdogs_missing(scr)
-        tools["_watchdogs_config"] = lambda scr: _watchdogs_missing(scr)
-    return tools
 
 
 def _adsb_layers_menu_entry(scr, run_layer_picker):
