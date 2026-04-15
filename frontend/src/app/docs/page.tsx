@@ -461,9 +461,8 @@ Phone / Browser            │
         <Section id="tui" title="TUI Modules">
           <p className="text-sub mb-3 text-sm">
             Curses-based terminal interface launched via{" "}
-            <InlineCode>console</InlineCode>. 9 category tabs, 147 menu
-            entries, 37 native tools. Supports keyboard (arrows, vim keys) and
-            gamepad input.
+            <InlineCode>console</InlineCode>. 9 category tabs, 53 native
+            tools. Supports keyboard (arrows, vim keys) and gamepad input.
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {[
@@ -471,10 +470,14 @@ Phone / Browser            │
               ["monitor", "Real-time CPU, RAM, temp gauges"],
               ["network", "WiFi switcher, hotspot, fallback"],
               ["radio", "GPS globe, FM radio"],
+              ["adsb", "Global ADS-B map, layers, hi-res fetch"],
               ["marauder", "ESP32 Marauder WiFi/BLE toolkit"],
+              ["telegram", "Terminal Telegram client (tg + tdlib)"],
               ["services", "Timer config, push interval"],
               ["tools", "Git panel, notes, calculator, stopwatch"],
-              ["games", "Minesweeper, snake, tetris, 2048"],
+              ["games", "Watch Dogs Go, minesweeper, snake, tetris, 2048, ROMs"],
+              ["watchdogs", "Watch Dogs Go launcher with auto-install"],
+              ["launcher", "Shared detached-spawn helper"],
               ["files", "File browser"],
               ["config_ui", "Theme picker, view mode"],
               ["workspace-monitor", "Labwc workspace detection"],
