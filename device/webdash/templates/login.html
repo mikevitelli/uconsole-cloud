@@ -50,12 +50,12 @@ body {
 <body>
 <form class="login-card" method="POST" action="/login">
   <img src="/uConsole.gif" alt="uConsole">
-  <pre class="ascii-title">        _____                       _
-       / ____|                     | |
- _   _| |     ___  _ __  ___  ___ | | ___
-| | | | |    / _ \| '_ \/ __|/ _ \| |/ _ \
-| |_| | |___| (_) | | | \__ \ (_) | |  __/
- \__,_|\_____\___/|_| |_|___/\___/|_|\___|</pre>
+  <pre class="ascii-title">        _____                      _        _                 _
+       / ____|                    | |      | |               | |
+ _   _| |     ___  _ __  ___  ___ | | ___  | | ___   ___ __ _| |
+| | | | |    / _ \| '_ \/ __|/ _ \| |/ _ \ | |/ _ \ / __/ _` | |
+| |_| | |___| (_) | | | \__ \ (_) | |  __/_| | (_) | (_| (_| | |
+ \__,_|\_____\___/|_| |_|___/\___/|_|\___(_)_|\___/ \___\__,_|_|</pre>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
   <button type="submit">Sign In</button>
