@@ -291,6 +291,7 @@ CATEGORIES = [
             ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action"),
             ("2048",             "_2048",               "slide and merge number tiles",           "action"),
             ("ROM Launcher",     "_romlauncher",        "launch Game Boy / N64 ROMs",             "action"),
+            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action"),
         ],
     },
     {
@@ -301,6 +302,7 @@ CATEGORIES = [
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action"),
+            ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action"),
         ],
     },
 ]
@@ -2063,7 +2065,12 @@ def _get_native_tools():
     from tui.services import run_cron_viewer, run_webdash_config, run_push_interval
     from tui.radio import run_gps_globe, run_fm_radio
     from tui.marauder import run_marauder
-    return {
+    try:
+        from tui.watchdogs import run_watchdogs, run_watchdogs_config
+        _have_watchdogs = True
+    except ImportError:
+        _have_watchdogs = False
+    tools = {
         "_theme":       lambda scr: run_theme_picker(scr),
         "_viewmode":    lambda scr: run_viewmode_toggle(scr),
         "_bat_gauge":   lambda scr: run_bat_gauge_toggle(scr),
@@ -2097,6 +2104,8 @@ def _get_native_tools():
         "_tetris":      lambda scr: run_tetris(scr),
         "_2048":        lambda scr: run_2048(scr),
         "_romlauncher": lambda scr: run_romlauncher(scr),
+        "_watchdogs":          lambda scr: run_watchdogs(scr),
+        "_watchdogs_config":   lambda scr: run_watchdogs_config(scr),
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
         "_esp32_hub":     lambda scr: run_esp32_hub(scr),
         "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
@@ -2108,6 +2117,15 @@ def _get_native_tools():
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
     }
+    if not _have_watchdogs:
+        def _watchdogs_missing(scr):
+            import curses
+            scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
+            scr.refresh()
+            scr.getch()
+        tools["_watchdogs"] = lambda scr: _watchdogs_missing(scr)
+        tools["_watchdogs_config"] = lambda scr: _watchdogs_missing(scr)
+    return tools
 
 NATIVE_TOOLS = None
 
