@@ -5,7 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/uconsole/scripts/system/update.sh
+# Pass `all` explicitly — without an argument update.sh drops into an
+# interactive menu, which under systemd (no TTY, no stdin) hangs forever.
+# Same class of bug as uconsole-backup.service prior to 2026-04-13.
+ExecStart=/opt/uconsole/scripts/system/update.sh all
 WorkingDirectory=/opt/uconsole/scripts/system
+StandardInput=null
+Environment=TERM=dumb
 User=UCONSOLE_USER
 Group=UCONSOLE_USER

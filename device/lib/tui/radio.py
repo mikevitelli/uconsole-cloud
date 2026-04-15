@@ -430,12 +430,41 @@ def run_fm_radio(scr):
     audio_h = tui.make_history()
     wave_samples = []
     lock = threading.Lock()
+    dump1090_was_running = [False]  # list to allow mutation from nested scope
+
+    def _release_sdr():
+        """Stop dump1090 if it's holding the SDR. Tracks so we can restart later."""
+        try:
+            rc = subprocess.run(
+                ["systemctl", "is-active", "--quiet", "dump1090-mutability"]
+            ).returncode
+            if rc == 0:
+                subprocess.run(
+                    ["sudo", "-n", "systemctl", "stop", "dump1090-mutability"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                dump1090_was_running[0] = True
+                time.sleep(0.3)  # let the kernel release the USB claim
+        except Exception:
+            pass
+
+    def _restore_sdr():
+        if dump1090_was_running[0]:
+            try:
+                subprocess.run(
+                    ["sudo", "-n", "systemctl", "start", "dump1090-mutability"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+            dump1090_was_running[0] = False
 
     def start_radio():
         nonlocal rtl_proc, aplay_proc, reader_t, stop_event, audio_h, wave_samples, lock, playing
         if rtl_proc:
             stop_event.set()
             _fm_stop(rtl_proc, aplay_proc)
+        _release_sdr()
         rtl_proc, aplay_proc, reader_t, stop_event, audio_h, wave_samples, lock = \
             _fm_start(freq, squelch, gain)
         playing = True
@@ -748,6 +777,7 @@ def run_fm_radio(scr):
             if stop_event:
                 stop_event.set()
             _fm_stop(rtl_proc, aplay_proc)
+        _restore_sdr()
         if js:
             js.close()
         scr.timeout(100)
