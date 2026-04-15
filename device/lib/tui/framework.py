@@ -290,6 +290,7 @@ CATEGORIES = [
             ("Weather",          "_weather",            "local forecast and conditions",          "action"),
             ("Hacker News",      "_hackernews",         "top stories from HN",                    "action"),
             ("uConsole Forum",   "_forum",              "ClockworkPi community topics",           "action"),
+            ("Telegram",         "_telegram",           "terminal chat client (tg)",              "action"),
             ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action"),
             ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action"),
         ],
@@ -2082,6 +2083,7 @@ def _get_native_tools():
     from tui import adsb_hires as _adsb_hires_mod
     from tui import adsb as _adsb_mod
     from tui.marauder import run_marauder
+    from tui.telegram import run_telegram
     try:
         from tui.watchdogs import run_watchdogs, run_watchdogs_config
         _have_watchdogs = True
@@ -2113,6 +2115,7 @@ def _get_native_tools():
         "_weather":     lambda scr: run_weather(scr),
         "_hackernews":  lambda scr: run_hackernews(scr),
         "_forum":       lambda scr: run_forum(scr),
+        "_telegram":    lambda scr: run_telegram(scr),
         "_mdviewer":    lambda scr: run_mdviewer(scr),
         "_cron":        lambda scr: run_cron_viewer(scr),
         "_screenshot":  lambda scr: run_screenshot(scr),
