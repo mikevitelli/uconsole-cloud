@@ -117,7 +117,6 @@ SUBMENUS = {
         ("Restart",          "util/webdash-ctl.sh restart",  "restart webdash service",            "action"),
         ("Logs",             "util/webdash-ctl.sh logs",     "recent webdash log output",          "panel"),
         ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action"),
-        ("Push Interval",    "_push_interval",               "set cloud status push frequency",    "action"),
     ],
     "sub:hw_config": [
         ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel"),
@@ -314,6 +313,7 @@ CATEGORIES = [
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action"),
+            ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action"),
             ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action"),
         ],
     },
