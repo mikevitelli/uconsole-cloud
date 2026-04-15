@@ -1392,18 +1392,39 @@ def run_romlauncher(scr):
                         msg_time = time.time()
                     else:
                         emu_path, emu_args = emu
-                        curses.endwin()
+                        fpath_abs = os.path.abspath(fpath)
+                        if js:
+                            js.close()
+                            js = None
                         try:
-                            subprocess.run(
-                                [emu_path] + emu_args + [fpath],
+                            subprocess.Popen(
+                                [emu_path] + emu_args + [fpath_abs],
+                                cwd=os.path.dirname(fpath_abs),
                                 env=_launch_env(),
+                                stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                start_new_session=True,
                             )
+                            message = f"Launched {fname} - returning to menu"
                         except Exception as e:
-                            print(f"\n  Error: {e}")
-                        print("\n  Press any key to return...")
-                        wait_for_input()
-                        scr.refresh()
-                        curses.doupdate()
+                            message = f"Launch error: {e}"
+                        msg_time = time.time()
+                        # Draw the toast immediately before returning so the user sees it
+                        h, w = scr.getmaxyx()
+                        attr_ok = curses.color_pair(C_STATUS) | curses.A_BOLD
+                        attr_err = curses.color_pair(C_DIM) | curses.A_BOLD
+                        msg_line = h - 2
+                        msg_x = max(1, (w - len(message)) // 2)
+                        try:
+                            scr.hline(msg_line, 1, ord(' '), w - 2)
+                            scr.addstr(msg_line, msg_x, message[:w - 2],
+                                       attr_ok if "Launched" in message else attr_err)
+                            scr.refresh()
+                        except curses.error:
+                            pass
+                        time.sleep(1.0)
+                        return
 
     if js:
         js.close()

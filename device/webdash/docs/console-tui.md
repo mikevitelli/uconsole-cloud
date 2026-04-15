@@ -24,10 +24,12 @@ Two view modes, switchable via CONFIG > View Mode:
 | **MONITOR** | Live system monitor, process manager, system log viewer, crash log |
 | **FILES** | File browser, audit (junk/untracked/categories), disk usage, storage |
 | **POWER** | Battery status, cell health (quick/full/log), charge rate, PMU, CPU freq cap, power control |
-| **NETWORK** | WiFi switcher, network info, speed test, scan, ping, traceroute, Bluetooth, SSH bookmarks |
+| **NETWORK** | WiFi switcher, hotspot config, WiFi fallback, network info, Bluetooth, SSH bookmarks |
+| **RADIO** | FM radio, GPS globe, **ADS-B map** (global layered basemap, hi-res fetch, layer picker), ESP32 Marauder hub |
 | **SERVICES** | Webdash (status/config/start/stop/restart/logs), cron/timers, AIO board check |
-| **TOOLS** | Git panel, quick notes, calculator, stopwatch, screenshot |
-| **CONFIG** | Color theme (6 themes), view mode (list/tiles), keybind reference |
+| **TOOLS** | Git panel, quick notes, calculator, stopwatch, screenshot, **Telegram** (terminal chat via tg + tdlib), weather, Hacker News, uConsole forum |
+| **GAMES** | **Watch Dogs Go** (wardriving hacking sim with auto-install), minesweeper, snake, tetris, 2048, ROM Launcher (Game Boy / N64) |
+| **CONFIG** | Color theme (6 themes), view mode (list/tiles), Watch Dogs config, keybind reference |
 
 ## Live Monitor
 
@@ -64,6 +66,13 @@ These run entirely within the TUI (no external scripts):
 | Calculator | Math expression evaluator with history |
 | Stopwatch | Start/stop/reset with large centered display |
 | Screenshot | Capture screen to PNG via scrot |
+| Watch Dogs Go | Wardriving hacking sim launcher — auto-installs from GitHub on first run, spawns in a new terminal window via detached Popen so child exit cannot disturb the TUI |
+| ROM Launcher | Launches Game Boy / N64 ROMs via mgba / gearboy / mupen64plus; uses the shared detached-spawn helper so closing the emulator no longer crashes the TUI |
+| ADS-B Map | Full-screen aircraft map with global layered basemap (countries, cities, airports), hi-res fetch for zoomed regions, and layer picker |
+| Telegram | Terminal Telegram client backed by `tg` + tdlib, with validator and installer helper scripts |
+| FM Radio | RTL-SDR FM tuner with waveform display, presets, and station scanning |
+| GPS Globe | Real-time GPS position on a rotating globe using u-blox NEO-6M via gpsd |
+| Marauder Hub | ESP32 Marauder serial console for WiFi/BLE recon, attack launching, and sensor telemetry |
 | Keybind Reference | Full keyboard and gamepad mapping |
 
 ## Controls

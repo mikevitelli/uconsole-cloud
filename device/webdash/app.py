@@ -18,9 +18,12 @@ import time
 
 from flask import Flask, jsonify, render_template, request, make_response, send_from_directory, redirect, url_for
 
-# ascii_logos may be in the scripts dir or alongside this file
+# ascii_logos may be alongside this file (installed /opt/uconsole/webdash),
+# or one level up in the source-tree lib/ dir (dev runs), or in ~/scripts
+# on legacy installs.
 _app_dir = os.path.dirname(os.path.abspath(__file__))
-for _p in [_app_dir, os.path.expanduser('~/scripts')]:
+_lib_dir = os.path.normpath(os.path.join(_app_dir, '..', 'lib'))
+for _p in [_app_dir, _lib_dir, os.path.expanduser('~/scripts')]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from ascii_logos import get_random_logo, get_logo, list_logos

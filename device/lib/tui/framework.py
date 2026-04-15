@@ -199,6 +199,16 @@ SUBMENUS = {
         ("Pager Decode",     "radio/sdr.sh decode",       "POCSAG/pager decoding",                  "fullscreen"),
         ("Record IQ",        "radio/sdr.sh record",       "capture raw IQ samples",                 "stream"),
     ],
+    "sub:adsb": [
+        ("Live Map",          "_adsb_map",          "real-time aircraft map with headings",    "action"),
+        ("Aircraft Table",    "_adsb_table",        "sorted list by distance",                 "action"),
+        ("Set Home (GPS)",    "_adsb_set_home",     "record current GPS fix as map center",    "action"),
+        ("Set Home (Manual)", "_adsb_home_picker",  "type lat/lon or pick a preset metro",     "action"),
+        ("Layer Config",      "_adsb_layers",       "pick which overlay layers to draw",       "action"),
+        ("Fetch Hi-Res",      "_adsb_fetch_hires",  "download 1:10m basemap for your region",  "action"),
+        ("Basemap Info",      "_adsb_basemap_info", "loaded files, feature counts, cache",     "action"),
+        ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch dump1090 interactive",             "fullscreen"),
+    ],
     "sub:lora": [
         ("Status",           "radio/lora.sh status",      "SX1262 SPI check + config",              "panel"),
         ("Configuration",    "radio/lora.sh config",      "frequency, BW, SF, power",               "panel"),
@@ -264,6 +274,7 @@ CATEGORIES = [
             ("AIO Board Check",  "radio/aio-check.sh",  "V1 board component status",              "panel"),
             ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu"),
             ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu"),
+            ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu"),
             ("LoRa Radio",       "sub:lora",            "send, receive, range test",              "submenu"),
             ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action"),
         ],
@@ -279,6 +290,7 @@ CATEGORIES = [
             ("Weather",          "_weather",            "local forecast and conditions",          "action"),
             ("Hacker News",      "_hackernews",         "top stories from HN",                    "action"),
             ("uConsole Forum",   "_forum",              "ClockworkPi community topics",           "action"),
+            ("Telegram",         "_telegram",           "terminal chat client (tg)",              "action"),
             ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action"),
             ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action"),
         ],
@@ -286,6 +298,7 @@ CATEGORIES = [
     {
         "name": "GAMES",
         "items": [
+            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action"),
             ("Minesweeper",      "_minesweeper",        "classic mine-clearing game",             "action"),
             ("Snake",            "_snake",              "eat food, grow, don't hit walls",        "action"),
             ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action"),
@@ -301,6 +314,7 @@ CATEGORIES = [
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action"),
+            ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action"),
         ],
     },
 ]
@@ -2062,7 +2076,33 @@ def _get_native_tools():
                              run_wifi_fallback, run_bluetooth)
     from tui.services import run_cron_viewer, run_webdash_config, run_push_interval
     from tui.radio import run_gps_globe, run_fm_radio
+    from tui.adsb import run_adsb_map, run_adsb_table, run_adsb_set_home
+    from tui.adsb_home_picker import run_home_picker_action
+    from tui.adsb_layer_picker import run_layer_picker
+    from tui.adsb_basemap_info import run_basemap_info
+    from tui import adsb_hires as _adsb_hires_mod
+    from tui import adsb as _adsb_mod
     from tui.marauder import run_marauder
+    from tui.telegram import run_telegram
+    # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
+    # launcher.py on a deployed device) can't brick the entire native-tools
+    # registry. On import failure both entries short-circuit to a stub via
+    # the ternaries below.
+    try:
+        from tui.watchdogs import run_watchdogs, run_watchdogs_config
+        _have_watchdogs = True
+    except ImportError:
+        _have_watchdogs = False
+        def _watchdogs_missing_stub(scr):
+            import curses
+            try:
+                scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
+                scr.refresh()
+                scr.getch()
+            except curses.error:
+                pass
+        run_watchdogs = _watchdogs_missing_stub
+        run_watchdogs_config = _watchdogs_missing_stub
     return {
         "_theme":       lambda scr: run_theme_picker(scr),
         "_viewmode":    lambda scr: run_viewmode_toggle(scr),
@@ -2089,6 +2129,7 @@ def _get_native_tools():
         "_weather":     lambda scr: run_weather(scr),
         "_hackernews":  lambda scr: run_hackernews(scr),
         "_forum":       lambda scr: run_forum(scr),
+        "_telegram":    lambda scr: run_telegram(scr),
         "_mdviewer":    lambda scr: run_mdviewer(scr),
         "_cron":        lambda scr: run_cron_viewer(scr),
         "_screenshot":  lambda scr: run_screenshot(scr),
@@ -2097,6 +2138,8 @@ def _get_native_tools():
         "_tetris":      lambda scr: run_tetris(scr),
         "_2048":        lambda scr: run_2048(scr),
         "_romlauncher": lambda scr: run_romlauncher(scr),
+        "_watchdogs":          lambda scr: run_watchdogs(scr),
+        "_watchdogs_config":   lambda scr: run_watchdogs_config(scr),
         "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
         "_esp32_hub":     lambda scr: run_esp32_hub(scr),
         "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
@@ -2107,7 +2150,67 @@ def _get_native_tools():
         "_marauder":      lambda scr: run_marauder(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
+        "_adsb_map":          lambda scr: run_adsb_map(scr),
+        "_adsb_table":        lambda scr: run_adsb_table(scr),
+        "_adsb_set_home":     lambda scr: run_adsb_set_home(scr),
+        "_adsb_home_picker":  lambda scr: run_home_picker_action(scr),
+        "_adsb_layers":       lambda scr: _adsb_layers_menu_entry(scr, run_layer_picker),
+        "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
+        "_adsb_basemap_info": lambda scr: run_basemap_info(scr),
     }
+
+
+def _adsb_layers_menu_entry(scr, run_layer_picker):
+    from tui.adsb import DEFAULT_LAYERS
+    cfg = load_config()
+    cur = int(cfg.get("adsb_layers", DEFAULT_LAYERS))
+    new_mask = run_layer_picker(scr, cur)
+    if new_mask is not None:
+        save_config("adsb_layers", new_mask)
+
+
+def _adsb_fetch_hires_entry(scr, hires_mod, adsb_mod):
+    """Menu wrapper for hi-res fetch — runs synchronously with progress in this screen."""
+    import curses
+    import time
+    cfg = load_config()
+    home_lat = cfg.get("adsb_home_lat")
+    home_lon = cfg.get("adsb_home_lon")
+    h, w = scr.getmaxyx()
+    scr.erase()
+    dim = curses.color_pair(C_DIM)
+    hdr = curses.color_pair(C_CAT) | curses.A_BOLD
+    ok_attr = curses.color_pair(C_OK) | curses.A_BOLD if hasattr(curses, 'color_pair') else 0
+    crit = curses.color_pair(C_CRIT)
+    if home_lat is None:
+        tui.put(scr,2, 2, "Set home location first.", w - 4, crit)
+        tui.put(scr,h - 1, 2, "press any key", w - 4, dim)
+        scr.refresh()
+        scr.timeout(-1)
+        scr.getch()
+        return
+    tui.put(scr,1, 2, "FETCH HI-RES BASEMAP", w - 4, hdr)
+    tui.put(scr,3, 2, f"Region: {home_lat:.3f}, {home_lon:.3f}  (±5° lat, ±7° lon)", w - 4, dim)
+    tui.put(scr,4, 2, "Source: github.com/nvkelso/natural-earth-vector (1:10m)", w - 4, dim)
+    tui.put(scr,5, 2, "Layers: coastlines, countries, states, lakes, rivers, airports", w - 4, dim)
+    tui.put(scr,7, 2, "Background fetch — you can return to the map immediately.", w - 4, dim)
+    tui.put(scr,9, 2, "y = start fetch    n = cancel", w - 4, hdr)
+    scr.refresh()
+    scr.timeout(-1)
+    while True:
+        k = scr.getch()
+        if k in (ord('y'), ord('Y')):
+            state = {"status": "idle", "msg": "", "banner_dismissed": False}
+            hires_mod.start_fetch(home_lat, home_lon, state)
+            tui.put(scr,11, 2, "Fetch started in background. Returning to menu.",
+                w - 4, curses.color_pair(C_OK) | curses.A_BOLD)
+            scr.refresh()
+            time.sleep(1)
+            scr.timeout(100)
+            return
+        if k in (ord('n'), ord('N'), ord('q'), 27):
+            scr.timeout(100)
+            return
 
 NATIVE_TOOLS = None
 
