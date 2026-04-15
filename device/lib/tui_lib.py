@@ -249,7 +249,9 @@ def panel_top(scr, y, x, width, title="", detail="",
         t = f" {title} "
         if detail:
             d = f" {detail} "
-            fill = width - 4 - len(t) - len(d) - 1
+            # Panel total width: "╭─" + t + "─"*fill + d + "─╮"
+            # = 2 + len(t) + fill + len(d) + 2  → fill = width - 4 - len(t) - len(d)
+            fill = width - 4 - len(t) - len(d)
             line = "╭─" + t + "─" * max(1, fill) + d + "─╮"
         else:
             line = "╭─" + t + "─" * (width - 4 - len(t)) + "─╮"

@@ -26,7 +26,7 @@
 
 A three-tier platform for managing the ClockworkPi uConsole — a modular ARM handheld Linux terminal (RPi CM4, 5" IPS, QWERTY keyboard, Debian Bookworm).
 
-**On your device:** a `.deb` package installs 45+ management scripts, a curses TUI with 8 categories (including FM radio, GPS globe, Marauder serial, battery discharge testing, forum browser, games), a Flask web dashboard with terminal access, and systemd services that push telemetry to the cloud every 5 minutes.
+**On your device:** a `.deb` package installs 45+ management scripts, a curses TUI with 9 categories and 53 native tools (FM radio, GPS globe, global ADS-B map, Marauder serial, Telegram client, battery discharge testing, forum browser, games including Watch Dogs Go with auto-install), a Flask web dashboard with terminal access, and systemd services that push telemetry to the cloud every 5 minutes.
 
 **On your local network:** the web dashboard runs at `https://uconsole.local` via nginx + self-signed TLS + mDNS, accessible from any phone or laptop on the same WiFi. If no known network is available, the device creates a fallback AP ("uConsole") so you can always connect.
 
@@ -42,7 +42,7 @@ A three-tier platform for managing the ClockworkPi uConsole — a modular ARM ha
 - **System inventory** — packages, browser extensions, scripts manifest, repo tree
 - **Local web dashboard** — HTTPS at `uconsole.local` via mDNS, with WiFi fallback AP
 - **Same-network detection** — shows a direct link to the local dashboard when you're on the same WiFi
-- **Curses TUI** — 8 categories, 14+ tools (FM radio, GPS globe, Marauder serial, discharge testing, forum browser, games)
+- **Curses TUI** — 9 categories, 53 native tools (FM radio, GPS globe, global ADS-B map with layered basemap, Marauder serial, Telegram client, discharge testing, forum browser, games including Watch Dogs Go launcher with auto-install)
 - **PWA** — installable on iOS/Android for quick access from your phone
 - **Device code auth** — link devices with an 8-character code or QR scan, no typing passwords on tiny keyboards
 - **APT repository** — `curl | sudo bash` adds the repo, `apt upgrade` handles future updates

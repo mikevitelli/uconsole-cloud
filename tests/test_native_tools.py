@@ -84,8 +84,14 @@ class TestNativeToolImportsResolve:
         ids=[f"{m}.{n}" for m, n in NATIVE_IMPORTS]
     )
     def test_imported_is_callable(self, module, name):
+        import types
         mod = importlib.import_module(module)
         obj = getattr(mod, name)
+        # `from tui import adsb_hires as _adsb_hires_mod` imports a submodule
+        # by name; such imports are wrapped in lambdas that dispatch to helper
+        # functions. Skip the callable assertion for module-type imports.
+        if isinstance(obj, types.ModuleType):
+            return
         assert callable(obj), f"{module}.{name} is not callable"
 
 
@@ -140,7 +146,11 @@ class TestTUIModuleExports:
     def test_module_has_run_functions(self, module_file):
         """Each non-framework module should export at least one run_ function."""
         # Utility modules that support TUI handlers but aren't handlers themselves
-        UTILITY_MODULES = {'framework.py', 'esp32_detect.py', 'esp32_flash.py'}
+        UTILITY_MODULES = {
+            'framework.py', 'esp32_detect.py', 'esp32_flash.py',
+            'adsb_hires.py',    # ADS-B hi-res fetch helper, used via _adsb_fetch_hires
+            'launcher.py',      # detached-spawn helper, used by watchdogs + romlauncher
+        }
         if module_file in UTILITY_MODULES:
             pytest.skip(f"{module_file} is a utility module")
         module_name = f"tui.{module_file[:-3]}"
@@ -152,15 +162,28 @@ class TestTUIModuleExports:
         )
 
     def test_no_orphan_modules(self):
-        """Every TUI module (except framework.py) should be imported by framework.py."""
+        """Every TUI module (except framework.py and helper libs) should be
+        imported by framework.py.
+
+        HELPER_MODULES are utility libraries used by other tui modules rather
+        than the framework directly (e.g. launcher.py is imported by
+        watchdogs.py and games.py for detached-spawn helpers).
+        """
+        HELPER_MODULES = {'launcher.py'}
         fw_path = os.path.join(TUI_DIR, 'framework.py')
         with open(fw_path) as f:
             fw_source = f.read()
 
         for module_file in self.TUI_MODULES:
-            if module_file == 'framework.py':
+            if module_file == 'framework.py' or module_file in HELPER_MODULES:
                 continue
             module_base = module_file[:-3]
-            assert f"tui.{module_base}" in fw_source, (
+            # Match both `from tui.foo import ...` and `from tui import foo`
+            # patterns — the latter is used for submodules accessed as objects.
+            found = (
+                f"tui.{module_base}" in fw_source
+                or f"from tui import {module_base}" in fw_source
+            )
+            assert found, (
                 f"tui/{module_file} exists but is never imported by framework.py"
             )
