@@ -49,6 +49,12 @@ for dir in bin lib scripts webdash share; do
     fi
 done
 
+# Scrub gitignored artifacts that can leak into cp -r: Python bytecode
+# caches and user-local TUI config (contains home coords / paths).
+find "${BUILD_DIR}/opt/uconsole/" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find "${BUILD_DIR}/opt/uconsole/" -name '.console-config.json' -delete 2>/dev/null || true
+find "${BUILD_DIR}/opt/uconsole/" -name '*.pyc' -delete 2>/dev/null || true
+
 # ── Cloud-side CLI wrapper (overrides device repo's copy if present) ──
 
 cp "${CLI_SRC}" "${BUILD_DIR}/opt/uconsole/bin/uconsole"
