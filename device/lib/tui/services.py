@@ -122,24 +122,41 @@ def run_webdash_config(scr):
                        restart_cmd=["systemctl", "--user", "restart", "webdash.service"])
 
 
-PUSH_INTERVALS = ["30s", "1min", "2min", "5min", "10min", "15min", "30min"]
+PUSH_INTERVALS = ["off", "30s", "1min", "2min", "5min", "10min", "15min", "30min"]
 STATUS_TIMER = os.path.expanduser("~/.config/systemd/user/uconsole-status.timer")
+
+
+def _status_timer_enabled():
+    """True if uconsole-status.timer is currently enabled at the user level."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "is-enabled", "uconsole-status.timer"],
+            timeout=5, capture_output=True, text=True,
+        )
+        return r.stdout.strip() == "enabled"
+    except Exception:
+        return True  # assume enabled on query failure
+
 
 def run_push_interval(scr):
     """Change cloud status push frequency."""
     h, w = scr.getmaxyx()
     # read current
     current = "5min"
-    try:
-        with open(STATUS_TIMER) as f:
-            for line in f:
-                if line.strip().startswith("OnUnitActiveSec="):
-                    current = line.strip().split("=", 1)[1]
-    except FileNotFoundError:
-        pass
+    if not _status_timer_enabled():
+        current = "off"
+    else:
+        try:
+            with open(STATUS_TIMER) as f:
+                for line in f:
+                    if line.strip().startswith("OnUnitActiveSec="):
+                        current = line.strip().split("=", 1)[1]
+        except FileNotFoundError:
+            pass
 
-    # show picker
-    sel = PUSH_INTERVALS.index(current) if current in PUSH_INTERVALS else 3
+    # show picker — default cursor position is "5min" if the stored
+    # value is missing or malformed
+    sel = PUSH_INTERVALS.index(current) if current in PUSH_INTERVALS else PUSH_INTERVALS.index("5min")
     js = open_gamepad()
     scr.timeout(100)
     while True:
@@ -177,21 +194,38 @@ def run_push_interval(scr):
         js.close()
 
     new_interval = PUSH_INTERVALS[sel]
-    # update timer file
     try:
-        timer_src = os.path.join(os.path.dirname(SCRIPT_DIR), "config", "systemd-user", "uconsole-status.timer")
-        lines = []
-        with open(timer_src) as f:
-            for line in f:
-                if line.strip().startswith("OnUnitActiveSec="):
-                    lines.append(f"OnUnitActiveSec={new_interval}\n")
-                else:
-                    lines.append(line)
-        with open(timer_src, "w") as f:
-            f.writelines(lines)
-        subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=10, capture_output=True)
-        subprocess.run(["systemctl", "--user", "restart", "uconsole-status.timer"], timeout=10, capture_output=True)
-        msg = f"  ✓ Push interval set to {new_interval}"
+        if new_interval == "off":
+            # Disable + stop the timer entirely. Reversible via this same
+            # picker — selecting any interval re-enables and restarts it.
+            subprocess.run(
+                ["systemctl", "--user", "disable", "--now", "uconsole-status.timer"],
+                timeout=10, capture_output=True,
+            )
+            msg = "  ✓ Push disabled — no telemetry sent to cloud"
+        else:
+            # update timer file
+            timer_src = os.path.join(os.path.dirname(SCRIPT_DIR), "config", "systemd-user", "uconsole-status.timer")
+            lines = []
+            with open(timer_src) as f:
+                for line in f:
+                    if line.strip().startswith("OnUnitActiveSec="):
+                        lines.append(f"OnUnitActiveSec={new_interval}\n")
+                    else:
+                        lines.append(line)
+            with open(timer_src, "w") as f:
+                f.writelines(lines)
+            subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=10, capture_output=True)
+            # Ensure the timer is enabled (re-enabling after a previous "off")
+            subprocess.run(
+                ["systemctl", "--user", "enable", "--now", "uconsole-status.timer"],
+                timeout=10, capture_output=True,
+            )
+            subprocess.run(
+                ["systemctl", "--user", "restart", "uconsole-status.timer"],
+                timeout=10, capture_output=True,
+            )
+            msg = f"  ✓ Push interval set to {new_interval}"
     except Exception as e:
         msg = f"  ✗ Failed: {e}"
 
