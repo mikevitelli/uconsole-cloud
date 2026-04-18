@@ -172,6 +172,26 @@ build_commit_message() {
     echo "backup($label_str): $(date '+%Y-%m-%d %H:%M') — ${file_count} file(s)"
 }
 
+# GitHub's hard blob limit is 100MB. Reject anything close to it
+# before committing — otherwise the push fails, the local commit
+# sticks, and tomorrow's sync stacks on top of today's poison.
+# Fail at the offender, not one network round-trip later.
+git_sync_guard_blob_size() {
+    local limit=$((95 * 1024 * 1024))
+    local path size offenders=()
+    while IFS= read -r -d '' path; do
+        size=$(git cat-file -s ":0:$path" 2>/dev/null) || continue
+        [ "$size" -gt "$limit" ] && offenders+=("$((size / 1024 / 1024))MB	$path")
+    done < <(git diff --cached --name-only -z)
+
+    [ ${#offenders[@]} -eq 0 ] && return 0
+
+    err "Refusing to commit — GitHub rejects blobs over 100MB:"
+    printf '    %s\n' "${offenders[@]}" >&2
+    err "Add the offending path(s) to .gitignore, then: git reset && re-run sync"
+    return 1
+}
+
 # ── git sync ──
 #
 # Pulls, stages all managed paths, builds a commit message from what
@@ -198,6 +218,13 @@ git_sync() {
         ok "Nothing to commit — working tree clean"
         log_entry "sync" "no changes"
         return 0
+    fi
+
+    # 2a. refuse to commit blobs GitHub will reject
+    if ! git_sync_guard_blob_size; then
+        git reset --quiet
+        log_entry "sync" "ABORTED: oversize blob in index (unstaged)"
+        return 1
     fi
 
     # 3. show what's staged
