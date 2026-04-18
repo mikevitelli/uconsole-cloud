@@ -43,7 +43,11 @@ check_gpsd() {
 
 # Get a single TPV fix from gpsd (JSON)
 gpsd_tpv() {
-    gpspipe -w -n 10 -x 5 2>/dev/null | grep -m1 '"class":"TPV"' || echo '{}'
+    local out
+    # Run in a subshell without pipefail so grep -m1 closing the pipe early
+    # (which sends SIGPIPE to gpspipe) doesn't poison the result.
+    out=$(set +o pipefail; gpspipe -w -n 10 -x 5 2>/dev/null | grep -m1 '"class":"TPV"') || true
+    echo "${out:-{\}}"
 }
 
 # Parse TPV JSON into display fields
@@ -76,7 +80,8 @@ print(f'GPS Time:   {t}')
 # Get satellite count from SKY message
 sat_count() {
     local sky
-    sky=$(gpspipe -w -n 20 -x 5 2>/dev/null | grep -m1 '"class":"SKY"' || echo '{}')
+    sky=$(set +o pipefail; gpspipe -w -n 20 -x 5 2>/dev/null | grep -m1 '"class":"SKY"') || true
+    sky="${sky:-{\}}"
     python3 -c "
 import json
 try:

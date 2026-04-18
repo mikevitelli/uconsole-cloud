@@ -1,0 +1,25 @@
+[connection]
+id=Not Your iPhone
+uuid=dea4b34d-6c5c-4e2e-b6eb-f481ec23cb87
+type=wifi
+autoconnect-priority=50
+interface-name=wlan0
+timestamp=1774384044
+
+[wifi]
+mac-address=D8:3A:DD:B9:C2:E2
+mode=infrastructure
+ssid=Not your iPhone
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=12345678
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=stable-privacy
+method=auto
+
+[proxy]

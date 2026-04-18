@@ -1,0 +1,25 @@
+[connection]
+id=Digital Counsel
+uuid=ce1b3bb9-39c1-4e75-86f0-fb68f0707b30
+type=wifi
+autoconnect-priority=90
+interface-name=wlan0
+timestamp=1774381365
+
+[wifi]
+mode=infrastructure
+ssid=Digital Counsel
+
+[wifi-security]
+auth-alg=open
+key-mgmt=wpa-psk
+psk=311EastBroadway
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
+
+[proxy]

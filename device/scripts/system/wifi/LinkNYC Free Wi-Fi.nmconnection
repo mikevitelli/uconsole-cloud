@@ -1,0 +1,20 @@
+[connection]
+id=LinkNYC Free Wi-Fi
+uuid=e92e8068-b66f-45db-9609-484a741d85b7
+type=wifi
+autoconnect=false
+interface-name=wlan0
+timestamp=1774383621
+
+[wifi]
+mode=infrastructure
+ssid=LinkNYC Free Wi-Fi
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
+
+[proxy]
