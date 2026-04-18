@@ -1,0 +1,18 @@
+[Unit]
+Description=uConsole Web Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mikevitelli/scripts
+Environment=WEBDASH_PORT=8080
+Environment=WEBDASH_PASS=clockwork
+ExecStart=/usr/bin/python3 /home/mikevitelli/scripts/webdash.py
+Restart=always
+RestartSec=3
+Environment=DISPLAY=:2
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+
+[Install]
+WantedBy=default.target

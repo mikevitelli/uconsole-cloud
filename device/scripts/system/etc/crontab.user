@@ -1,0 +1,1 @@
+@reboot /bin/bash /home/mikevitelli/scripts/boot-check.sh

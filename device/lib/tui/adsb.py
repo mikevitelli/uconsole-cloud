@@ -5,6 +5,7 @@ import json
 import math
 import os
 import subprocess
+import time
 
 from tui.framework import (
     C_BORDER,
@@ -23,6 +24,36 @@ from tui.framework import (
 import tui_lib as tui
 
 ADSB_JSON = "/run/dump1090-mutability/aircraft.json"
+_SERVICE = "dump1090-mutability"
+
+
+def _ensure_dump1090():
+    """Start dump1090 service if not already running. Returns True if we started it."""
+    try:
+        rc = subprocess.run(
+            ["systemctl", "is-active", "--quiet", _SERVICE]
+        ).returncode
+        if rc == 0:
+            return False
+        subprocess.run(
+            ["sudo", "-n", "systemctl", "start", _SERVICE],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.5)  # let dump1090 begin writing aircraft.json
+        return True
+    except Exception:
+        return False
+
+
+def _stop_dump1090():
+    """Stop dump1090 service."""
+    try:
+        subprocess.run(
+            ["sudo", "-n", "systemctl", "stop", _SERVICE],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 BASEMAP_GLOBAL = os.path.join(os.path.dirname(__file__), "adsb_basemap_global.json")
 BASEMAP_LEGACY = os.path.join(os.path.dirname(__file__), "adsb_basemap.json")  # backwards compat
 HIRES_CACHE_DIR = os.path.expanduser("~/.config/uconsole")
@@ -361,6 +392,7 @@ def run_adsb_set_home(scr):
 
 def run_adsb_map(scr):
     """Real-time ADS-B aircraft map using BrailleCanvas."""
+    we_started = _ensure_dump1090()
     js = open_gamepad()
     scr.timeout(1000)
     tui.init_gauge_colors()
@@ -571,11 +603,14 @@ def run_adsb_map(scr):
 
     if js:
         close_gamepad(js)
+    if we_started:
+        _stop_dump1090()
     scr.timeout(100)
 
 
 def run_adsb_table(scr):
     """Sorted table view of all visible aircraft."""
+    we_started = _ensure_dump1090()
     js = open_gamepad()
     scr.timeout(1000)
     top = 0
@@ -642,4 +677,6 @@ def run_adsb_table(scr):
 
     if js:
         close_gamepad(js)
+    if we_started:
+        _stop_dump1090()
     scr.timeout(100)

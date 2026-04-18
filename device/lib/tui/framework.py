@@ -1866,8 +1866,11 @@ _ESP32_MARAUDER_ITEMS = [
 ]
 
 _ESP32_COMMON_ITEMS = [
+    ("Install Bruce","_esp32_install_watchdogs",  "one-tap: detect chip, fetch, flash",     "action",     "▶"),
     ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython or Marauder",          "action",     "⇄"),
+    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython, Marauder, or Bruce", "action",  "⇄"),
+    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
+    ("Clear FW Cache",   "_esp32_fw_cache_clear",     "delete downloaded Bruce firmware",   "action",     "🗑"),
     ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
 ]
 
@@ -1918,6 +1921,7 @@ def run_esp32_hub(scr):
     badge = {
         Firmware.MICROPYTHON: "MicroPython",
         Firmware.MARAUDER: "Marauder",
+        Firmware.BRUCE: "Bruce",
         Firmware.UNKNOWN: "Unknown",
     }.get(firmware, "Unknown")
 
@@ -1926,68 +1930,384 @@ def run_esp32_hub(scr):
 
 def run_esp32_flash_picker(scr):
     """Switch firmware — pick target and flash with safety gates."""
+    import threading
     from tui.esp32_detect import Firmware, detect, invalidate_cache
-    from tui.esp32_flash import FlashError, flash
+    from tui.esp32_flash import FetchCancelled, FlashError, flash
 
     current = detect()
 
-    # Determine target (opposite of current)
-    if current == Firmware.MICROPYTHON:
-        target = Firmware.MARAUDER
-        target_name = "Marauder"
-    elif current == Firmware.MARAUDER:
-        target = Firmware.MICROPYTHON
-        target_name = "MicroPython"
-    else:
-        # Unknown — ask user to pick
-        target = Firmware.MARAUDER
-        target_name = "Marauder"
+    options = [
+        (Firmware.MICROPYTHON, "MicroPython"),
+        (Firmware.MARAUDER,    "Marauder"),
+        (Firmware.BRUCE,   "Bruce"),
+    ]
 
     h, w = scr.getmaxyx()
     scr.erase()
-
-    # Confirmation
-    msg = f" Flash {target_name}? (Y/N) "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+    title = " Flash which firmware? "
+    scr.addnstr(1, max(0, (w - len(title)) // 2), title, w,
                 curses.color_pair(C_HEADER) | curses.A_BOLD)
+
+    sel = 0
+    for i, (fw, name) in enumerate(options):
+        if fw == current:
+            sel = i  # highlight current by default (user picks another)
+    # If current is unknown, start on Marauder
+    if current == Firmware.UNKNOWN:
+        sel = 1
+
+    scr.timeout(-1)
+    while True:
+        for i, (fw, name) in enumerate(options):
+            marker = ">" if i == sel else " "
+            tag = "  (current)" if fw == current else ""
+            line = f" {marker} {i+1}. {name}{tag} "
+            attr = curses.A_BOLD | curses.color_pair(
+                C_HEADER if i == sel else C_DIM)
+            try:
+                scr.addnstr(3 + i, max(0, (w - len(line)) // 2),
+                            line, w - 1, attr)
+            except curses.error:
+                pass
+        hint = " up/down select  Enter confirm  Q cancel "
+        try:
+            scr.addnstr(h - 1, 0, hint[:w - 1].center(w - 1), w - 1,
+                        curses.color_pair(C_DIM))
+        except curses.error:
+            pass
+        scr.refresh()
+        key = scr.getch()
+        if key in (curses.KEY_UP, ord("k")):
+            sel = (sel - 1) % len(options)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            sel = (sel + 1) % len(options)
+        elif key in (ord("1"), ord("2"), ord("3")):
+            sel = key - ord("1")
+            break
+        elif key in (10, 13, curses.KEY_ENTER):
+            break
+        elif key in (ord("q"), ord("Q"), 27):
+            scr.timeout(100)
+            return
+    scr.timeout(100)
+
+    target, target_name = options[sel]
+
+    if target == current:
+        scr.addnstr(h - 2, 0,
+                    f" Already running {target_name} — nothing to do. "[:w - 1],
+                    w - 1, curses.color_pair(C_STATUS) | curses.A_BOLD)
+        scr.refresh()
+        scr.timeout(-1); scr.getch(); scr.timeout(100)
+        return
+
+    variant = None
+    if target == Firmware.BRUCE:
+        from tui.esp32_flash import list_watchdogs_variants
+        from tui.esp32_detect import detect_board_variant
+        variants = list_watchdogs_variants()
+        if not variants:
+            try:
+                scr.addnstr(h - 2, 0,
+                            " No Bruce variants registered. "[:w - 1],
+                            w - 1,
+                            curses.color_pair(C_STATUS) | curses.A_BOLD)
+            except curses.error:
+                pass
+            scr.refresh()
+            scr.timeout(-1); scr.getch(); scr.timeout(100)
+            return
+        picked = _pick_watchdogs_variant(scr, variants, detect_board_variant())
+        if picked is None:
+            return
+        variant, variant_disp = picked
+        target_name = f"Bruce [{variant_disp}]"
+
+    if not _confirm_flash(scr, target_name):
+        return
+    _run_threaded_flash(scr, target, variant, target_name)
+    invalidate_cache()
+    return
+
+
+def _confirm_flash(scr, target_name):
+    """Show a Y/N confirmation for a destructive flash operation."""
+    h, w = scr.getmaxyx()
+    scr.erase()
+    msg = f" Flash {target_name}? (Y/N) "
+    try:
+        scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w - 1,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+    except curses.error:
+        pass
     scr.refresh()
     scr.timeout(-1)
     key = scr.getch()
     scr.timeout(100)
-    if key not in (ord("y"), ord("Y")):
-        return
+    return key in (ord("y"), ord("Y"))
 
-    # Flash with progress
+
+def _run_threaded_flash(scr, target, variant, target_name):
+    """Run ``flash()`` on a worker thread and drive a curses progress UI.
+
+    Handles download progress, esptool output surfacing, Q/ESC cancel
+    during the fetch phase, and final result display.  Returns when
+    the user acknowledges the result screen.
+    """
+    import threading
+    from tui.esp32_flash import FetchCancelled, FlashError, flash
+
+    h, w = scr.getmaxyx()
+
     scr.erase()
-    lines = []
+    progress_state = {"done": 0, "total": None, "msg": "Starting..."}
+    progress_lock = threading.Lock()
+    cancel_event = threading.Event()
+    result = {"error": None, "done": False}
 
-    def on_output(line):
-        lines.append(line)
-        y = min(len(lines), h - 2)
+    def on_fetch_progress(done, total):
+        with progress_lock:
+            progress_state["done"] = done
+            progress_state["total"] = total
+            progress_state["msg"] = "Downloading firmware"
+
+    def on_output_cb(line):
+        with progress_lock:
+            progress_state["msg"] = line[:60]
         try:
-            scr.addnstr(y, 1, line[:w - 2], w - 2, curses.color_pair(C_DIM))
+            scr.addnstr(h - 2, 1, line[:w - 2], w - 2,
+                        curses.color_pair(C_DIM))
             scr.refresh()
         except curses.error:
             pass
 
-    try:
-        scr.addnstr(0, 0, f" Flashing {target_name}... ".center(w), w,
-                    curses.color_pair(C_HEADER) | curses.A_BOLD)
-        scr.refresh()
-        flash(target, on_output=on_output)
-        msg = f" Flash complete — {target_name} installed. Press any key. "
-    except FlashError as e:
-        msg = f" Flash failed: {e} "
+    def worker():
+        try:
+            flash(target, on_output=on_output_cb,
+                  variant=variant, on_fetch_progress=on_fetch_progress,
+                  cancel_event=cancel_event)
+        except BaseException as exc:
+            result["error"] = exc
+        finally:
+            result["done"] = True
 
-    scr.addnstr(h - 1, 0, msg[:w], w,
-                curses.color_pair(C_STATUS) | curses.A_BOLD)
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+    scr.timeout(100)
+    try:
+        while not result["done"]:
+            try:
+                scr.addnstr(0, 0,
+                            f" Flashing {target_name}... ".center(w - 1),
+                            w - 1,
+                            curses.color_pair(C_HEADER) | curses.A_BOLD)
+                with progress_lock:
+                    done = progress_state["done"]
+                    total = progress_state["total"]
+                    msg_line = progress_state["msg"]
+                if total:
+                    pct = int(done * 100 / total) if total else 0
+                    bar = (f" {msg_line}: {done // 1024} / "
+                           f"{total // 1024} KB ({pct}%) ")
+                elif done:
+                    bar = f" {msg_line}: {done // 1024} KB "
+                else:
+                    bar = f" {msg_line} "
+                scr.addnstr(2, 0, bar[:w - 1].center(w - 1), w - 1,
+                            curses.color_pair(C_DIM))
+                scr.addnstr(h - 1, 0,
+                            " Q/ESC to cancel (download only) "[:w - 1]
+                            .center(w - 1), w - 1,
+                            curses.color_pair(C_DIM))
+                scr.refresh()
+            except curses.error:
+                pass
+            key = scr.getch()
+            if key in (ord("q"), ord("Q"), 27):
+                cancel_event.set()
+        t.join(timeout=5)
+        err = result["error"]
+        if isinstance(err, FetchCancelled):
+            msg = " Download cancelled. "
+        elif isinstance(err, FlashError):
+            msg = f" Flash failed: {err} "
+        elif err is not None:
+            msg = f" Unexpected error: {err} "
+        else:
+            msg = f" Flash complete — {target_name} installed. Press any key. "
+    finally:
+        scr.timeout(100)
+
+    try:
+        scr.addnstr(h - 1, 0, msg[:w - 1], w - 1,
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+    except curses.error:
+        pass
     scr.refresh()
     scr.timeout(-1)
     scr.getch()
     scr.timeout(100)
 
-    # Invalidate cache so hub re-detects on return
+
+def _esp32_install_watchdogs(scr):
+    """One-tap Bruce install: detect chip → fetch → flash.
+
+    If ``detect_board_variant`` is confident, we skip the variant
+    picker and only ask for the single Y/N confirmation.  If detection
+    fails, fall back to the manual picker so the user can choose
+    explicitly.
+    """
+    from tui.esp32_detect import (
+        Firmware, detect_board_variant, invalidate_cache, _read_chip_type,
+        get_port, release_gpsd)
+    from tui.esp32_flash import list_watchdogs_variants
+
+    h, w = scr.getmaxyx()
+
+    # Close any held Marauder connection so detection has the port.
+    try:
+        from tui.marauder import _inst as _mrd_inst
+        if _mrd_inst and getattr(_mrd_inst, 'port', None):
+            _mrd_inst.close()
+    except Exception:
+        pass
+
+    scr.erase()
+    splash = " Detecting ESP32 board... "
+    try:
+        scr.addnstr(h // 2, max(0, (w - len(splash)) // 2), splash, w - 1,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+    except curses.error:
+        pass
+    scr.refresh()
+
+    # Detect chip family so we can scope the variant list.
+    port = get_port()
+    if port:
+        release_gpsd(port)
+    chip = _read_chip_type(port) if port else None
+    guessed = detect_board_variant(port)
+
+    # Show variants for this chip only; fall back to all if detection fails.
+    variants = list_watchdogs_variants(chip=chip) or list_watchdogs_variants()
+    variants_map = {vid: disp for vid, disp in variants}
+
+    # If we identified exactly one variant for this chip, auto-select.
+    if len(variants) == 1 and guessed is None:
+        guessed = variants[0][0]
+
+    if guessed and guessed in variants_map:
+        variant = guessed
+        variant_disp = variants_map[variant]
+        chip_label = chip or "unknown chip"
+        scr.erase()
+        lines = [
+            f" Detected: {chip_label} ",
+            f" Board: {variant_disp} ",
+            "",
+            " Install Bruce firmware? ",
+            " Y to confirm, M to pick manually, anything else to cancel ",
+        ]
+        for i, line in enumerate(lines):
+            attr = curses.color_pair(
+                C_HEADER if i in (1, 3) else C_DIM)
+            if i in (1, 3):
+                attr |= curses.A_BOLD
+            try:
+                scr.addnstr(h // 2 - 2 + i,
+                            max(0, (w - len(line)) // 2),
+                            line, w - 1, attr)
+            except curses.error:
+                pass
+        scr.refresh()
+        scr.timeout(-1)
+        key = scr.getch()
+        scr.timeout(100)
+        if key in (ord("m"), ord("M")):
+            variant = None  # fall through to manual picker below
+        elif key not in (ord("y"), ord("Y")):
+            return
+
+    else:
+        variant = None
+
+    # Manual picker fallback — either detection failed or user wanted it.
+    if variant is None:
+        if not variants:
+            scr.erase()
+            msg = " No Bruce variants registered. "
+            try:
+                scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w - 1,
+                            curses.color_pair(C_STATUS) | curses.A_BOLD)
+            except curses.error:
+                pass
+            scr.refresh()
+            scr.timeout(-1); scr.getch(); scr.timeout(100)
+            return
+        picked = _pick_watchdogs_variant(scr, variants, guessed)
+        if picked is None:
+            return
+        variant, variant_disp = picked
+        if not _confirm_flash(scr, f"Bruce [{variant_disp}]"):
+            return
+
+    _run_threaded_flash(scr, Firmware.BRUCE, variant,
+                        f"Bruce [{variant_disp}]")
     invalidate_cache()
+
+
+def _pick_watchdogs_variant(scr, variants, guessed):
+    """Interactive variant picker.  Returns (vid, display) or None."""
+    h, w = scr.getmaxyx()
+    vsel = 0
+    if guessed:
+        for i, (vid, _disp) in enumerate(variants):
+            if vid == guessed:
+                vsel = i
+                break
+    scr.timeout(-1)
+    try:
+        while True:
+            scr.erase()
+            title = " Which board? "
+            try:
+                scr.addnstr(1, max(0, (w - len(title)) // 2), title, w - 1,
+                            curses.color_pair(C_HEADER) | curses.A_BOLD)
+            except curses.error:
+                pass
+            for i, (vid, disp) in enumerate(variants):
+                marker = ">" if i == vsel else " "
+                tag = "  (detected)" if guessed == vid else ""
+                line = f" {marker} {i+1}. {disp}{tag} "
+                attr = curses.A_BOLD | curses.color_pair(
+                    C_HEADER if i == vsel else C_DIM)
+                try:
+                    scr.addnstr(3 + i, max(0, (w - len(line)) // 2),
+                                line, w - 1, attr)
+                except curses.error:
+                    pass
+            hint = " up/down select  Enter confirm  Q cancel "
+            try:
+                scr.addnstr(h - 1, 0, hint[:w - 1].center(w - 1), w - 1,
+                            curses.color_pair(C_DIM))
+            except curses.error:
+                pass
+            scr.refresh()
+            key = scr.getch()
+            if key in (curses.KEY_UP, ord("k")):
+                vsel = (vsel - 1) % len(variants)
+            elif key in (curses.KEY_DOWN, ord("j")):
+                vsel = (vsel + 1) % len(variants)
+            elif ord("1") <= key <= ord("9") and (key - ord("1")) < len(variants):
+                vsel = key - ord("1")
+                return variants[vsel]
+            elif key in (10, 13, curses.KEY_ENTER):
+                return variants[vsel]
+            elif key in (ord("q"), ord("Q"), 27):
+                return None
+    finally:
+        scr.timeout(100)
 
 
 def run_esp32_force(scr, firmware):
@@ -2051,6 +2371,85 @@ def _esp32_redetect(scr):
     from tui.esp32_detect import invalidate_cache
     invalidate_cache()
     run_esp32_hub(scr)
+
+
+def _esp32_fw_cache_clear(scr):
+    """Delete every cached Bruce firmware .bin in ~/watchdogs-fw/."""
+    from tui.esp32_flash import clear_watchdogs_cache
+
+    h, w = scr.getmaxyx()
+    scr.erase()
+    title = " Clear Bruce firmware cache? (Y/N) "
+    try:
+        scr.addnstr(h // 2, max(0, (w - len(title)) // 2), title, w - 1,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+    except curses.error:
+        pass
+    scr.refresh()
+    scr.timeout(-1)
+    key = scr.getch()
+    scr.timeout(100)
+    if key not in (ord("y"), ord("Y")):
+        return
+
+    removed = clear_watchdogs_cache()
+    msg = (f" Removed {len(removed)} file(s) "
+           if removed else " Cache already empty ")
+    try:
+        scr.addnstr(h // 2 + 2, max(0, (w - len(msg)) // 2), msg, w - 1,
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+    except curses.error:
+        pass
+    scr.refresh()
+    scr.timeout(-1)
+    scr.getch()
+    scr.timeout(100)
+
+
+def _esp32_backup(scr):
+    """Dump current ESP32 flash to a timestamped .bin."""
+    from tui.esp32_flash import FlashError, backup_flash
+
+    # Release the Marauder serial connection if held
+    try:
+        from tui.marauder import _inst as _mrd_inst
+        if _mrd_inst and getattr(_mrd_inst, 'port', None):
+            _mrd_inst.close()
+    except Exception:
+        pass
+
+    h, w = scr.getmaxyx()
+    scr.erase()
+    scr.addnstr(0, 0, " Backing up ESP32 flash... ".center(w), w,
+                curses.color_pair(C_HEADER) | curses.A_BOLD)
+    scr.refresh()
+
+    lines = []
+
+    def on_output(line):
+        lines.append(line)
+        y = min(len(lines) + 1, h - 2)
+        try:
+            scr.addnstr(y, 1, line[:w - 2], w - 2, curses.color_pair(C_DIM))
+            scr.refresh()
+        except curses.error:
+            pass
+
+    try:
+        dest = backup_flash(on_output=on_output)
+        msg = f" Backup saved: {dest} "
+    except FlashError as e:
+        msg = f" Backup failed: {e} "
+
+    try:
+        scr.addnstr(h - 1, 0, msg[:w - 1], w - 1,
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+    except curses.error:
+        pass
+    scr.refresh()
+    scr.timeout(-1)
+    scr.getch()
+    scr.timeout(100)
 
 
 def _Firmware_MP():
@@ -2145,6 +2544,9 @@ def _get_native_tools():
         "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
         "_esp32_usb_reset": lambda scr: _esp32_usb_reset(scr),
         "_esp32_redetect": lambda scr: _esp32_redetect(scr),
+        "_esp32_backup":  lambda scr: _esp32_backup(scr),
+        "_esp32_fw_cache_clear": lambda scr: _esp32_fw_cache_clear(scr),
+        "_esp32_install_watchdogs": lambda scr: _esp32_install_watchdogs(scr),
         "_esp32_force_mp":  lambda scr: run_esp32_force(scr, _Firmware_MP()),
         "_esp32_force_mrd": lambda scr: run_esp32_force(scr, _Firmware_MRD()),
         "_marauder":      lambda scr: run_marauder(scr),

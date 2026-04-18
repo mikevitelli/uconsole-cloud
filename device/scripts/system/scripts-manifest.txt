@@ -1,0 +1,9 @@
+SCRIPT                    SIZE  DESCRIPTION
+────────────────────  ────────  ────────────────────
+backup.sh                  32K  Comprehensive backup manager for the uConsole monorepo
+install-tdlib.sh          4.0K  install-tdlib.sh — build TDLib from source on aarch64 and install
+lib.sh                       0  Shared library for uConsole scripts
+push-status.sh             12K  Push uConsole system status to the uconsole.cloud API.
+restore.sh                 16K  uConsole Restore Script
+update.sh                  12K  System update manager for the uConsole
+validate-telegram.sh      8.0K  validate-telegram.sh — runtime checks for the Telegram TUI feature.

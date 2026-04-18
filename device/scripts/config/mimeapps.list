@@ -1,0 +1,18 @@
+[Added Associations]
+application/octet-stream=retroarch.desktop;
+application/x-sharedlib=userapp-snap run gearboy-X7ZLS2.desktop;
+application/vnd.appimage=pi-gpk-dbus-service.desktop;pi-gpk-install-local-file.desktop;
+application/x-tar=lxterminal.desktop;
+application/x-gameboy-color-rom=gearboy_gearboy.desktop;
+application/vnd.flatpak.ref=lxterminal.desktop;
+
+[Removed Associations]
+
+[Default Applications]
+application/vnd.appimage=pi-gpk-dbus-service.desktop
+x-scheme-handler/claude-cli=claude-code-url-handler.desktop
+text/html=chromium.desktop
+x-scheme-handler/http=chromium.desktop
+x-scheme-handler/https=chromium.desktop
+x-scheme-handler/about=chromium.desktop
+x-scheme-handler/unknown=chromium.desktop
