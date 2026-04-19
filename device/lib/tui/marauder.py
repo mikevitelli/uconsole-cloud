@@ -306,9 +306,29 @@ class _OsmStreetFetcher:
         "~/esp32/marauder-logs/osm-streets-cache.json")
     ENDPOINT = "https://overpass-api.de/api/interpreter"
     RADIUS_M = 500
-    MOVE_THRESHOLD_M = 200
-    MAX_AGE_S = 3600      # re-fetch cached entries after 1h
+    MOVE_THRESHOLD_M = 220    # ~2-3 NYC blocks before re-fetch
+    MAX_AGE_S = 7 * 86400     # cache for a week — urban grid rarely changes
     RETRY_AFTER_FAIL = 60
+    MAX_CACHE_ENTRIES = 50    # cover more unique bboxes for city walks
+
+    # Highway tier — drives the render layer (major/minor) and filters
+    # sidewalks / driveways / footpaths / pedestrian zones out of the
+    # query entirely. In NYC this trims ~60-70% of ways.
+    MAJOR_TYPES = frozenset([
+        "motorway", "trunk", "primary", "secondary",
+        "motorway_link", "trunk_link", "primary_link", "secondary_link",
+    ])
+    MINOR_TYPES = frozenset([
+        "tertiary", "tertiary_link",
+        "unclassified", "residential", "living_street",
+    ])
+    # Combined regex for the Overpass `[highway~"..."]` filter
+    HIGHWAY_FILTER = (
+        "^(motorway|trunk|primary|secondary|tertiary|unclassified|"
+        "residential|living_street|"
+        "motorway_link|trunk_link|primary_link|secondary_link|"
+        "tertiary_link)$"
+    )
 
     def __init__(self):
         self.streets = []              # list of polylines [[(lat, lon), ...]]
@@ -389,9 +409,12 @@ class _OsmStreetFetcher:
         return _math.hypot(dlat_m, dlon_m)
 
     def _fetch(self, lat, lon):
-        query = (f"[out:json][timeout:25];"
-                 f"way(around:{self.RADIUS_M},{lat},{lon})[highway];"
-                 f"out geom;")
+        query = (
+            f"[out:json][timeout:25];"
+            f"way(around:{self.RADIUS_M},{lat},{lon})"
+            f"[highway~\"{self.HIGHWAY_FILTER}\"];"
+            f"out geom tags;"
+        )
         data = ("data=" + query).encode("utf-8")
         req = __import__("urllib.request").request.Request(
             self.ENDPOINT, data=data, method="POST",
@@ -410,11 +433,29 @@ class _OsmStreetFetcher:
             geom = el.get("geometry") or []
             if len(geom) < 2:
                 continue
+            htype = (el.get("tags") or {}).get("highway", "residential")
             poly = [(p["lat"], p["lon"]) for p in geom
                     if "lat" in p and "lon" in p]
             if len(poly) >= 2:
-                streets.append(poly)
+                streets.append({"poly": poly, "type": htype})
         return streets
+
+    @staticmethod
+    def _normalize_cached_streets(raw):
+        """Accept old flat-polyline cache entries alongside new dict entries."""
+        out = []
+        for item in raw:
+            if isinstance(item, dict) and "poly" in item:
+                poly = [(p[0], p[1]) for p in item["poly"]]
+                htype = item.get("type", "residential")
+                if len(poly) >= 2:
+                    out.append({"poly": poly, "type": htype})
+            elif isinstance(item, list):
+                # Legacy format: flat list of [lat, lon] pairs
+                poly = [(p[0], p[1]) for p in item]
+                if len(poly) >= 2:
+                    out.append({"poly": poly, "type": "residential"})
+        return out
 
     def _run(self):
         while not self._stop.is_set():
@@ -432,14 +473,13 @@ class _OsmStreetFetcher:
             entry = cache.get(key)
             now = time.time()
             if entry and (now - entry.get("fetched", 0) < self.MAX_AGE_S):
-                streets = [[(p[0], p[1]) for p in poly]
-                           for poly in entry.get("streets", [])]
+                streets = self._normalize_cached_streets(
+                    entry.get("streets", []))
                 with self._lock:
-                    if streets != self.streets:
-                        self.streets = streets
-                        self._last_center = (lat, lon)
-                        self._last_fetch_ts = entry["fetched"]
-                        self._err = None
+                    self.streets = streets
+                    self._last_center = (lat, lon)
+                    self._last_fetch_ts = entry["fetched"]
+                    self._err = None
                 self._stop.wait(10)
                 continue
 
@@ -460,16 +500,19 @@ class _OsmStreetFetcher:
                 self._stop.wait(self.RETRY_AFTER_FAIL)
                 continue
 
-            # Cache + publish
+            # Cache + publish (new dict-per-polyline format)
             cache[key] = {
                 "fetched": now, "radius_m": self.RADIUS_M,
-                "streets": [[[p[0], p[1]] for p in poly] for poly in streets],
+                "streets": [
+                    {"poly": [[p[0], p[1]] for p in item["poly"]],
+                     "type": item["type"]}
+                    for item in streets
+                ],
             }
-            # Trim cache to most recent ~20 entries
-            if len(cache) > 20:
+            if len(cache) > self.MAX_CACHE_ENTRIES:
                 oldest = sorted(cache.items(),
                                 key=lambda kv: kv[1].get("fetched", 0))
-                for k, _ in oldest[:len(cache) - 20]:
+                for k, _ in oldest[:len(cache) - self.MAX_CACHE_ENTRIES]:
                     cache.pop(k, None)
             self._save_cache_file()
 
@@ -1816,7 +1859,8 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
         coords.append((cur_lat, cur_lon))
     # Include first and last point of each street polyline — they pin
     # the viewport to the neighborhood even before any APs are seen.
-    for poly in streets:
+    for item in streets:
+        poly = item["poly"] if isinstance(item, dict) else item
         if poly:
             coords.append(poly[0])
             coords.append(poly[-1])
@@ -1840,23 +1884,47 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
     mid_lat = (min(lats) + max(lats)) / 2
     mid_lon = (min(lons) + max(lons)) / 2
 
-    street_canvas = tui.BrailleCanvas(cw, ch) if streets else None
+    major_canvas = tui.BrailleCanvas(cw, ch) if streets else None
+    minor_canvas = tui.BrailleCanvas(cw, ch) if streets else None
     data_canvas = tui.BrailleCanvas(cw, ch)
     pw, ph = data_canvas.pw, data_canvas.ph
     proj, _ = _wd_project(pw, ph, mid_lat, mid_lon, lat_span, lon_span)
 
-    # Streets layer (dim)
-    if street_canvas is not None:
-        for poly in streets:
+    # Viewport bounds in lat/lon for bbox culling (use the *padded*
+    # span so we don't clip polylines entering the edge of the view).
+    view_pad_lat = lat_span * 0.1
+    view_pad_lon = lon_span * 0.1
+    v_min_lat = mid_lat - lat_span / 2 - view_pad_lat
+    v_max_lat = mid_lat + lat_span / 2 + view_pad_lat
+    v_min_lon = mid_lon - lon_span / 2 - view_pad_lon
+    v_max_lon = mid_lon + lon_span / 2 + view_pad_lon
+
+    _MAJOR = _OsmStreetFetcher.MAJOR_TYPES
+
+    # Streets layer — two tiers, view-culled
+    if major_canvas is not None:
+        for item in streets:
+            if isinstance(item, dict):
+                poly, htype = item["poly"], item["type"]
+            else:
+                poly, htype = item, "residential"
+            if len(poly) < 2:
+                continue
+
+            # Quick bbox cull — drop anything entirely off-viewport
+            lats_p = [p[0] for p in poly]
+            lons_p = [p[1] for p in poly]
+            if (max(lats_p) < v_min_lat or min(lats_p) > v_max_lat
+                    or max(lons_p) < v_min_lon
+                    or min(lons_p) > v_max_lon):
+                continue
+
+            target = major_canvas if htype in _MAJOR else minor_canvas
             last = None
             for lat, lon in poly:
                 p = proj(lat, lon)
-                # Skip segments entirely off-canvas (huge lines)
-                if not (0 <= p[0] < pw and 0 <= p[1] < ph):
-                    last = p if (0 <= p[0] < pw or 0 <= p[1] < ph) else None
-                    continue
                 if last is not None:
-                    street_canvas.line(last[0], last[1], p[0], p[1])
+                    target.line(last[0], last[1], p[0], p[1])
                 last = p
 
     # Walked track (bright)
@@ -1889,11 +1957,13 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
             data_canvas.set(cx, cy + d)
             data_canvas.set(cx, cy - d)
 
-    # Render: streets first in dim, then data on top in bright. Because
-    # each braille cell holds 8 dots, we merge bits per-cell and pick the
-    # color from whichever layer contributed (data wins).
+    # Render priority: data (bright) > major streets (medium) >
+    # minor streets (very dim). Each braille cell is an 8-bit mask;
+    # we OR the masks from all layers and pick the color from the
+    # highest-priority layer that contributed.
     data_attr = curses.color_pair(C_OK)
-    street_attr = curses.color_pair(C_DIM) | curses.A_DIM
+    major_attr = curses.color_pair(C_DIM)                    # medium
+    minor_attr = curses.color_pair(C_DIM) | curses.A_DIM      # dimmer
 
     for cy in range(ch):
         y = y0 + cy
@@ -1902,13 +1972,18 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
         tui.panel_side(scr, y, 0, w)
         for cx in range(cw):
             d_bits = data_canvas.grid[cy][cx]
-            s_bits = (street_canvas.grid[cy][cx]
-                      if street_canvas is not None else 0)
-            bits = d_bits | s_bits
+            M_bits = major_canvas.grid[cy][cx] if major_canvas else 0
+            m_bits = minor_canvas.grid[cy][cx] if minor_canvas else 0
+            bits = d_bits | M_bits | m_bits
             if bits == 0:
                 continue
             ch_str = chr(0x2800 | bits)
-            attr = data_attr if d_bits else street_attr
+            if d_bits:
+                attr = data_attr
+            elif M_bits:
+                attr = major_attr
+            else:
+                attr = minor_attr
             tui.put(scr, y, 2 + cx, ch_str, 1, attr)
 
     # Scale caption
@@ -1916,7 +1991,12 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
     lon_scale = _math.cos(_math.radians(mid_lat))
     width_m = int(lon_span * lon_scale * m_per_deg_lat)
     height_m = int(lat_span * m_per_deg_lat)
-    street_tag = f"  \u22b8 {len(streets)} streets" if streets else ""
+    if streets:
+        n_major = sum(1 for s in streets
+                      if isinstance(s, dict) and s.get("type") in _MAJOR)
+        street_tag = f"  \u22b8 {n_major}/{len(streets)} major"
+    else:
+        street_tag = ""
     cap = (f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m{street_tag}")
     cap_y = y0 + ch
     if cap_y < y0 + h_avail:
