@@ -1,0 +1,13 @@
+[Unit]
+Description=Lower AXP228 PMU undervoltage cutoff to 2.9V
+Documentation=file:///opt/uconsole/scripts/power/pmu-voltage-min.sh
+After=sysinit.target
+Wants=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/uconsole/scripts/power/pmu-voltage-min.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

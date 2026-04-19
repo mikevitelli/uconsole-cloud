@@ -1,0 +1,14 @@
+[Unit]
+Description=Graceful low-battery shutdown (3.05V threshold)
+Documentation=file:///opt/uconsole/scripts/power/low-battery-shutdown.sh
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/opt/uconsole/scripts/power/low-battery-shutdown.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

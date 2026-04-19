@@ -111,6 +111,39 @@ with open(path, 'w') as f:
         # Reload systemd to pick up new unit files (but do NOT enable or start)
         systemctl daemon-reload 2>/dev/null || true
 
+        # ── Battery-safety services (UNSTABLE — opt-in) ────────────────
+        # Four units ship pointing at /opt/uconsole/scripts/power/ and
+        # /opt/uconsole/scripts/util/. They are NOT auto-enabled on
+        # fresh installs — users opt in with systemctl directly, or
+        # via the upcoming TUI Power Config toggle.
+        #
+        # For upgrades from earlier installs that had these units
+        # enabled (pointing at the legacy ~/scripts/ path), the wants-
+        # target symlinks under /etc/systemd/system/*.wants/ survive
+        # file replacement, so enablement is preserved automatically.
+        # We just clear any accumulated "failed" state from the stale
+        # path so the restart works cleanly.
+        BATTERY_UNITS="pmu-voltage-min.service cpu-freq-cap.service \
+low-battery-shutdown.service crash-log.service"
+        systemctl reset-failed $BATTERY_UNITS 2>/dev/null || true
+        # If low-battery-shutdown is already enabled, swap its running
+        # daemon (old ExecStart was broken) to the fixed unit.
+        if systemctl is-enabled --quiet low-battery-shutdown.service \
+                2>/dev/null; then
+            systemctl restart low-battery-shutdown.service \
+                2>/dev/null || true
+        fi
+
+        # Clean up orphaned ~/scripts/ compat symlinks from the manual fix.
+        if [ -n "$REAL_HOME" ] && [ -d "${REAL_HOME}/scripts" ]; then
+            for name in pmu-voltage-min low-battery-shutdown cpu-freq-cap \
+                        crash-log; do
+                LINK="${REAL_HOME}/scripts/${name}.sh"
+                [ -L "$LINK" ] && rm -f "$LINK"
+            done
+            rmdir "${REAL_HOME}/scripts" 2>/dev/null || true
+        fi
+
         # ── gpsd config for AIO board GPS ──
         # Only configure if: gpsd is installed, UART exists, config file present
         if command -v gpsd >/dev/null 2>&1 && [ -e /dev/ttyS0 ] && [ -f /etc/default/gpsd ]; then
@@ -165,6 +198,9 @@ with open(path, 'w') as f:
         echo "    uconsole setup    Configure device"
         echo "    uconsole doctor   Check system health"
         echo "    uconsole help     See all commands"
+        echo ""
+        echo "  Battery safety (UNSTABLE, opt-in):"
+        echo "    /opt/uconsole/scripts/power/battery-safety.sh on"
         echo "========================================"
         echo ""
         ;;
