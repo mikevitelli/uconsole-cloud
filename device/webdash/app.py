@@ -377,7 +377,15 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
+    # Invalidate cache when app code OR any template changes.
     mtime = int(os.path.getmtime(__file__))
+    try:
+        tpl_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        for entry in os.scandir(tpl_dir):
+            if entry.is_file():
+                mtime = max(mtime, int(entry.stat().st_mtime))
+    except OSError:
+        pass
     sw = "var CACHE='webdash-%d';\n" % mtime + r'''
 var PRECACHE=['/favicon.png','/manifest.json'];
 self.addEventListener('install',function(e){
@@ -392,8 +400,9 @@ self.addEventListener('activate',function(e){
 });
 self.addEventListener('fetch',function(e){
   var u=new URL(e.request.url);
-  /* never cache auth, API, or socket.io */
+  /* never cache auth, API, socket.io, or live-data pages */
   if(u.pathname==='/'||u.pathname==='/login'||u.pathname==='/logout'){e.respondWith(fetch(e.request));return;}
+  if(u.pathname==='/wardrive'){e.respondWith(fetch(e.request));return;}
   if(u.pathname.indexOf('/api/')===0||u.pathname.indexOf('/socket.io/')===0){e.respondWith(fetch(e.request));return;}
   e.respondWith(caches.match(e.request).then(function(r){
     return r||fetch(e.request).then(function(resp){
@@ -407,19 +416,53 @@ self.addEventListener('fetch',function(e){
                               headers={'Service-Worker-Allowed': '/'})
 
 
+_WARDRIVE_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+    "https://unpkg.com https://cdn.tailwindcss.com "
+    "https://cdn.jsdelivr.net; "
+    "script-src-elem 'self' 'unsafe-inline' "
+    "https://unpkg.com https://cdn.tailwindcss.com "
+    "https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://unpkg.com "
+    "https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "style-src-elem 'self' 'unsafe-inline' https://unpkg.com "
+    "https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "worker-src 'self' blob:; "
+    "child-src blob:; "
+    "connect-src 'self' wss://uconsole.local "
+    "https://*.tile.openstreetmap.org "
+    "https://*.basemaps.cartocdn.com "
+    "https://basemaps.cartocdn.com; "
+    "img-src 'self' data: blob: "
+    "https://*.tile.openstreetmap.org "
+    "https://*.basemaps.cartocdn.com "
+    "https://basemaps.cartocdn.com "
+    "https://unpkg.com "
+    "https://cdn.jsdelivr.net; "
+    "font-src 'self' https://fonts.gstatic.com"
+)
+
+_DEFAULT_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "connect-src 'self' wss://uconsole.local; "
+    "img-src 'self' data:; "
+    "font-src 'self'"
+)
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'same-origin'
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "connect-src 'self' wss://uconsole.local; "
-        "img-src 'self' data:; "
-        "font-src 'self'"
-    )
+    # Relax CSP for the wardrive map page to allow Leaflet + OSM tiles.
+    if request.path == '/wardrive':
+        response.headers['Content-Security-Policy'] = _WARDRIVE_CSP
+    else:
+        response.headers['Content-Security-Policy'] = _DEFAULT_CSP
     return response
 
 
@@ -1546,6 +1589,171 @@ def api_lora():
     age = round(time.time() - _lora_last_seen) if _lora_last_seen else -1
     return jsonify({**_lora_data, 'age': age, 'online': 0 < age < 60})
 
+
+# ── War Drive (WIP / opt-in) ─────────────────────────────────────────
+# Disabled by default — the UX is still in flux. Enable with either:
+#   sudo touch /etc/uconsole/wardrive-enabled
+# or set UCONSOLE_WARDRIVE_ENABLED=1 in the webdash service env.
+# When disabled, both /wardrive and /api/wardrive/* return 404 so the
+# feature is invisible to users who haven't opted in.
+
+_WARDRIVE_DIR = os.path.expanduser('~/esp32/marauder-logs')
+_WARDRIVE_NAME_RE = re.compile(r'^wardrive-(?:DEMO-)?\d{8}T\d{6}\.csv$')
+_WARDRIVE_FLAG_FILE = '/etc/uconsole/wardrive-enabled'
+
+
+def _wardrive_enabled():
+    if os.environ.get('UCONSOLE_WARDRIVE_ENABLED') in ('1', 'true', 'yes'):
+        return True
+    try:
+        return os.path.exists(_WARDRIVE_FLAG_FILE)
+    except OSError:
+        return False
+
+
+def _wardrive_gate():
+    """Return a 404 response if the feature is disabled; else None."""
+    if _wardrive_enabled():
+        return None
+    return ('War Drive is disabled. To enable:\n'
+            '  sudo touch /etc/uconsole/wardrive-enabled\n'
+            '  sudo systemctl restart uconsole-webdash'), 404
+
+
+def _wardrive_list_files():
+    """Return list of {name, size, mtime} for wardrive CSVs, newest first."""
+    out = []
+    try:
+        for n in os.listdir(_WARDRIVE_DIR):
+            if not _WARDRIVE_NAME_RE.match(n):
+                continue
+            p = os.path.join(_WARDRIVE_DIR, n)
+            try:
+                st = os.stat(p)
+                out.append({
+                    'name': n,
+                    'size': st.st_size,
+                    'mtime': st.st_mtime,
+                })
+            except OSError:
+                continue
+    except FileNotFoundError:
+        pass
+    out.sort(key=lambda f: f['mtime'], reverse=True)
+    return out
+
+
+def _wardrive_parse(path, since_row=0):
+    """Parse CSV rows past `since_row` index. Returns (rows, total_rows)."""
+    import csv as _csv
+    rows = []
+    total = 0
+    try:
+        with open(path, 'r') as f:
+            reader = _csv.DictReader(f)
+            for i, r in enumerate(reader):
+                total = i + 1
+                if i < since_row:
+                    continue
+                try:
+                    lat = float(r['lat']) if r.get('lat') else None
+                    lon = float(r['lon']) if r.get('lon') else None
+                except ValueError:
+                    lat = lon = None
+                try:
+                    rssi = int(r['rssi'])
+                except (ValueError, KeyError):
+                    rssi = -100
+                try:
+                    ch = int(r['channel'])
+                except (ValueError, KeyError):
+                    ch = 0
+                rows.append({
+                    'idx': i,
+                    'ts': r.get('timestamp_iso', ''),
+                    'bssid': r.get('bssid', ''),
+                    'essid': r.get('essid', ''),
+                    'channel': ch,
+                    'rssi': rssi,
+                    'lat': lat,
+                    'lon': lon,
+                    'first_seen': r.get('first_seen', '0') == '1',
+                })
+    except FileNotFoundError:
+        pass
+    return rows, total
+
+
+@app.route('/wardrive')
+def wardrive_page():
+    g = _wardrive_gate()
+    if g: return g
+    """Live map of war-drive sessions.
+
+    Default view uses MapLibre GL + deck.gl for a 3D cyberpunk
+    visualization. ?basic=1 falls back to the Leaflet version for
+    browsers without WebGL2.
+    """
+    now = time.time()
+    sessions = []
+    for f in _wardrive_list_files():
+        sessions.append({
+            'name': f['name'],
+            'size': f['size'],
+            'mtime': f['mtime'],
+            'live': (now - f['mtime']) < 300,
+            'label': f['name'].replace('wardrive-', '').replace('.csv', ''),
+        })
+    template = ('wardrive_basic.html' if request.args.get('basic') == '1'
+                else 'wardrive.html')
+    return render_template(template, initial_sessions=sessions,
+                           log_dir=_WARDRIVE_DIR)
+
+
+@app.route('/api/wardrive/sessions')
+def api_wardrive_sessions():
+    """List available war-drive CSV sessions, newest first."""
+    g = _wardrive_gate()
+    if g: return g
+    files = _wardrive_list_files()
+    # Also report whether this is the live/in-progress session (newest,
+    # modified in last 5 minutes)
+    now = time.time()
+    for f in files:
+        f['live'] = (now - f['mtime']) < 300
+    return jsonify({'sessions': files})
+
+
+@app.route('/api/wardrive/data/<name>')
+def api_wardrive_data(name):
+    """Return parsed rows from a war-drive CSV. Supports ?since=<idx>."""
+    g = _wardrive_gate()
+    if g: return g
+    if not _WARDRIVE_NAME_RE.match(name):
+        return jsonify({'error': 'invalid name'}), 400
+    path = os.path.join(_WARDRIVE_DIR, name)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'not found'}), 404
+    try:
+        since = int(request.args.get('since', 0))
+    except ValueError:
+        since = 0
+    rows, total = _wardrive_parse(path, since)
+    try:
+        mtime = os.path.getmtime(path)
+        size = os.path.getsize(path)
+    except OSError:
+        mtime = 0
+        size = 0
+    return jsonify({
+        'name': name,
+        'total_rows': total,
+        'returned': len(rows),
+        'since': since,
+        'size': size,
+        'mtime': mtime,
+        'rows': rows,
+    })
 
 
 def _watch_and_reload():

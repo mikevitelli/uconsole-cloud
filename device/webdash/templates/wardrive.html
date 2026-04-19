@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="synthwave">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>War Drive — uConsole</title>
+
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+<style>
+  :root { --hue-p: 0 0% 0%; }  /* populated by DaisyUI */
+  html, body { height: 100%; margin: 0; overflow: hidden;
+    background: #1a103c; color: hsl(var(--bc));
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+  #map-wrap { flex: 1; position: relative; }
+  #map { position: absolute; inset: 0; }
+
+  /* Top bar — plain flex, no Tailwind */
+  .topbar {
+    padding: 8px 10px; gap: 8px; display: flex; align-items: center;
+    background: hsl(var(--b2)); box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    border-bottom: 1px solid hsl(var(--p) / 0.3); z-index: 30;
+  }
+  .topbar .brand { font-weight: 900; color: hsl(var(--p));
+    letter-spacing: 3px; font-size: 14px; white-space: nowrap; }
+  .topbar select { flex: 1; min-width: 0; max-width: 260px; }
+  .topbar .spacer { flex: 1; }
+  .row { display: flex; align-items: center; gap: 6px; }
+
+  /* Floating FABs */
+  .fab-col { position: absolute; bottom: 16px; right: 16px; z-index: 500;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .fab { width: 44px; height: 44px; border-radius: 9999px;
+    font-size: 18px; line-height: 1; padding: 0; }
+
+  /* Legend */
+  .legend { position: absolute; bottom: 16px; left: 16px; z-index: 500;
+    background: hsl(var(--b1) / 0.82); backdrop-filter: blur(6px);
+    border: 1px solid hsl(var(--p) / 0.3); border-radius: 12px;
+    padding: 10px 12px; font-size: 11px; line-height: 1.55;
+    box-shadow: 0 0 12px hsl(var(--p) / 0.2); }
+  .legend h4 { margin: 0 0 6px 0; font-size: 10px; letter-spacing: 2px;
+    color: hsl(var(--p)); font-weight: 700; }
+  .legend .li { display: flex; align-items: center; gap: 8px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* MapLibre popup — match DaisyUI theme */
+  .maplibregl-popup-content {
+    background: hsl(var(--b1)) !important; color: hsl(var(--bc)) !important;
+    border: 1px solid hsl(var(--p)) !important;
+    border-radius: 10px !important; padding: 10px 14px !important;
+    font-family: ui-monospace, monospace;
+    box-shadow: 0 0 20px hsl(var(--p) / 0.4), 0 6px 24px rgba(0,0,0,0.5) !important;
+    max-width: min(90vw, 320px) !important;
+  }
+  .maplibregl-popup-tip { display: none; }
+  .maplibregl-popup-close-button { color: hsl(var(--p)); font-size: 20px;
+    padding: 0 8px; right: 2px; top: 2px; }
+  .pop-title { color: hsl(var(--a)); font-weight: 700; font-size: 13px;
+    margin: 2px 0 6px; }
+  .pop-kicker { color: hsl(var(--p)); font-size: 10px;
+    letter-spacing: 2px; font-weight: 700; }
+  .pop-row { display: grid; grid-template-columns: auto 1fr;
+    gap: 4px 12px; font-size: 12px; }
+  .pop-row .k { opacity: 0.6; }
+
+  /* MapLibre controls */
+  .maplibregl-ctrl-group { background: hsl(var(--b1) / 0.9) !important;
+    border-radius: 12px !important; overflow: hidden;
+    box-shadow: 0 0 10px hsl(var(--p) / 0.2) !important; }
+  .maplibregl-ctrl button {
+    background: hsl(var(--b1) / 0.9) !important;
+    border-color: hsl(var(--p) / 0.3) !important;
+  }
+  .maplibregl-ctrl-attrib { background: hsl(var(--b1) / 0.75) !important;
+    font-size: 10px; color: hsl(var(--bc) / 0.6) !important; }
+  .maplibregl-ctrl-attrib a { color: hsl(var(--p)) !important; }
+  @media (max-width: 640px) { .maplibregl-ctrl-top-right { display: none !important; } }
+
+  /* LIVE pulse */
+  @keyframes live-pulse { 0%,100% { opacity:1 } 50% { opacity:.45 } }
+  .live-pulse { animation: live-pulse 1.6s ease-in-out infinite; }
+
+  /* You marker — HTML element with CSS animation */
+  .you-marker { width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid #60a5fa; background: rgba(96,165,250,0.25);
+    box-shadow: 0 0 0 0 rgba(96,165,250,0.7);
+    animation: you-pulse 2s ease-out infinite;
+    pointer-events: none;
+  }
+  .you-marker::after {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    background: #60a5fa; border-radius: 50%;
+  }
+  @keyframes you-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(96,165,250,0.7); }
+    70%  { box-shadow: 0 0 0 18px rgba(96,165,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(96,165,250,0); }
+  }
+
+  /* Menu overrides for compactness */
+  .menu-mini li > * { padding: 4px 8px; font-size: 12px; }
+  .dropdown-content { z-index: 600 !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <span class="brand">◉ WAR</span>
+    <select id="session-select" class="select select-bordered select-xs">
+      {% if initial_sessions %}
+        {% for s in initial_sessions %}
+          <option value="{{ s.name }}">{{ s.label }}{% if s.live %} · LIVE{% endif %}</option>
+        {% endfor %}
+      {% else %}
+        <option disabled>No sessions</option>
+      {% endif %}
+    </select>
+    <span class="spacer"></span>
+    <span id="status" class="badge badge-sm badge-ghost">—</span>
+    <div class="dropdown dropdown-end">
+      <label tabindex="0" class="btn btn-xs btn-ghost" style="padding:0 8px" aria-label="Menu">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </label>
+      <ul tabindex="0" class="dropdown-content menu menu-mini p-2 bg-base-200 rounded-box shadow-xl" style="width:208px;border:1px solid hsl(var(--bc)/0.1)">
+        <li class="menu-title"><span>Layers</span></li>
+        <li><label style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span>Heatmap</span>
+          <input id="opt-heat" type="checkbox" class="toggle toggle-primary toggle-xs" checked>
+        </label></li>
+        <li><label style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span>Dots</span>
+          <input id="opt-dots" type="checkbox" class="toggle toggle-primary toggle-xs" checked>
+        </label></li>
+        <li><label style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span>Track</span>
+          <input id="opt-track" type="checkbox" class="toggle toggle-primary toggle-xs" checked>
+        </label></li>
+        <li><label style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span>Follow GPS</span>
+          <input id="opt-follow" type="checkbox" class="toggle toggle-accent toggle-xs" checked>
+        </label></li>
+        <li class="menu-title" style="margin-top:6px"><span>Session</span></li>
+        <li><div id="menu-stats" style="padding:2px 8px;opacity:.8;font-size:11px;pointer-events:none">0 APs</div></li>
+        <li class="menu-title" style="margin-top:6px"><span>Go to</span></li>
+        <li><a href="/wardrive?basic=1">2D Fallback</a></li>
+        <li><a href="/">← Dashboard</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <div class="fab-col">
+      <button id="fab-follow" class="fab btn btn-primary btn-sm shadow-lg" title="Follow GPS">⊕</button>
+      <button id="fab-fit" class="fab btn btn-neutral btn-sm shadow-lg" title="Fit to data">⤢</button>
+    </div>
+
+    <div class="legend">
+      <h4>SIGNAL</h4>
+      <div class="li"><span class="dot" style="background:#2dd4bf"></span>&gt; −50 dBm</div>
+      <div class="li"><span class="dot" style="background:#facc15"></span>−50 / −70</div>
+      <div class="li"><span class="dot" style="background:#f472b6"></span>&lt; −70 dBm</div>
+      <div class="li"><span class="dot" style="background:#60a5fa"></span>Track</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // WebGL2 gate
+  try {
+    if (!document.createElement('canvas').getContext('webgl2'))
+      throw new Error('no-webgl2');
+  } catch (e) {
+    window.location.replace('/wardrive?basic=1'); return;
+  }
+
+  const fmtSize = b => b >= 1048576 ? (b/1048576).toFixed(2)+' MB'
+                     : b >= 1024    ? (b/1024).toFixed(1)+' KB'
+                     : b + ' B';
+  const fmtAge = s => s < 60 ? Math.round(s)+'s'
+                    : s < 3600 ? Math.round(s/60)+'m'
+                    : s < 86400 ? Math.round(s/3600)+'h'
+                    : Math.round(s/86400)+'d';
+
+  const statusEl = document.getElementById('status');
+  const setStatus = (t, kind) => {
+    statusEl.textContent = t;
+    statusEl.className = 'badge badge-sm ' + ({
+      live: 'badge-success live-pulse',
+      stale: 'badge-warning',
+    }[kind] || 'badge-ghost');
+  };
+
+  // State
+  const byBssid = new Map();
+  const trackPts = [];
+  let currentSession = null, since = 0;
+  let totalRows = 0, fileSize = 0, fileMtime = 0;
+  let firstFit = true, pollBusy = false;
+  let follow = true, youMarker = null, paused = false;
+
+  // MapLibre style
+  const style = {
+    version: 8,
+    sources: {
+      'carto-dark': {
+        type: 'raster', tileSize: 256, maxzoom: 19,
+        tiles: [
+          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        ],
+        attribution: '© OSM © CARTO',
+      },
+    },
+    layers: [
+      { id: 'bg', type: 'background',
+        paint: { 'background-color': '#1a103c' } },
+      { id: 'carto', type: 'raster', source: 'carto-dark',
+        paint: { 'raster-opacity': 0.9, 'raster-saturation': -0.2,
+                 'raster-contrast': 0.1, 'raster-hue-rotate': 250 } },
+    ],
+  };
+
+  let map;
+  try {
+    map = new maplibregl.Map({
+      container: 'map', style,
+      center: [-74.006, 40.7128], zoom: 14,
+      pitch: 0, bearing: 0, antialias: false,
+      maxZoom: 19, refreshExpiredTiles: false,
+    });
+  } catch (e) {
+    window.location.replace('/wardrive?basic=1'); return;
+  }
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }),
+                 'top-right');
+  map.on('dragstart', () => { follow = false; syncFollowState(); });
+
+  // Sources — populated after 'load'
+  map.on('load', () => {
+    map.addSource('aps', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addSource('track', {
+      type: 'geojson',
+      data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+    });
+
+    // Heatmap (behind dots)
+    map.addLayer({
+      id: 'heat', type: 'heatmap', source: 'aps',
+      maxzoom: 19,
+      paint: {
+        'heatmap-weight': ['interpolate', ['linear'], ['get', 'rssi'],
+          -90, 0.25, -40, 1.0],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'],
+          10, 0.8, 17, 1.5],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'],
+          10, 14, 17, 48],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'],
+          10, 0.9, 18, 0.55],
+        'heatmap-color': [
+          'interpolate', ['linear'], ['heatmap-density'],
+          0,   'rgba(0, 0, 0, 0)',
+          0.15,'rgba(99, 102, 241, 0.55)',
+          0.35,'rgba(168, 85, 247, 0.75)',
+          0.55,'rgba(244, 114, 182, 0.85)',
+          0.75,'rgba(250, 204, 21, 0.9)',
+          1.0, 'rgba(52, 211, 153, 1)',
+        ],
+      },
+    });
+
+    // Track line
+    map.addLayer({
+      id: 'track', type: 'line', source: 'track',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#60a5fa',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 18, 4],
+        'line-opacity': 0.85,
+      },
+    });
+
+    // AP dots (clickable)
+    map.addLayer({
+      id: 'aps', type: 'circle', source: 'aps',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3,
+          14, 5,
+          18, ['+', 5, ['min', 8, ['*', 1.5, ['log2', ['get', 'sightings']]]]],
+        ],
+        'circle-color': [
+          'case',
+          ['>', ['get', 'rssi'], -50], '#2dd4bf',
+          ['>', ['get', 'rssi'], -70], '#facc15',
+          '#f472b6',
+        ],
+        'circle-stroke-color': '#0a0a1a',
+        'circle-stroke-width': 1.5,
+        'circle-opacity': 0.95,
+      },
+    });
+
+    // Cursor feedback + clicks
+    map.on('mouseenter', 'aps', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'aps', () => { map.getCanvas().style.cursor = ''; });
+    map.on('click', 'aps', (e) => {
+      const f = e.features && e.features[0];
+      if (!f) return;
+      showPopup(f.properties, f.geometry.coordinates);
+    });
+
+    pollData();
+    setInterval(() => { if (!paused) pollData(); }, 3000);
+    setInterval(loadSessions, 15000);
+  });
+
+  // Pause polling when tab hidden
+  document.addEventListener('visibilitychange', () => {
+    paused = document.hidden;
+  });
+
+  function showPopup(p, coords) {
+    const age = fmtAge((Date.now() / 1000) - Number(p.last_seen));
+    const essid = (p.essid || '(hidden)').toString().replace(/</g, '&lt;');
+    const html = `
+      <div class="pop-kicker">&gt; AP_DETAIL</div>
+      <div class="pop-title">${essid}</div>
+      <div class="pop-row">
+        <span class="k">BSSID</span><span>${p.bssid}</span>
+        <span class="k">CH</span><span>${p.channel}</span>
+        <span class="k">RSSI</span><span>${p.rssi} dBm</span>
+        <span class="k">SEEN</span><span>${p.sightings}× · ${age} ago</span>
+      </div>`;
+    new maplibregl.Popup({ closeButton: true, offset: 12, maxWidth: '90vw' })
+      .setLngLat(coords).setHTML(html).addTo(map);
+  }
+
+  function apsFeatureCollection() {
+    const features = [];
+    byBssid.forEach(a => {
+      if (a.lat == null) return;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [a.lon, a.lat] },
+        properties: {
+          bssid: a.bssid, essid: a.essid, channel: a.channel,
+          rssi: a.best_rssi, sightings: a.sightings, last_seen: a.last_seen,
+        },
+      });
+    });
+    return { type: 'FeatureCollection', features };
+  }
+
+  function setLayerVis(id, visible) {
+    if (!map.getLayer(id)) return;
+    map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  }
+
+  async function pollData() {
+    if (pollBusy) return;
+    pollBusy = true;
+    try {
+      if (!currentSession) {
+        const sel = document.getElementById('session-select');
+        if (sel.options.length && sel.options[0].value && !sel.options[0].disabled)
+          currentSession = sel.options[0].value;
+      }
+      if (!currentSession) { setStatus('no data', 'stale'); return; }
+
+      let r;
+      try {
+        r = await fetch(`/api/wardrive/data/${currentSession}?since=${since}`,
+                        { credentials: 'same-origin' });
+      } catch { setStatus('net err', 'stale'); return; }
+      if (r.redirected || r.url.includes('/login')) {
+        setStatus('login req', 'stale'); return;
+      }
+      if (!r.ok) { setStatus(`HTTP ${r.status}`, 'stale'); return; }
+      let j; try { j = await r.json(); }
+      catch { setStatus('parse err', 'stale'); return; }
+
+      totalRows = j.total_rows;
+      fileSize = j.size;
+      fileMtime = j.mtime;
+
+      let newCount = 0;
+      let lastPt = trackPts.length ? trackPts[trackPts.length - 1] : null;
+      const nowSec = Date.now() / 1000;
+
+      for (const row of j.rows) {
+        since = row.idx + 1;
+        if (!row.bssid || row.lat == null || row.lon == null) continue;
+        if (!lastPt || Math.abs(lastPt[0] - row.lat) > 1e-6
+                    || Math.abs(lastPt[1] - row.lon) > 1e-6) {
+          trackPts.push([row.lat, row.lon]);
+          lastPt = [row.lat, row.lon];
+        }
+        const ex = byBssid.get(row.bssid);
+        if (!ex) {
+          byBssid.set(row.bssid, {
+            bssid: row.bssid, essid: row.essid, channel: row.channel,
+            lat: row.lat, lon: row.lon,
+            best_rssi: row.rssi, sightings: 1, last_seen: nowSec,
+          });
+          newCount++;
+        } else {
+          ex.sightings++; ex.last_seen = nowSec;
+          if (row.rssi > ex.best_rssi) {
+            ex.best_rssi = row.rssi;
+            ex.lat = row.lat; ex.lon = row.lon;
+          }
+        }
+      }
+
+      if (newCount > 0) {
+        // Update sources — only when data actually changed
+        const src = map.getSource('aps');
+        if (src) src.setData(apsFeatureCollection());
+        const tsrc = map.getSource('track');
+        if (tsrc) tsrc.setData({
+          type: 'Feature',
+          geometry: { type: 'LineString',
+                      coordinates: trackPts.map(p => [p[1], p[0]]) },
+        });
+      }
+
+      if (trackPts.length) {
+        const last = trackPts[trackPts.length - 1];
+        const coord = [last[1], last[0]];
+        if (!youMarker) {
+          const el = document.createElement('div');
+          el.className = 'you-marker';
+          youMarker = new maplibregl.Marker({ element: el })
+            .setLngLat(coord).addTo(map);
+        } else {
+          youMarker.setLngLat(coord);
+        }
+        if (follow) map.easeTo({ center: coord, duration: 800 });
+      }
+
+      const isLive = (Date.now() / 1000 - fileMtime) < 10;
+      setStatus(isLive ? '● LIVE' : `${fmtAge(Date.now()/1000 - fileMtime)} ago`,
+                isLive ? 'live' : 'stale');
+      const stats = `${byBssid.size} APs · ${totalRows} rows · ${fmtSize(fileSize)}`;
+      document.getElementById('menu-stats').textContent = stats;
+
+      if (firstFit && byBssid.size > 0) { fitAll(); firstFit = false; }
+    } finally {
+      pollBusy = false;
+    }
+  }
+
+  async function loadSessions() {
+    const sel = document.getElementById('session-select');
+    let r; try {
+      r = await fetch('/api/wardrive/sessions', { credentials: 'same-origin' });
+    } catch { return; }
+    if (!r.ok || r.redirected) return;
+    let j; try { j = await r.json(); } catch { return; }
+    if (!j.sessions) return;
+    const current = sel.value;
+    sel.innerHTML = '';
+    if (j.sessions.length === 0) {
+      sel.innerHTML = '<option disabled>No sessions</option>'; return;
+    }
+    j.sessions.forEach(s => {
+      const opt = document.createElement('option');
+      const label = s.name.replace('wardrive-', '').replace('.csv', '') +
+        (s.live ? ' · LIVE' : '');
+      opt.value = s.name; opt.textContent = label;
+      sel.appendChild(opt);
+    });
+    sel.value = current || j.sessions[0].name;
+    if (!currentSession) currentSession = j.sessions[0].name;
+  }
+
+  function fitAll() {
+    const pts = [];
+    byBssid.forEach(a => { if (a.lat != null) pts.push([a.lon, a.lat]); });
+    trackPts.forEach(p => pts.push([p[1], p[0]]));
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.easeTo({ center: pts[0], zoom: 17, duration: 900 }); return;
+    }
+    const bounds = pts.reduce((b, p) => b.extend(p),
+                              new maplibregl.LngLatBounds(pts[0], pts[0]));
+    map.fitBounds(bounds, {
+      padding: { top: 70, bottom: 70, left: 50, right: 50 },
+      duration: 1100, maxZoom: 18,
+    });
+  }
+
+  function syncFollowState() {
+    const fab = document.getElementById('fab-follow');
+    fab.className = 'fab btn btn-sm shadow-lg ' +
+      (follow ? 'btn-primary' : 'btn-neutral');
+    document.getElementById('opt-follow').checked = follow;
+  }
+
+  // Controls
+  document.getElementById('session-select').addEventListener('change', e => {
+    currentSession = e.target.value;
+    since = 0; totalRows = 0;
+    byBssid.clear(); trackPts.length = 0;
+    if (youMarker) { youMarker.remove(); youMarker = null; }
+    firstFit = true;
+    if (map.getSource('aps'))
+      map.getSource('aps').setData({ type:'FeatureCollection', features:[] });
+    if (map.getSource('track'))
+      map.getSource('track').setData({ type:'Feature',
+        geometry:{ type:'LineString', coordinates:[] } });
+    pollData();
+  });
+  document.getElementById('opt-heat').addEventListener('change', e => {
+    setLayerVis('heat', e.target.checked);
+  });
+  document.getElementById('opt-dots').addEventListener('change', e => {
+    setLayerVis('aps', e.target.checked);
+  });
+  document.getElementById('opt-track').addEventListener('change', e => {
+    setLayerVis('track', e.target.checked);
+  });
+  document.getElementById('opt-follow').addEventListener('change', e => {
+    follow = e.target.checked; syncFollowState();
+    if (follow && youMarker) map.easeTo({ center: youMarker.getLngLat(), duration: 800 });
+  });
+  document.getElementById('fab-follow').addEventListener('click', () => {
+    follow = !follow; syncFollowState();
+    if (follow && youMarker) map.easeTo({ center: youMarker.getLngLat(), duration: 800 });
+  });
+  document.getElementById('fab-fit').addEventListener('click', fitAll);
+})();
+</script>
+</body>
+</html>

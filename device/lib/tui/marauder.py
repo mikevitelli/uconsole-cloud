@@ -4,10 +4,15 @@ Controls an ESP32 running Marauder firmware over serial (/dev/esp32).
 Scan -> Select -> Attack workflow with live braille RSSI waveforms.
 """
 
+import collections
 import curses
+import json
+import os
 import re
+import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 
 from tui.framework import (
     C_BORDER,
@@ -188,6 +193,106 @@ class _Conn:
 _inst = None
 
 
+class _GpsPoller:
+    """Persistent gpspipe reader. Thread-safe live TPV/SKY state."""
+
+    def __init__(self):
+        self.state = {
+            "mode": 0, "lat": None, "lon": None, "alt": None,
+            "speed": None, "sats_used": 0, "sats_seen": 0,
+            "eph": None, "ts": 0.0, "error": None,
+        }
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._proc = None
+        self._thread = None
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        p = self._proc
+        if p:
+            try:
+                p.terminate()
+                p.wait(timeout=1)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+        if self._thread:
+            self._thread.join(timeout=1)
+        self._proc = None
+
+    def snap(self):
+        with self._lock:
+            return dict(self.state)
+
+    def _set_error(self, msg):
+        with self._lock:
+            self.state["error"] = msg
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                self._proc = subprocess.Popen(
+                    ["gpspipe", "-w"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, bufsize=1,
+                )
+            except FileNotFoundError:
+                self._set_error("gpspipe not installed")
+                return
+            except Exception as e:
+                self._set_error(f"gpsd: {e}")
+                self._stop.wait(2)
+                continue
+
+            with self._lock:
+                self.state["error"] = None
+
+            try:
+                for line in self._proc.stdout:
+                    if self._stop.is_set():
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except Exception:
+                        continue
+                    cls = d.get("class")
+                    if cls == "TPV":
+                        with self._lock:
+                            self.state["mode"] = d.get("mode", 0)
+                            if d.get("lat") is not None:
+                                self.state["lat"] = d["lat"]
+                            if d.get("lon") is not None:
+                                self.state["lon"] = d["lon"]
+                            self.state["alt"] = d.get("altMSL", d.get("alt"))
+                            self.state["speed"] = d.get("speed")
+                            self.state["eph"] = d.get("eph")
+                            self.state["ts"] = time.time()
+                    elif cls == "SKY":
+                        with self._lock:
+                            self.state["sats_seen"] = d.get("nSat", 0)
+                            self.state["sats_used"] = d.get("uSat", 0)
+            except Exception:
+                pass
+
+            # Subprocess exited; retry unless stopping
+            if not self._stop.is_set():
+                self._set_error("gpsd disconnected — retrying")
+                self._stop.wait(2)
+
+
 def _get_conn():
     """Get or create Marauder serial connection."""
     global _inst
@@ -254,6 +359,7 @@ _MENU = [
     ("Signal Monitor",  "Live RSSI braille waveforms",           "⣿"),
     ("Evil Portal",     "Captive portal credential capture",     "⚠"),
     ("Network Recon",   "Join network, ping, ARP, port scan",   "⌗"),
+    ("War Drive",       "GPS-tagged AP sweep \u2192 CSV",        "◉"),
     ("Device",          "Info, settings, MAC spoof, reboot",     "⚙"),
     ("Raw Console",     "Direct serial I/O",                     "⌨"),
 ]
@@ -1476,6 +1582,546 @@ def _netrecon(scr, mrd):
     scr.timeout(100)
 
 
+# ── War Drive ────────────────────────────────────────────────────────
+
+import math as _math
+
+
+def _wd_project(canvas_pw, canvas_ph, mid_lat, mid_lon, lat_span, lon_span):
+    """Return a projector fn mapping (lat, lon) -> (px, py) in the canvas.
+    Applies cos(lat) correction so east/north have equal screen distance."""
+    lon_scale = _math.cos(_math.radians(mid_lat))
+    margin = 2
+    scale_x = (canvas_pw - 2 * margin) / max(lon_span * lon_scale, 1e-9)
+    scale_y = (canvas_ph - 2 * margin) / max(lat_span, 1e-9)
+    scale = min(scale_x, scale_y)
+    cx_px = canvas_pw / 2
+    cy_px = canvas_ph / 2
+
+    def proj(lat, lon):
+        px = int(cx_px + (lon - mid_lon) * lon_scale * scale)
+        py = int(cy_px - (lat - mid_lat) * scale)
+        return px, py
+    return proj, scale
+
+
+def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state):
+    """Braille map: own path (track), APs as dots, position crosshair."""
+    cw = max(10, w - 4)
+    ch = max(5, h_avail - 1)
+
+    coords = [(a["lat"], a["lon"]) for a in seen_aps
+              if a.get("lat") is not None]
+    for t in track:
+        coords.append((t[1], t[2]))
+    cur_lat = gps_state.get("lat")
+    cur_lon = gps_state.get("lon")
+    if cur_lat is not None:
+        coords.append((cur_lat, cur_lon))
+
+    if not coords:
+        for i in range(h_avail):
+            tui.panel_side(scr, y0 + i, 0, w)
+        msg = "Waiting for GPS fix + AP sightings to build map..."
+        tui.put(scr, y0 + h_avail // 2, max(2, (w - len(msg)) // 2),
+                msg[:w - 4], w - 4,
+                curses.color_pair(C_DIM) | curses.A_DIM)
+        return
+
+    lats = [p[0] for p in coords]
+    lons = [p[1] for p in coords]
+    min_span = 0.0005  # ~50m minimum view
+    lat_span = max(max(lats) - min(lats), min_span)
+    lon_span = max(max(lons) - min(lons), min_span)
+    # 15% padding
+    lat_span *= 1.15
+    lon_span *= 1.15
+    mid_lat = (min(lats) + max(lats)) / 2
+    mid_lon = (min(lons) + max(lons)) / 2
+
+    canvas = tui.BrailleCanvas(cw, ch)
+    proj, _ = _wd_project(canvas.pw, canvas.ph,
+                          mid_lat, mid_lon, lat_span, lon_span)
+
+    # Draw own-position polyline
+    last = None
+    for t in track:
+        p = proj(t[1], t[2])
+        if last is not None:
+            canvas.line(last[0], last[1], p[0], p[1])
+        last = p
+
+    # Plot APs; strong ones get a bigger cross for visibility
+    for a in seen_aps:
+        if a.get("lat") is None:
+            continue
+        px, py = proj(a["lat"], a["lon"])
+        canvas.set(px, py)
+        if a.get("best_rssi", -100) > -65:
+            for d in (1, 2):
+                canvas.set(px + d, py)
+                canvas.set(px - d, py)
+                canvas.set(px, py + d)
+                canvas.set(px, py - d)
+
+    # Position crosshair
+    if cur_lat is not None:
+        cx, cy = proj(cur_lat, cur_lon)
+        for d in range(1, 4):
+            canvas.set(cx + d, cy)
+            canvas.set(cx - d, cy)
+            canvas.set(cx, cy + d)
+            canvas.set(cx, cy - d)
+
+    rows = canvas.render()
+    for i, row_str in enumerate(rows):
+        y = y0 + i
+        if y >= y0 + h_avail:
+            break
+        tui.panel_side(scr, y, 0, w)
+        tui.put(scr, y, 2, row_str, cw, curses.color_pair(C_OK))
+
+    # Scale caption (meters)
+    m_per_deg_lat = 111320
+    lon_scale = _math.cos(_math.radians(mid_lat))
+    width_m = int(lon_span * lon_scale * m_per_deg_lat)
+    height_m = int(lat_span * m_per_deg_lat)
+    cap = f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m"
+    cap_y = y0 + ch
+    if cap_y < y0 + h_avail:
+        tui.panel_side(scr, cap_y, 0, w)
+        tui.put(scr, cap_y, 2, cap[:w - 4], w - 4,
+                curses.color_pair(C_DIM) | curses.A_DIM)
+
+
+def _draw_wardrive_list(scr, y0, h_avail, w, recent, now):
+    """Scrolling feed of recent AP sightings."""
+    dim = curses.color_pair(C_DIM) | curses.A_DIM
+    val = curses.color_pair(C_ITEM)
+
+    # Column header row (consumes 1 row of h_avail)
+    tui.panel_side(scr, y0, 0, w)
+    hdr = f"  {'RSSI':<14} {'CH':>3}  {'BSSID':<18} {'ESSID':<24} AGE"
+    tui.put(scr, y0, 2, hdr[:w - 4], w - 4,
+            curses.color_pair(C_CAT) | curses.A_BOLD)
+
+    for i in range(h_avail - 1):
+        y = y0 + 1 + i
+        tui.panel_side(scr, y, 0, w)
+        if i >= len(recent):
+            continue
+        ap = recent[i]
+        rssi = ap["rssi"]
+        age = int(now - ap["ts"])
+        col = _rssi_color(rssi)
+        bar = _rssi_bar(rssi, 8)
+        tag = "NEW" if ap["new"] else f"{age}s"
+        tag_attr = (curses.color_pair(C_OK) | curses.A_BOLD
+                    if ap["new"] else dim)
+        tui.put(scr, y, 2, bar, 8, curses.color_pair(col))
+        tui.put(scr, y, 11, f"{rssi:>4}", 4,
+                curses.color_pair(col) | curses.A_BOLD)
+        tui.put(scr, y, 17, f"{ap['ch']:>3}", 3, dim)
+        tui.put(scr, y, 22, ap["bssid"], 17, dim)
+        ew = max(1, w - 46)
+        tui.put(scr, y, 41, ap["essid"][:ew], ew, val)
+        tui.put(scr, y, w - 6, tag[:5], 5, tag_attr)
+
+
+def _wardrive_summary(scr, js, log_path, row_count, ap_count, duration_s,
+                      with_gps, sightings, log_err):
+    """Modal: session saved — show file info, require confirmation to exit."""
+    size_bytes = 0
+    try:
+        if log_path and os.path.exists(log_path):
+            size_bytes = os.path.getsize(log_path)
+    except OSError:
+        pass
+    if size_bytes >= 1024 * 1024:
+        size_str = f"{size_bytes / 1024 / 1024:.2f} MB"
+    elif size_bytes >= 1024:
+        size_str = f"{size_bytes / 1024:.1f} KB"
+    else:
+        size_str = f"{size_bytes} B"
+
+    mins = duration_s // 60
+    secs = duration_s % 60
+    dur_str = f"{mins}m {secs}s"
+
+    host = os.uname().nodename
+    url = f"https://{host}.local/wardrive"
+
+    lines = [
+        ("SESSION SAVED", curses.color_pair(C_OK) | curses.A_BOLD),
+        ("", 0),
+        (f"Unique APs:    {ap_count}", curses.color_pair(C_ITEM)),
+        (f"Sightings:     {sightings}", curses.color_pair(C_ITEM)),
+        (f"With GPS fix:  {with_gps}", curses.color_pair(C_ITEM)),
+        (f"Duration:      {dur_str}", curses.color_pair(C_ITEM)),
+        (f"File size:     {size_str}  ({row_count} CSV rows)",
+         curses.color_pair(C_ITEM)),
+        ("", 0),
+        ("Saved to:", curses.color_pair(C_DIM) | curses.A_DIM),
+        (log_path or "(no file written)",
+         curses.color_pair(C_HEADER) | curses.A_BOLD),
+        ("", 0),
+        (f"Live map:  {url}",
+         curses.color_pair(C_STATUS) | curses.A_BOLD),
+    ]
+    if log_err:
+        lines.append(("", 0))
+        lines.append((f"Warning: {log_err}",
+                      curses.color_pair(C_CRIT) | curses.A_BOLD))
+
+    scr.timeout(-1)
+    try:
+        while True:
+            h, w = scr.getmaxyx()
+            scr.erase()
+            bw = min(max(50, len(log_path) + 6 if log_path else 50), w - 2)
+            bh = len(lines) + 6
+            by = max(0, (h - bh) // 2)
+            bx = max(0, (w - bw) // 2)
+            tui.panel_top(scr, by, bx, bw, "WAR DRIVE")
+            for i, (text, attr) in enumerate(lines):
+                y = by + 2 + i
+                tui.panel_side(scr, y, bx, bw)
+                tui.put(scr, y, bx + 3, text[:bw - 6], bw - 6,
+                        attr or curses.color_pair(C_ITEM))
+            tui.panel_side(scr, by + bh - 2, bx, bw)
+            foot = "[A/Enter] Exit    [B] Keep scanning"
+            tui.put(scr, by + bh - 2, bx + 3, foot[:bw - 6], bw - 6,
+                    curses.color_pair(C_FOOTER) | curses.A_BOLD)
+            tui.panel_bot(scr, by + bh - 1, bx, bw)
+            scr.refresh()
+            key, gp = _tui_input_loop(scr, js)
+            if key in (ord("a"), ord("A"), ord("y"), ord("Y"),
+                       10, 13) or gp == "enter":
+                return True
+            if key in (ord("b"), ord("B"), ord("n"), ord("N"), ord("q"),
+                       ord("Q"), 27) or gp == "back":
+                return False
+    finally:
+        scr.timeout(200)
+
+
+def _wardrive(scr, mrd):
+    """Continuous AP capture tagged with live GPS coords.
+
+    Writes a CSV row for every sighting (not just new APs) so you get
+    signal-over-time for later heatmap/triangulation work. Schema close
+    to WiGLE WigleWifi-1.4 so sessions are portable.
+    """
+    js = open_gamepad()
+    scr.timeout(200)
+
+    # ── Log file ─────────────────────────────────────────────────────
+    log_dir = os.path.expanduser("~/esp32/marauder-logs")
+    log_f = None
+    log_err = None
+    log_path = ""
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        log_path = os.path.join(log_dir, f"wardrive-{stamp}.csv")
+        log_f = open(log_path, "w", buffering=1)
+        log_f.write("timestamp_iso,bssid,essid,channel,rssi,"
+                    "lat,lon,altitude,speed,gps_mode,sats_used,first_seen\n")
+    except OSError as e:
+        log_err = f"log: {e}"
+
+    # ── State ────────────────────────────────────────────────────────
+    gps = _GpsPoller()
+    gps.start()
+
+    seen = {}
+    recent = collections.deque(maxlen=400)
+    track = collections.deque(maxlen=1200)   # (ts, lat, lon) samples
+    new_ts = collections.deque()
+    row_count = 0
+    rows_with_gps = 0
+    sighting_count = 0
+
+    scan_start = time.time()
+    last_restart = scan_start
+    last_track_sample = 0.0
+    last_size_check = 0.0
+    file_size = 0
+    paused = False
+    view = "map"  # or "list"
+    status = ""
+
+    def start_scan():
+        mrd.send("stopscan")
+        time.sleep(0.2)
+        mrd.send("clearlist -a")
+        time.sleep(0.2)
+        mrd.drain()
+        mrd.clear()
+        mrd.send("scanap")
+        mrd.state = _SCANNING
+
+    def _csv_escape(s):
+        if s is None:
+            return ""
+        s = str(s)
+        if "," in s or '"' in s or "\n" in s:
+            return '"' + s.replace('"', '""') + '"'
+        return s
+
+    def log_sighting(bssid, essid, ch, rssi, first_seen, gps_state):
+        nonlocal log_err, row_count, rows_with_gps, sighting_count
+        sighting_count += 1
+        if log_f is None or log_err:
+            return
+        try:
+            lat = gps_state.get("lat")
+            lon = gps_state.get("lon")
+            alt = gps_state.get("alt")
+            spd = gps_state.get("speed")
+            mode = gps_state.get("mode", 0)
+            used = gps_state.get("sats_used", 0)
+            row = ",".join([
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                _csv_escape(bssid),
+                _csv_escape(essid),
+                str(ch),
+                str(rssi),
+                f"{lat:.6f}" if lat is not None else "",
+                f"{lon:.6f}" if lon is not None else "",
+                f"{alt:.1f}" if alt is not None else "",
+                f"{spd:.2f}" if spd is not None else "",
+                str(mode),
+                str(used),
+                "1" if first_seen else "0",
+            ])
+            log_f.write(row + "\n")
+            row_count += 1
+            if lat is not None:
+                rows_with_gps += 1
+        except OSError as e:
+            log_err = f"log: {e}"
+
+    if not paused:
+        start_scan()
+
+    host = os.uname().nodename
+    web_url = f"https://{host}.local/wardrive"
+
+    try:
+        while True:
+            now = time.time()
+
+            if not paused and mrd.ok and now - last_restart > 90:
+                start_scan()
+                last_restart = now
+
+            gps_state = gps.snap()
+
+            # Sample own-position track every 1s when fix is valid
+            if (gps_state.get("mode", 0) >= 2
+                    and gps_state.get("lat") is not None
+                    and now - last_track_sample >= 1.0):
+                track.append((now, gps_state["lat"], gps_state["lon"]))
+                last_track_sample = now
+
+            # Drain Marauder serial
+            for ln in mrd.drain():
+                m = _RE_AP.match(ln)
+                if not m:
+                    continue
+                rssi = int(m.group(1))
+                ch = int(m.group(2))
+                bssid = m.group(3).lower()
+                essid = m.group(4).strip() or "(hidden)"
+
+                ap = seen.get(bssid)
+                is_new = ap is None
+                if is_new:
+                    new_ap = {
+                        "first_ts": now,
+                        "best_rssi": rssi,
+                        "last_rssi": rssi,
+                        "ch": ch,
+                        "essid": essid,
+                        "last_seen": now,
+                        "lat": gps_state.get("lat"),
+                        "lon": gps_state.get("lon"),
+                    }
+                    seen[bssid] = new_ap
+                    new_ts.append(now)
+                else:
+                    ap["last_rssi"] = rssi
+                    ap["last_seen"] = now
+                    if rssi > ap["best_rssi"]:
+                        ap["best_rssi"] = rssi
+                    if essid != "(hidden)":
+                        ap["essid"] = essid
+                    ap["ch"] = ch
+                    # Capture coord if we didn't have one at first-seen
+                    if ap.get("lat") is None and gps_state.get("lat"):
+                        ap["lat"] = gps_state["lat"]
+                        ap["lon"] = gps_state["lon"]
+
+                recent.appendleft({
+                    "ts": now, "bssid": bssid, "essid": essid,
+                    "ch": ch, "rssi": rssi, "new": is_new,
+                })
+                log_sighting(bssid, essid, ch, rssi, is_new, gps_state)
+
+            while new_ts and now - new_ts[0] > 60:
+                new_ts.popleft()
+
+            # File size poll every 2s
+            if log_f and now - last_size_check > 2.0:
+                try:
+                    file_size = os.path.getsize(log_path)
+                except OSError:
+                    pass
+                last_size_check = now
+
+            # ── Render ───────────────────────────────────────────────
+            h, w = scr.getmaxyx()
+            scr.erase()
+            dim = curses.color_pair(C_DIM) | curses.A_DIM
+
+            # Row 0: title panel with state badge
+            if paused:
+                state_badge = "\u2016 PAUSED"
+                state_pair = curses.color_pair(C_WARN) | curses.A_BOLD
+            elif not mrd.ok:
+                state_badge = "\u25a0 ESP32 DOWN"
+                state_pair = curses.color_pair(C_CRIT) | curses.A_BOLD
+            else:
+                pulse = "\u25cf" if int(now * 2) % 2 == 0 else "\u25cb"
+                state_badge = f"{pulse} LOGGING"
+                state_pair = curses.color_pair(C_OK) | curses.A_BOLD
+
+            elapsed = int(now - scan_start)
+            el_m, el_s = elapsed // 60, elapsed % 60
+            detail = (f"{len(seen)} APs  {len(new_ts)}/min  "
+                      f"{el_m}:{el_s:02d}")
+            tui.panel_top(scr, 0, 0, w, f"WAR DRIVE  {state_badge}",
+                          detail, title_pair=state_pair)
+
+            # Row 1: GPS line
+            tui.panel_side(scr, 1, 0, w)
+            mode = gps_state.get("mode", 0)
+            err = gps_state.get("error")
+            if err:
+                tui.put(scr, 1, 2, f"GPS: {err}"[:w - 4], w - 4,
+                        curses.color_pair(C_CRIT) | curses.A_BOLD)
+            elif mode >= 2 and gps_state.get("lat") is not None:
+                lat = gps_state["lat"]
+                lon = gps_state["lon"]
+                used = gps_state.get("sats_used", 0)
+                seen_s = gps_state.get("sats_seen", 0)
+                spd = gps_state.get("speed") or 0.0
+                eph = gps_state.get("eph")
+                eph_s = f"\u00b1{eph:.0f}m" if eph else ""
+                mstr = "3D" if mode == 3 else "2D"
+                gps_line = (f"GPS {mstr}  {lat:.5f},{lon:.5f}  "
+                            f"{used}/{seen_s} sats  {spd:.1f}m/s  {eph_s}")
+                tui.put(scr, 1, 2, gps_line[:w - 4], w - 4,
+                        curses.color_pair(C_OK) | curses.A_BOLD)
+            else:
+                used = gps_state.get("sats_used", 0)
+                seen_s = gps_state.get("sats_seen", 0)
+                msg = (f"GPS: no fix  {used}/{seen_s} sats  "
+                       f"(APs still logged without coords)")
+                tui.put(scr, 1, 2, msg[:w - 4], w - 4,
+                        curses.color_pair(C_WARN) | curses.A_BOLD)
+
+            # Row 2: log file line (path + rows + size)
+            tui.panel_side(scr, 2, 0, w)
+            if log_err:
+                tui.put(scr, 2, 2, log_err[:w - 4], w - 4,
+                        curses.color_pair(C_CRIT) | curses.A_BOLD)
+            elif log_path:
+                kb = file_size / 1024 if file_size else 0
+                size_str = (f"{kb:.1f} KB" if kb < 1024
+                            else f"{kb / 1024:.2f} MB")
+                short = os.path.basename(log_path)
+                log_line = (f"\u2193 {short}  {row_count} rows  "
+                            f"{size_str}  \u2022 {web_url}")
+                tui.put(scr, 2, 2, log_line[:w - 4], w - 4, dim)
+
+            # Content area
+            content_y = 3
+            content_h = h - content_y - 2
+            if view == "map":
+                _draw_wardrive_map(scr, content_y, content_h, w,
+                                   list(seen.values()), list(track),
+                                   gps_state)
+            else:
+                _draw_wardrive_list(scr, content_y, content_h, w,
+                                    recent, now)
+
+            # Status
+            if status:
+                tui.put(scr, h - 2, 1, status[:w - 2], w - 2,
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+            tui.panel_bot(scr, h - 2, 0, w)
+
+            # Footer
+            view_hint = "List" if view == "map" else "Map"
+            if paused:
+                foot = f" X Resume \u2502 Tab {view_hint} \u2502 B Save & Exit "
+            else:
+                foot = f" X Pause \u2502 Tab {view_hint} \u2502 B Save & Exit "
+            tui.put(scr, h - 1, 0, foot.center(w), w,
+                    curses.color_pair(C_FOOTER))
+            scr.refresh()
+
+            key, gp = _tui_input_loop(scr, js)
+            if key == -1 and gp is None:
+                continue
+            if key == ord("q") or key == ord("Q") or gp == "back":
+                if log_f:
+                    try:
+                        log_f.flush()
+                    except Exception:
+                        pass
+                dur = int(time.time() - scan_start)
+                confirm = _wardrive_summary(
+                    scr, js, log_path, row_count, len(seen), dur,
+                    rows_with_gps, sighting_count, log_err,
+                )
+                if confirm:
+                    break
+                # Else keep scanning
+                continue
+            elif key == ord("x") or key == ord("X") or gp == "refresh":
+                if paused:
+                    start_scan()
+                    paused = False
+                    last_restart = time.time()
+                    status = ""
+                else:
+                    mrd.stop_scan()
+                    paused = True
+                    status = "Paused \u2014 file still open, X to resume"
+            elif key in (9, ord("m"), ord("M"), ord("d"), ord("D")):
+                # Tab, M, or D — toggle view
+                view = "list" if view == "map" else "map"
+
+    finally:
+        try:
+            mrd.stop_scan()
+        except Exception:
+            pass
+        gps.stop()
+        if log_f:
+            try:
+                log_f.flush()
+                log_f.close()
+            except Exception:
+                pass
+        if js:
+            close_gamepad(js)
+        scr.timeout(100)
+
+
 # ── Device Info ──────────────────────────────────────────────────────
 
 _DEV = [
@@ -1643,7 +2289,8 @@ def _get_menu_fns():
             4: _sigmon,
             5: _portal,
             6: _netrecon,
-            7: _device,
-            8: _console,
+            7: _wardrive,
+            8: _device,
+            9: _console,
         }
     return _MENU_FNS
