@@ -293,6 +293,195 @@ class _GpsPoller:
                 self._stop.wait(2)
 
 
+class _OsmStreetFetcher:
+    """Background thread that downloads OSM highway geometry via Overpass API.
+
+    Streets in a ~500m radius around the current GPS fix are cached to disk
+    and redrawn under the war-drive map. Re-fetches when position drifts
+    >200m from the last query center. Safe to call without network — on
+    failure, get_streets() just returns [] and sets an error string.
+    """
+
+    CACHE_PATH = os.path.expanduser(
+        "~/esp32/marauder-logs/osm-streets-cache.json")
+    ENDPOINT = "https://overpass-api.de/api/interpreter"
+    RADIUS_M = 500
+    MOVE_THRESHOLD_M = 200
+    MAX_AGE_S = 3600      # re-fetch cached entries after 1h
+    RETRY_AFTER_FAIL = 60
+
+    def __init__(self):
+        self.streets = []              # list of polylines [[(lat, lon), ...]]
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+        self._pos = None               # latest (lat, lon) from GPS
+        self._last_center = None       # (lat, lon) of last successful fetch
+        self._last_fetch_ts = 0.0
+        self._last_attempt_ts = 0.0
+        self._err = None
+        self._cache = None             # loaded on demand
+
+    def start(self):
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+
+    def update_position(self, lat, lon):
+        with self._lock:
+            self._pos = (lat, lon)
+
+    def get_streets(self):
+        with self._lock:
+            return list(self.streets)
+
+    def status(self):
+        with self._lock:
+            return {
+                "count": len(self.streets),
+                "err": self._err,
+                "last_fetch": self._last_fetch_ts,
+                "last_center": self._last_center,
+            }
+
+    def _load_cache_file(self):
+        if self._cache is not None:
+            return self._cache
+        try:
+            with open(self.CACHE_PATH, "r") as f:
+                self._cache = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            self._cache = {}
+        return self._cache
+
+    def _save_cache_file(self):
+        if self._cache is None:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.CACHE_PATH), exist_ok=True)
+            tmp = self.CACHE_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self._cache, f)
+            os.replace(tmp, self.CACHE_PATH)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _cache_key(lat, lon):
+        return f"{lat:.3f},{lon:.3f}"
+
+    @staticmethod
+    def _distance_m(a, b):
+        if a is None or b is None:
+            return float("inf")
+        lat1, lon1 = a
+        lat2, lon2 = b
+        mean_lat = (lat1 + lat2) / 2
+        dlat_m = (lat2 - lat1) * 111320.0
+        dlon_m = (lon2 - lon1) * 111320.0 * _math.cos(_math.radians(mean_lat))
+        return _math.hypot(dlat_m, dlon_m)
+
+    def _fetch(self, lat, lon):
+        query = (f"[out:json][timeout:25];"
+                 f"way(around:{self.RADIUS_M},{lat},{lon})[highway];"
+                 f"out geom;")
+        data = ("data=" + query).encode("utf-8")
+        req = __import__("urllib.request").request.Request(
+            self.ENDPOINT, data=data, method="POST",
+            headers={"User-Agent": "uconsole-wardrive/0.1"})
+        try:
+            with __import__("urllib.request").request.urlopen(
+                    req, timeout=30) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            with self._lock:
+                self._err = f"overpass: {e.__class__.__name__}"
+            return None
+
+        streets = []
+        for el in payload.get("elements", []):
+            geom = el.get("geometry") or []
+            if len(geom) < 2:
+                continue
+            poly = [(p["lat"], p["lon"]) for p in geom
+                    if "lat" in p and "lon" in p]
+            if len(poly) >= 2:
+                streets.append(poly)
+        return streets
+
+    def _run(self):
+        while not self._stop.is_set():
+            with self._lock:
+                pos = self._pos
+            if pos is None:
+                self._stop.wait(3)
+                continue
+
+            lat, lon = pos
+            key = self._cache_key(lat, lon)
+            cache = self._load_cache_file()
+
+            # Try cache first — if fresh, use it
+            entry = cache.get(key)
+            now = time.time()
+            if entry and (now - entry.get("fetched", 0) < self.MAX_AGE_S):
+                streets = [[(p[0], p[1]) for p in poly]
+                           for poly in entry.get("streets", [])]
+                with self._lock:
+                    if streets != self.streets:
+                        self.streets = streets
+                        self._last_center = (lat, lon)
+                        self._last_fetch_ts = entry["fetched"]
+                        self._err = None
+                self._stop.wait(10)
+                continue
+
+            # Skip if we already tried to fetch this spot recently
+            with self._lock:
+                moved = self._distance_m(self._last_center, (lat, lon))
+                recent_try = (now - self._last_attempt_ts
+                              < self.RETRY_AFTER_FAIL)
+            if moved < self.MOVE_THRESHOLD_M and recent_try:
+                self._stop.wait(5)
+                continue
+
+            with self._lock:
+                self._last_attempt_ts = now
+
+            streets = self._fetch(lat, lon)
+            if streets is None:
+                self._stop.wait(self.RETRY_AFTER_FAIL)
+                continue
+
+            # Cache + publish
+            cache[key] = {
+                "fetched": now, "radius_m": self.RADIUS_M,
+                "streets": [[[p[0], p[1]] for p in poly] for poly in streets],
+            }
+            # Trim cache to most recent ~20 entries
+            if len(cache) > 20:
+                oldest = sorted(cache.items(),
+                                key=lambda kv: kv[1].get("fetched", 0))
+                for k, _ in oldest[:len(cache) - 20]:
+                    cache.pop(k, None)
+            self._save_cache_file()
+
+            with self._lock:
+                self.streets = streets
+                self._last_center = (lat, lon)
+                self._last_fetch_ts = now
+                self._err = None
+
+            self._stop.wait(15)
+
+
 def _get_conn():
     """Get or create Marauder serial connection."""
     global _inst
@@ -1605,10 +1794,17 @@ def _wd_project(canvas_pw, canvas_ph, mid_lat, mid_lon, lat_span, lon_span):
     return proj, scale
 
 
-def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state):
-    """Braille map: own path (track), APs as dots, position crosshair."""
+def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
+                       streets=None):
+    """Braille map: streets (dim), walked track, APs, position crosshair.
+
+    When `streets` is provided (list of [(lat, lon), ...] polylines), they
+    are drawn on a separate canvas rendered BEHIND the data canvas in a
+    dim color. Cells that contain both are shown in bright (data wins).
+    """
     cw = max(10, w - 4)
     ch = max(5, h_avail - 1)
+    streets = streets or []
 
     coords = [(a["lat"], a["lon"]) for a in seen_aps
               if a.get("lat") is not None]
@@ -1618,6 +1814,12 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state):
     cur_lon = gps_state.get("lon")
     if cur_lat is not None:
         coords.append((cur_lat, cur_lon))
+    # Include first and last point of each street polyline — they pin
+    # the viewport to the neighborhood even before any APs are seen.
+    for poly in streets:
+        if poly:
+            coords.append(poly[0])
+            coords.append(poly[-1])
 
     if not coords:
         for i in range(h_avail):
@@ -1633,60 +1835,89 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state):
     min_span = 0.0005  # ~50m minimum view
     lat_span = max(max(lats) - min(lats), min_span)
     lon_span = max(max(lons) - min(lons), min_span)
-    # 15% padding
     lat_span *= 1.15
     lon_span *= 1.15
     mid_lat = (min(lats) + max(lats)) / 2
     mid_lon = (min(lons) + max(lons)) / 2
 
-    canvas = tui.BrailleCanvas(cw, ch)
-    proj, _ = _wd_project(canvas.pw, canvas.ph,
-                          mid_lat, mid_lon, lat_span, lon_span)
+    street_canvas = tui.BrailleCanvas(cw, ch) if streets else None
+    data_canvas = tui.BrailleCanvas(cw, ch)
+    pw, ph = data_canvas.pw, data_canvas.ph
+    proj, _ = _wd_project(pw, ph, mid_lat, mid_lon, lat_span, lon_span)
 
-    # Draw own-position polyline
+    # Streets layer (dim)
+    if street_canvas is not None:
+        for poly in streets:
+            last = None
+            for lat, lon in poly:
+                p = proj(lat, lon)
+                # Skip segments entirely off-canvas (huge lines)
+                if not (0 <= p[0] < pw and 0 <= p[1] < ph):
+                    last = p if (0 <= p[0] < pw or 0 <= p[1] < ph) else None
+                    continue
+                if last is not None:
+                    street_canvas.line(last[0], last[1], p[0], p[1])
+                last = p
+
+    # Walked track (bright)
     last = None
     for t in track:
         p = proj(t[1], t[2])
         if last is not None:
-            canvas.line(last[0], last[1], p[0], p[1])
+            data_canvas.line(last[0], last[1], p[0], p[1])
         last = p
 
-    # Plot APs; strong ones get a bigger cross for visibility
+    # APs — strong ones get a larger marker
     for a in seen_aps:
         if a.get("lat") is None:
             continue
         px, py = proj(a["lat"], a["lon"])
-        canvas.set(px, py)
+        data_canvas.set(px, py)
         if a.get("best_rssi", -100) > -65:
             for d in (1, 2):
-                canvas.set(px + d, py)
-                canvas.set(px - d, py)
-                canvas.set(px, py + d)
-                canvas.set(px, py - d)
+                data_canvas.set(px + d, py)
+                data_canvas.set(px - d, py)
+                data_canvas.set(px, py + d)
+                data_canvas.set(px, py - d)
 
-    # Position crosshair
+    # Crosshair for current position
     if cur_lat is not None:
         cx, cy = proj(cur_lat, cur_lon)
         for d in range(1, 4):
-            canvas.set(cx + d, cy)
-            canvas.set(cx - d, cy)
-            canvas.set(cx, cy + d)
-            canvas.set(cx, cy - d)
+            data_canvas.set(cx + d, cy)
+            data_canvas.set(cx - d, cy)
+            data_canvas.set(cx, cy + d)
+            data_canvas.set(cx, cy - d)
 
-    rows = canvas.render()
-    for i, row_str in enumerate(rows):
-        y = y0 + i
+    # Render: streets first in dim, then data on top in bright. Because
+    # each braille cell holds 8 dots, we merge bits per-cell and pick the
+    # color from whichever layer contributed (data wins).
+    data_attr = curses.color_pair(C_OK)
+    street_attr = curses.color_pair(C_DIM) | curses.A_DIM
+
+    for cy in range(ch):
+        y = y0 + cy
         if y >= y0 + h_avail:
             break
         tui.panel_side(scr, y, 0, w)
-        tui.put(scr, y, 2, row_str, cw, curses.color_pair(C_OK))
+        for cx in range(cw):
+            d_bits = data_canvas.grid[cy][cx]
+            s_bits = (street_canvas.grid[cy][cx]
+                      if street_canvas is not None else 0)
+            bits = d_bits | s_bits
+            if bits == 0:
+                continue
+            ch_str = chr(0x2800 | bits)
+            attr = data_attr if d_bits else street_attr
+            tui.put(scr, y, 2 + cx, ch_str, 1, attr)
 
-    # Scale caption (meters)
+    # Scale caption
     m_per_deg_lat = 111320
     lon_scale = _math.cos(_math.radians(mid_lat))
     width_m = int(lon_span * lon_scale * m_per_deg_lat)
     height_m = int(lat_span * m_per_deg_lat)
-    cap = f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m"
+    street_tag = f"  \u22b8 {len(streets)} streets" if streets else ""
+    cap = (f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m{street_tag}")
     cap_y = y0 + ch
     if cap_y < y0 + h_avail:
         tui.panel_side(scr, cap_y, 0, w)
@@ -1833,6 +2064,8 @@ def _wardrive(scr, mrd):
     # ── State ────────────────────────────────────────────────────────
     gps = _GpsPoller()
     gps.start()
+    streets_fetcher = _OsmStreetFetcher()
+    streets_fetcher.start()
 
     seen = {}
     recent = collections.deque(maxlen=400)
@@ -1849,6 +2082,7 @@ def _wardrive(scr, mrd):
     file_size = 0
     paused = False
     view = "map"  # or "list"
+    streets_on = True
     status = ""
 
     def start_scan():
@@ -1924,6 +2158,8 @@ def _wardrive(scr, mrd):
                     and now - last_track_sample >= 1.0):
                 track.append((now, gps_state["lat"], gps_state["lon"]))
                 last_track_sample = now
+                streets_fetcher.update_position(
+                    gps_state["lat"], gps_state["lon"])
 
             # Drain Marauder serial
             for ln in mrd.drain():
@@ -2050,9 +2286,11 @@ def _wardrive(scr, mrd):
             content_y = 3
             content_h = h - content_y - 2
             if view == "map":
+                street_data = (streets_fetcher.get_streets()
+                               if streets_on else None)
                 _draw_wardrive_map(scr, content_y, content_h, w,
                                    list(seen.values()), list(track),
-                                   gps_state)
+                                   gps_state, streets=street_data)
             else:
                 _draw_wardrive_list(scr, content_y, content_h, w,
                                     recent, now)
@@ -2065,10 +2303,12 @@ def _wardrive(scr, mrd):
 
             # Footer
             view_hint = "List" if view == "map" else "Map"
+            s_state = "on" if streets_on else "off"
+            base_foot = f" X Pause \u2502 Tab {view_hint} \u2502 S Streets:{s_state} \u2502 B Save & Exit "
             if paused:
-                foot = f" X Resume \u2502 Tab {view_hint} \u2502 B Save & Exit "
+                foot = f" X Resume \u2502 Tab {view_hint} \u2502 S Streets:{s_state} \u2502 B Save & Exit "
             else:
-                foot = f" X Pause \u2502 Tab {view_hint} \u2502 B Save & Exit "
+                foot = base_foot
             tui.put(scr, h - 1, 0, foot.center(w), w,
                     curses.color_pair(C_FOOTER))
             scr.refresh()
@@ -2104,6 +2344,16 @@ def _wardrive(scr, mrd):
             elif key in (9, ord("m"), ord("M"), ord("d"), ord("D")):
                 # Tab, M, or D — toggle view
                 view = "list" if view == "map" else "map"
+            elif key in (ord("s"), ord("S")):
+                streets_on = not streets_on
+                st = streets_fetcher.status()
+                if streets_on and st["count"] == 0 and not st["err"]:
+                    status = "Streets on — fetching from Overpass..."
+                elif streets_on and st["err"]:
+                    status = f"Streets on — last error: {st['err']}"
+                else:
+                    status = (f"Streets {'on' if streets_on else 'off'}"
+                              f"  ({st['count']} segments cached)")
 
     finally:
         try:
@@ -2111,6 +2361,10 @@ def _wardrive(scr, mrd):
         except Exception:
             pass
         gps.stop()
+        try:
+            streets_fetcher.stop()
+        except Exception:
+            pass
         if log_f:
             try:
                 log_f.flush()
