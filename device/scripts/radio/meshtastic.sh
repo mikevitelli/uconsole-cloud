@@ -63,8 +63,31 @@ cmd_listen() {
     section "Meshtastic — Listening"
     check_cli
     check_daemon
-    printf "Listening for packets on %s:4403 — Ctrl-C to stop\n\n" "$HOST"
-    meshtastic --host "$HOST" --listen
+    printf "Listening for packets on %s:4403 — Ctrl-C to stop\n" "$HOST"
+    printf "Filtered view. For raw protobuf: meshtastic --host %s --listen\n\n" "$HOST"
+    meshtastic --host "$HOST" --listen 2>&1 | python3 -u -c '
+import sys, re, time, signal
+signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+for ln in sys.stdin:
+    if "Publishing meshtastic.receive" in ln:
+        m = re.search(r"portnum.: .(\w+).", ln)
+        frm = re.search(r"fromId.: .([!\w]+).", ln)
+        txt = re.search(r"text.: .([^\"]+).", ln)
+        t = m.group(1) if m else "?"
+        f = frm.group(1) if frm else "?"
+        ts = time.strftime("%H:%M:%S")
+        out = "[" + ts + "] " + t.ljust(20) + " from=" + f
+        if txt:
+            out += "  MSG: " + txt.group(1)
+        print(out, flush=True)
+        continue
+    if ln.startswith("DEBUG") or "Unexpected FromRadio" in ln: continue
+    if ln.startswith((" ", "\t")) or ln.strip() in ("}", "{"): continue
+    s = ln.rstrip()
+    if not s: continue
+    if s.startswith(("WARNING", "ERROR", "Connected", "Disconnected", "[")):
+        print(s, flush=True)
+'
 }
 
 cmd_send() {
