@@ -214,8 +214,19 @@ SUBMENUS = {
         ("Send Message",     "radio/lora.sh send test",   "transmit test message",                  "action"),
         ("Listen",           "radio/lora.sh listen",      "receive incoming messages",               "fullscreen"),
         ("Ping / Range",     "radio/lora.sh ping",        "range test with RSSI",                   "stream"),
-        ("Chat",             "radio/lora.sh chat",        "interactive LoRa chat",                  "fullscreen"),
+        ("Chat",             "radio/lora.sh chat",        "point-to-point (stop meshtasticd first)", "fullscreen"),
         ("Bridge to Web",    "radio/lora.sh bridge",      "forward messages to webdash",            "fullscreen"),
+    ],
+    "sub:meshtastic": [
+        ("Status",           "radio/meshtastic.sh status",          "node info, region, frequency",           "panel"),
+        ("Nodes",            "radio/meshtastic.sh nodes",           "mesh nodes table",                       "panel"),
+        ("Listen",           "radio/meshtastic.sh listen",          "stream incoming packets",                "fullscreen"),
+        ("Send Message",     "radio/meshtastic.sh send",            "broadcast a text message",               "fullscreen"),
+        ("Web UI",           "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel"),
+        ("Logs",             "radio/meshtastic.sh logs",            "tail meshtasticd journal",               "fullscreen"),
+        ("Service: Start",   "radio/meshtastic.sh service start",   "start meshtasticd (claims SPI1)",        "action"),
+        ("Service: Stop",    "radio/meshtastic.sh service stop",    "stop meshtasticd (frees SPI1)",          "action"),
+        ("Service: Restart", "radio/meshtastic.sh service restart", "restart meshtasticd",                    "action"),
     ],
 }
 
@@ -275,6 +286,7 @@ CATEGORIES = [
             ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu"),
             ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu"),
             ("LoRa Radio",       "sub:lora",            "send, receive, range test",              "submenu"),
+            ("Meshtastic",       "sub:meshtastic",      "mesh chat, nodes, web UI",               "submenu"),
             ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action"),
         ],
     },
