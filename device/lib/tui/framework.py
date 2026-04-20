@@ -209,6 +209,7 @@ SUBMENUS = {
         ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch dump1090 interactive",             "fullscreen"),
     ],
     "sub:lora_mesh": [
+        ("Map",              "_mesh_map",                           "live mesh nodes on a world map",         "action"),
         ("Chat (Web UI)",    "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel"),
         ("Send Message",     "radio/meshtastic.sh send",            "broadcast a text message",               "fullscreen"),
         ("Nodes",            "radio/meshtastic.sh nodes",           "mesh nodes table",                       "panel"),
@@ -2514,6 +2515,7 @@ def _get_native_tools():
     from tui.adsb_basemap_info import run_basemap_info
     from tui import adsb_hires as _adsb_hires_mod
     from tui import adsb as _adsb_mod
+    from tui.meshtastic_map import run_meshtastic_map
     from tui.marauder import run_marauder
     from tui.telegram import run_telegram
     # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
@@ -2588,6 +2590,7 @@ def _get_native_tools():
         "_adsb_map":          lambda scr: run_adsb_map(scr),
         "_adsb_table":        lambda scr: run_adsb_table(scr),
         "_adsb_set_home":     lambda scr: run_adsb_set_home(scr),
+        "_mesh_map":          lambda scr: run_meshtastic_map(scr),
         "_adsb_home_picker":  lambda scr: run_home_picker_action(scr),
         "_adsb_layers":       lambda scr: _adsb_layers_menu_entry(scr, run_layer_picker),
         "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
