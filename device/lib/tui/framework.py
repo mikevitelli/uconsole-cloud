@@ -208,14 +208,66 @@ SUBMENUS = {
         ("Basemap Info",      "_adsb_basemap_info", "loaded files, feature counts, cache",     "action"),
         ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch dump1090 interactive",             "fullscreen"),
     ],
-    "sub:lora": [
-        ("Status",           "radio/lora.sh status",      "SX1262 SPI check + config",              "panel"),
-        ("Configuration",    "radio/lora.sh config",      "frequency, BW, SF, power",               "panel"),
-        ("Send Message",     "radio/lora.sh send test",   "transmit test message",                  "action"),
-        ("Listen",           "radio/lora.sh listen",      "receive incoming messages",               "fullscreen"),
-        ("Ping / Range",     "radio/lora.sh ping",        "range test with RSSI",                   "stream"),
-        ("Chat",             "radio/lora.sh chat",        "interactive LoRa chat",                  "fullscreen"),
-        ("Bridge to Web",    "radio/lora.sh bridge",      "forward messages to webdash",            "fullscreen"),
+    "sub:lora_mesh": [
+        ("Map",              "_mesh_map",                           "live mesh nodes on a world map",         "action"),
+        ("Chat (Web UI)",    "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel"),
+        ("Broadcast",        "radio/meshtastic.sh send",            "text to primary channel",                "fullscreen"),
+        ("Direct Message",   "radio/meshtastic.sh send-dm",         "DM a specific !nodeid (prompts)",        "fullscreen"),
+        ("Broadcast + ACK",  "radio/meshtastic.sh send-ack",        "broadcast with --ack request",           "fullscreen"),
+        ("Send on Channel",  "radio/meshtastic.sh send-ch",         "send to a specific channel index",       "fullscreen"),
+        ("Nodes",            "radio/meshtastic.sh nodes",           "mesh nodes table",                       "panel"),
+        ("Listen",           "radio/meshtastic.sh listen",          "stream incoming packets (filtered)",     "fullscreen"),
+        ("Auto-Reply",       "radio/meshtastic.sh reply",           "listen + echo packet info to senders",   "fullscreen"),
+        ("Status",           "radio/meshtastic.sh status",          "node info, region, frequency",           "panel"),
+        ("Config",           "sub:lora_config",                     "privacy, MQTT, position, name, region",  "submenu"),
+        ("Channels",         "sub:lora_channels",                   "primary + secondary channels, PSKs",     "submenu"),
+        ("Service",          "sub:lora_service",                    "start, stop, restart, logs, web URL",    "submenu"),
+        ("Power",            "sub:lora_power",                      "reboot, shutdown, factory-reset",        "submenu"),
+        ("Direct LoRa (P2P)","sub:lora_p2p",                        "raw SX1262 — stops meshtasticd",         "submenu"),
+    ],
+    "sub:lora_config": [
+        ("Show Config",      "radio/meshtastic.sh config show",              "current MQTT/position/region",           "panel"),
+        ("Privacy: Stealth", "radio/meshtastic.sh config privacy stealth",   "MQTT off, position off, anon name",      "action"),
+        ("Privacy: Public",  "radio/meshtastic.sh config privacy public",    "MQTT on, position low, uConsole name",   "action"),
+        ("MQTT: Toggle",     "radio/meshtastic.sh config mqtt toggle",       "flip MQTT enabled state",                "action"),
+        ("MQTT: On",         "radio/meshtastic.sh config mqtt on",           "enable MQTT (public broker)",            "action"),
+        ("MQTT: Off",        "radio/meshtastic.sh config mqtt off",          "disable MQTT",                           "action"),
+        ("Position: Off",    "radio/meshtastic.sh config position off",      "disable all position broadcasts",        "action"),
+        ("Position: Low",    "radio/meshtastic.sh config position low",      "~10km grid, hourly",                     "action"),
+        ("Position: Full",   "radio/meshtastic.sh config position full",     "precise, 15min + smart",                 "action"),
+        ("Position: Clear",  "radio/meshtastic.sh config position clear",    "wipe cached position",                   "action"),
+        ("Rename Node",      "radio/meshtastic.sh config rename",            "set long + short name (prompts)",        "fullscreen"),
+        ("Set Region",       "radio/meshtastic.sh config region",            "US, EU_433, EU_868, ...",                "fullscreen"),
+        ("Channel Name",     "radio/meshtastic.sh config channel-name",      "set default channel name",               "fullscreen"),
+    ],
+    "sub:lora_service": [
+        ("Status",           "radio/meshtastic.sh service status",           "systemctl status",                       "panel"),
+        ("Start",            "radio/meshtastic.sh service start",            "start meshtasticd (claims SPI1)",        "action"),
+        ("Stop",             "radio/meshtastic.sh service stop",             "stop meshtasticd (frees SPI1)",          "action"),
+        ("Restart",          "radio/meshtastic.sh service restart",          "restart meshtasticd",                    "action"),
+        ("Logs",             "radio/meshtastic.sh logs",                     "tail meshtasticd journal",               "fullscreen"),
+        ("Web UI info",      "radio/meshtastic.sh web",                      "https://uconsole.local:9443",            "panel"),
+    ],
+    "sub:lora_channels": [
+        ("List",             "radio/meshtastic.sh channel list",             "primary + secondary, PSK type, flags",   "panel"),
+        ("Add Secondary",    "radio/meshtastic.sh channel add",              "create secondary channel (prompts)",     "fullscreen"),
+        ("Delete",           "radio/meshtastic.sh channel del",              "delete channel by idx (prompts)",        "fullscreen"),
+        ("Set PSK",          "radio/meshtastic.sh channel psk",              "none|default|random|<hex> per channel",  "fullscreen"),
+        ("Channel Name",     "radio/meshtastic.sh config channel-name",      "rename a channel (prompts)",             "fullscreen"),
+    ],
+    "sub:lora_power": [
+        ("Reboot",           "radio/meshtastic.sh power reboot",             "soft reboot the Meshtastic node",        "fullscreen"),
+        ("Shutdown",         "radio/meshtastic.sh power shutdown",           "power off the node",                     "fullscreen"),
+        ("Factory Reset",    "radio/meshtastic.sh power factory-reset",      "WIPE all config — requires RESET confirm","fullscreen"),
+    ],
+    "sub:lora_p2p": [
+        ("Status",           "radio/lora.sh status",                         "SX1262 SPI check + config",              "panel"),
+        ("Configuration",    "radio/lora.sh config",                         "frequency, BW, SF, power",               "panel"),
+        ("Send Test",        "radio/lora.sh send test",                      "transmit test message",                  "action"),
+        ("Listen",           "radio/lora.sh listen",                         "receive incoming messages",              "fullscreen"),
+        ("Ping / Range",     "radio/lora.sh ping",                           "range test with RSSI",                   "stream"),
+        ("Chat (P2P)",       "radio/lora.sh chat",                           "P2P — stop meshtasticd first",           "fullscreen"),
+        ("Bridge to Web",    "radio/lora.sh bridge",                         "forward messages to webdash",            "fullscreen"),
     ],
 }
 
@@ -274,7 +326,7 @@ CATEGORIES = [
             ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu"),
             ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu"),
             ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu"),
-            ("LoRa Radio",       "sub:lora",            "send, receive, range test",              "submenu"),
+            ("LoRa Mesh",        "sub:lora_mesh",       "Meshtastic + direct LoRa — chat, config, service", "submenu"),
             ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action"),
         ],
     },
@@ -2481,6 +2533,7 @@ def _get_native_tools():
     from tui.adsb_basemap_info import run_basemap_info
     from tui import adsb_hires as _adsb_hires_mod
     from tui import adsb as _adsb_mod
+    from tui.meshtastic_map import run_meshtastic_map
     from tui.marauder import run_marauder
     from tui.telegram import run_telegram
     # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
@@ -2555,6 +2608,7 @@ def _get_native_tools():
         "_adsb_map":          lambda scr: run_adsb_map(scr),
         "_adsb_table":        lambda scr: run_adsb_table(scr),
         "_adsb_set_home":     lambda scr: run_adsb_set_home(scr),
+        "_mesh_map":          lambda scr: run_meshtastic_map(scr),
         "_adsb_home_picker":  lambda scr: run_home_picker_action(scr),
         "_adsb_layers":       lambda scr: _adsb_layers_menu_entry(scr, run_layer_picker),
         "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
