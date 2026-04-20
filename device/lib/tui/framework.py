@@ -211,12 +211,18 @@ SUBMENUS = {
     "sub:lora_mesh": [
         ("Map",              "_mesh_map",                           "live mesh nodes on a world map",         "action"),
         ("Chat (Web UI)",    "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel"),
-        ("Send Message",     "radio/meshtastic.sh send",            "broadcast a text message",               "fullscreen"),
+        ("Broadcast",        "radio/meshtastic.sh send",            "text to primary channel",                "fullscreen"),
+        ("Direct Message",   "radio/meshtastic.sh send-dm",         "DM a specific !nodeid (prompts)",        "fullscreen"),
+        ("Broadcast + ACK",  "radio/meshtastic.sh send-ack",        "broadcast with --ack request",           "fullscreen"),
+        ("Send on Channel",  "radio/meshtastic.sh send-ch",         "send to a specific channel index",       "fullscreen"),
         ("Nodes",            "radio/meshtastic.sh nodes",           "mesh nodes table",                       "panel"),
         ("Listen",           "radio/meshtastic.sh listen",          "stream incoming packets (filtered)",     "fullscreen"),
+        ("Auto-Reply",       "radio/meshtastic.sh reply",           "listen + echo packet info to senders",   "fullscreen"),
         ("Status",           "radio/meshtastic.sh status",          "node info, region, frequency",           "panel"),
         ("Config",           "sub:lora_config",                     "privacy, MQTT, position, name, region",  "submenu"),
+        ("Channels",         "sub:lora_channels",                   "primary + secondary channels, PSKs",     "submenu"),
         ("Service",          "sub:lora_service",                    "start, stop, restart, logs, web URL",    "submenu"),
+        ("Power",            "sub:lora_power",                      "reboot, shutdown, factory-reset",        "submenu"),
         ("Direct LoRa (P2P)","sub:lora_p2p",                        "raw SX1262 — stops meshtasticd",         "submenu"),
     ],
     "sub:lora_config": [
@@ -241,6 +247,18 @@ SUBMENUS = {
         ("Restart",          "radio/meshtastic.sh service restart",          "restart meshtasticd",                    "action"),
         ("Logs",             "radio/meshtastic.sh logs",                     "tail meshtasticd journal",               "fullscreen"),
         ("Web UI info",      "radio/meshtastic.sh web",                      "https://uconsole.local:9443",            "panel"),
+    ],
+    "sub:lora_channels": [
+        ("List",             "radio/meshtastic.sh channel list",             "primary + secondary, PSK type, flags",   "panel"),
+        ("Add Secondary",    "radio/meshtastic.sh channel add",              "create secondary channel (prompts)",     "fullscreen"),
+        ("Delete",           "radio/meshtastic.sh channel del",              "delete channel by idx (prompts)",        "fullscreen"),
+        ("Set PSK",          "radio/meshtastic.sh channel psk",              "none|default|random|<hex> per channel",  "fullscreen"),
+        ("Channel Name",     "radio/meshtastic.sh config channel-name",      "rename a channel (prompts)",             "fullscreen"),
+    ],
+    "sub:lora_power": [
+        ("Reboot",           "radio/meshtastic.sh power reboot",             "soft reboot the Meshtastic node",        "fullscreen"),
+        ("Shutdown",         "radio/meshtastic.sh power shutdown",           "power off the node",                     "fullscreen"),
+        ("Factory Reset",    "radio/meshtastic.sh power factory-reset",      "WIPE all config — requires RESET confirm","fullscreen"),
     ],
     "sub:lora_p2p": [
         ("Status",           "radio/lora.sh status",                         "SX1262 SPI check + config",              "panel"),

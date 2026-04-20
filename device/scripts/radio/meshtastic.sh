@@ -15,22 +15,46 @@ usage() {
     cat <<EOF
 Usage: meshtastic.sh [command] [args]
 
-Commands:
+Info:
   status              node info, region, frequency (default)
   nodes               list known nodes in the mesh
   listen              stream incoming packets (Ctrl-C to stop)
-  send [msg]          broadcast a text message (prompts if no arg)
+  reply               listen + auto-respond with packet info
   web                 print Meshtastic web UI URL
-  service [action]    systemctl wrapper — status|start|stop|restart
   logs                tail meshtasticd journal (Ctrl-C to stop)
 
+Send (canonical --sendtext per meshtastic CLI docs):
+  send [msg]                     broadcast to primary channel
+  send-dm <!nodeid> <msg>        direct message to a specific node
+  send-ack [msg]                 broadcast with --ack delivery request
+  send-ch <idx> <msg>            send on a specific channel index
+
+Service:
+  service [action]    systemctl wrapper — status|start|stop|restart
+
+Config (canonical mqtt.* / position.* / lora.* keys):
   config show                    dump current MQTT/position/region state
   config privacy stealth|public  preset bundles
   config mqtt on|off|toggle      toggle the MQTT module
   config position off|low|full|clear
-  config rename [long] [short]   set node long+short name (prompts if empty)
+      off   — secs=0, smart=off, remove-position
+      low   — channel position_precision=13 (~2.9 km, docs example), hourly
+      full  — position_precision=32 (exact), 15 min + smart
+      clear — remove cached/fixed position
+  config rename [long] [short]   set node owner long+short name
   config region [code]           US|EU_433|EU_868|ANZ|CN|JP|KR|TW|IN|NZ|TH|...
-  config channel-name [n] [idx]  set channel name (default index 0)
+  config channel-name [n] [idx]  set channel name (default idx 0 = primary)
+
+Channels (8 slots; idx 0 = PRIMARY, 1-7 SECONDARY, no gaps allowed):
+  channel list                   show channel roles + names + PSK type
+  channel add <name>             add a SECONDARY channel
+  channel del <idx>              delete a channel (idx > 0)
+  channel psk <idx> <val>        set PSK: none|default|random|<hex>
+
+Power (prompts for confirmation):
+  power reboot                   reboot the meshtasticd node
+  power shutdown                 shutdown the node
+  power factory-reset            WIPE node config + state
 
 Host: $HOST (set \$MESHTASTIC_HOST to override)
 EOF
@@ -108,10 +132,67 @@ cmd_send() {
         read -r msg
         [ -z "$msg" ] && { warn "Empty message — cancelled"; return 1; }
     fi
-    section "Meshtastic TX"
+    section "Broadcast → primary channel"
     printf "Sending: %s\n" "$msg"
     meshtastic --host "$HOST" --sendtext "$msg"
-    ok "Sent (delivery depends on peers in range)"
+    ok "Sent"
+}
+
+cmd_send_dm() {
+    shift || true
+    local dest="${1:-}"; shift || true
+    local msg="${*:-}"
+    check_cli
+    check_daemon
+    if [ -z "$dest" ]; then
+        printf "Destination (!nodeid): "; read -r dest
+    fi
+    if [ -z "$msg" ]; then
+        printf "Message: "; read -r msg
+    fi
+    [ -z "$dest" ] || [ -z "$msg" ] && { warn "Cancelled"; return 1; }
+    section "Direct Message → $dest"
+    meshtastic --host "$HOST" --sendtext "$msg" --dest "$dest"
+    ok "DM sent (awaiting ACK if peer online)"
+}
+
+cmd_send_ack() {
+    shift || true
+    local msg="${*:-}"
+    check_cli
+    check_daemon
+    if [ -z "$msg" ]; then
+        printf "Message: "; read -r msg
+    fi
+    [ -z "$msg" ] && { warn "Cancelled"; return 1; }
+    section "Broadcast + ACK request"
+    meshtastic --host "$HOST" --sendtext "$msg" --ack
+}
+
+cmd_send_ch() {
+    shift || true
+    local idx="${1:-}"; shift || true
+    local msg="${*:-}"
+    check_cli
+    check_daemon
+    if [ -z "$idx" ]; then
+        printf "Channel index (0-7): "; read -r idx
+    fi
+    if [ -z "$msg" ]; then
+        printf "Message: "; read -r msg
+    fi
+    [ -z "$idx" ] || [ -z "$msg" ] && { warn "Cancelled"; return 1; }
+    section "Send → channel $idx"
+    meshtastic --host "$HOST" --ch-index "$idx" --sendtext "$msg"
+}
+
+cmd_reply() {
+    check_cli
+    check_daemon
+    section "Meshtastic — Auto-Reply Listener"
+    info "Echoes packet details back to senders. Ctrl-C to stop."
+    printf "\n"
+    meshtastic --host "$HOST" --reply
 }
 
 cmd_web() {
@@ -175,16 +256,16 @@ cfg_privacy() {
             ;;
         public)
             section "Privacy: Public"
-            info "MQTT on, low-precision position, uConsole name"
+            info "MQTT on, precision=13 position (~2.9 km), uConsole name"
             mt --set mqtt.enabled true
             mt --ch-set uplink_enabled true --ch-index 0
             mt --ch-set downlink_enabled true --ch-index 0
             mt --ch-set name LongFast --ch-index 0
-            mt --ch-set position_precision 10 --ch-index 0
+            mt --ch-set position_precision 13 --ch-index 0
             mt --set position.position_broadcast_secs 3600
             mt --set position.position_broadcast_smart_enabled true
             mt --set-owner "uConsole $(hostname -s)" --set-owner-short "ucon"
-            ok "Public applied — visible on mqtt.meshtastic.org, ~10km grid"
+            ok "Public applied — visible on mqtt.meshtastic.org, ~2.9 km grid"
             ;;
         *)
             err "Usage: meshtastic.sh config privacy {stealth|public}"
@@ -224,10 +305,10 @@ cfg_position() {
             mt --remove-position
             ;;
         low)
-            section "Position → LOW (~10km grid, hourly)"
+            section "Position → LOW (~2.9 km grid, hourly; docs-canonical precision=13)"
             mt --set position.position_broadcast_secs 3600
             mt --set position.position_broadcast_smart_enabled false
-            mt --ch-set position_precision 10 --ch-index 0
+            mt --ch-set position_precision 13 --ch-index 0
             ;;
         full)
             section "Position → FULL (precise, 15min + smart)"
@@ -331,15 +412,113 @@ cmd_config() {
     esac
 }
 
+# ── Channel management (canonical Meshtastic channel model: 8 slots, idx 0=PRIMARY) ──
+
+cmd_channel() {
+    shift || true
+    local sub="${1:-list}"
+    shift || true
+    check_cli
+    check_daemon
+    case "$sub" in
+        list)
+            section "Meshtastic Channels"
+            meshtastic --host "$HOST" --info 2>&1 | python3 -c '
+import sys, re
+d = sys.stdin.read()
+# Grab the "Channels:" block
+m = re.search(r"Channels:\s*(.+?)(?:\n\n|\Z)", d, re.DOTALL)
+if m:
+    print(m.group(1).rstrip())
+else:
+    print("(no channels block found — node may still be starting)")
+'
+            ;;
+        add)
+            local name="${1:-}"
+            if [ -z "$name" ]; then printf "Channel name: "; read -r name; fi
+            [ -z "$name" ] && { warn "Cancelled"; return 1; }
+            section "Add secondary channel: $name"
+            meshtastic --host "$HOST" --ch-add "$name"
+            ;;
+        del)
+            local idx="${1:-}"
+            if [ -z "$idx" ]; then printf "Channel index to delete (>0): "; read -r idx; fi
+            [ -z "$idx" ] && { warn "Cancelled"; return 1; }
+            if [ "$idx" = "0" ]; then err "Cannot delete PRIMARY channel"; return 1; fi
+            section "Delete channel $idx"
+            meshtastic --host "$HOST" --ch-index "$idx" --ch-del
+            ;;
+        psk)
+            local idx="${1:-0}" val="${2:-}"
+            if [ -z "$val" ]; then
+                cat <<EOF
+PSK options:
+  none     — no encryption (plaintext)
+  default  — public PSK (0x01), known-public, for testing
+  random   — secure random 256-bit key (for private channels)
+  <hex>    — custom 16/32-byte AES key as hex
+EOF
+                printf "PSK value: "; read -r val
+            fi
+            [ -z "$val" ] && { warn "Cancelled"; return 1; }
+            section "Channel $idx PSK → $val"
+            meshtastic --host "$HOST" --ch-index "$idx" --ch-set psk "$val"
+            ;;
+        *)
+            err "Unknown channel subcommand: $sub"
+            info "Valid: list|add|del|psk"
+            return 1
+            ;;
+    esac
+}
+
+# ── Power: reboot / shutdown / factory-reset with confirmation ──
+
+cmd_power() {
+    shift || true
+    local action="${1:-}"
+    check_cli
+    check_daemon
+    case "$action" in
+        reboot|shutdown)
+            section "Node → $action"
+            printf "Confirm $action the Meshtastic node? [y/N]: "
+            read -r ans
+            [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { warn "Cancelled"; return 1; }
+            meshtastic --host "$HOST" "--$action"
+            ;;
+        factory-reset)
+            section "FACTORY RESET"
+            warn "This WIPES all node config (owner, channels, MQTT, region, ...)"
+            printf "Type RESET to confirm: "
+            read -r ans
+            [ "$ans" = "RESET" ] || { warn "Cancelled"; return 1; }
+            meshtastic --host "$HOST" --factory-reset
+            ;;
+        *)
+            err "Unknown power action: $action"
+            info "Valid: reboot|shutdown|factory-reset"
+            return 1
+            ;;
+    esac
+}
+
 case "${1:-status}" in
-    status)   cmd_status ;;
-    nodes)    cmd_nodes ;;
-    listen)   cmd_listen ;;
-    send)     cmd_send "$@" ;;
-    web)      cmd_web ;;
-    service)  cmd_service "$@" ;;
-    logs)     cmd_logs ;;
-    config)   cmd_config "$@" ;;
+    status)    cmd_status ;;
+    nodes)     cmd_nodes ;;
+    listen)    cmd_listen ;;
+    reply)     cmd_reply ;;
+    send)      cmd_send "$@" ;;
+    send-dm)   cmd_send_dm "$@" ;;
+    send-ack)  cmd_send_ack "$@" ;;
+    send-ch)   cmd_send_ch "$@" ;;
+    web)       cmd_web ;;
+    service)   cmd_service "$@" ;;
+    logs)      cmd_logs ;;
+    config)    cmd_config "$@" ;;
+    channel)   cmd_channel "$@" ;;
+    power)     cmd_power "$@" ;;
     -h|--help|help) usage ;;
-    *)        echo "Unknown command: $1"; usage; exit 1 ;;
+    *)         echo "Unknown command: $1"; usage; exit 1 ;;
 esac
