@@ -9,7 +9,7 @@
 #   low-battery-shutdown.sh          Run in foreground (for systemd)
 #   low-battery-shutdown.sh status   Show current voltage and threshold
 
-THRESHOLD_UV=3050000   # 3.05V — trigger graceful shutdown (Nitecore NL1834 has ~15% at 3.1V)
+THRESHOLD_UV=3000000   # 3.00V — trigger graceful shutdown (Samsung 35E; 100mV headroom above 2.9V PMU hard-kill)
 CRITICAL_UV=2950000    # 2.95V — skip warning delay, shutdown immediately (PMU hard-kills at 2.9V)
 POLL_INTERVAL=30       # seconds between checks
 CONFIRM_COUNT=3        # require N consecutive readings below threshold (avoids transient sag)

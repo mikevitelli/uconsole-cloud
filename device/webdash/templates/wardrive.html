@@ -106,6 +106,24 @@
   /* Menu overrides for compactness */
   .menu-mini li > * { padding: 4px 8px; font-size: 12px; }
   .dropdown-content { z-index: 600 !important; }
+
+  /* Manage modal rows */
+  .mg-row { display: grid; grid-template-columns: 1fr auto auto;
+    gap: 8px; align-items: center;
+    padding: 8px; border-radius: 8px;
+    background: hsl(var(--b2)); border: 1px solid hsl(var(--bc) / 0.06); }
+  .mg-meta { font-size: 10px; opacity: 0.6; letter-spacing: 1px;
+    margin-top: 2px; text-transform: uppercase; }
+  .mg-row input.mg-label { font-size: 12px; width: 100%;
+    background: hsl(var(--b1)); border: 1px solid hsl(var(--bc) / 0.15);
+    border-radius: 6px; padding: 4px 8px; color: inherit;
+    font-family: inherit; }
+  .mg-row input.mg-label:focus { outline: none;
+    border-color: hsl(var(--p)); }
+  .mg-del { background: transparent; border: 1px solid hsl(var(--er) / 0.5);
+    color: hsl(var(--er)); border-radius: 6px; padding: 3px 8px;
+    font-size: 11px; cursor: pointer; }
+  .mg-del:hover { background: hsl(var(--er) / 0.15); }
 </style>
 </head>
 <body>
@@ -114,6 +132,7 @@
     <span class="brand">◉ WAR</span>
     <select id="session-select" class="select select-bordered select-xs">
       {% if initial_sessions %}
+        <option value="__all__">ALL SESSIONS</option>
         {% for s in initial_sessions %}
           <option value="{{ s.name }}">{{ s.label }}{% if s.live %} · LIVE{% endif %}</option>
         {% endfor %}
@@ -149,7 +168,14 @@
         </label></li>
         <li class="menu-title" style="margin-top:6px"><span>Session</span></li>
         <li><div id="menu-stats" style="padding:2px 8px;opacity:.8;font-size:11px;pointer-events:none">0 APs</div></li>
+        <li class="menu-title" style="margin-top:6px"><span>Color by</span></li>
+        <li><label style="display:flex;justify-content:space-between;align-items:center;cursor:pointer">
+          <span>Security</span>
+          <input id="opt-color-sec" type="checkbox" class="toggle toggle-accent toggle-xs">
+        </label></li>
         <li class="menu-title" style="margin-top:6px"><span>Go to</span></li>
+        <li><a href="#" id="menu-manage">Manage sessions…</a></li>
+        <li><a href="#" id="menu-wigle">WiGLE enrich…</a></li>
         <li><a href="/wardrive?basic=1">2D Fallback</a></li>
         <li><a href="/">← Dashboard</a></li>
       </ul>
@@ -172,6 +198,55 @@
       <div class="li"><span class="dot" style="background:#60a5fa"></span>Track</div>
     </div>
   </div>
+
+  <!-- WiGLE enrichment modal -->
+  <dialog id="wigle-modal" class="modal">
+    <div class="modal-box max-w-md" style="background:hsl(var(--b1));border:1px solid hsl(var(--p)/0.3)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="pop-kicker">&gt; WIGLE_ENRICH</span>
+        <span class="spacer" style="flex:1"></span>
+        <button id="wigle-close" class="btn btn-xs btn-ghost" aria-label="Close">✕</button>
+      </div>
+      <div id="wigle-status" style="font-size:12px;line-height:1.7;
+           background:hsl(var(--b2));padding:8px 10px;border-radius:8px;
+           margin-bottom:10px">Loading…</div>
+      <div style="font-size:11px;opacity:.7;margin-bottom:8px">
+        Looks up each unknown BSSID in WiGLE's global database and caches the
+        encryption / auth result. Uncached-only — skips ones already known.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="font-size:12px">Batch size:</label>
+        <input id="wigle-batch" type="number" min="1" max="200" value="25"
+               style="width:70px;font-size:12px;background:hsl(var(--b2));
+                      border:1px solid hsl(var(--bc)/0.15);border-radius:6px;
+                      padding:2px 6px;color:inherit">
+        <span class="spacer" style="flex:1"></span>
+        <button id="wigle-run" class="btn btn-sm btn-primary">Enrich now</button>
+      </div>
+      <div id="wigle-result" style="font-size:11px;opacity:.85;min-height:18px"></div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <!-- Manage sessions modal -->
+  <dialog id="manage-modal" class="modal">
+    <div class="modal-box max-w-xl" style="background:hsl(var(--b1));border:1px solid hsl(var(--p)/0.3)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span class="pop-kicker">&gt; SESSION_MANAGER</span>
+        <span class="spacer" style="flex:1"></span>
+        <button id="manage-close" class="btn btn-xs btn-ghost" aria-label="Close">✕</button>
+      </div>
+      <div id="manage-list" style="max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+        <div style="opacity:.6;font-size:12px">Loading…</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid hsl(var(--bc)/0.1)">
+        <button id="manage-delete-empty" class="btn btn-sm btn-error btn-outline">Delete empty</button>
+        <span class="spacer" style="flex:1"></span>
+        <span id="manage-toast" style="font-size:11px;opacity:.7;align-self:center"></span>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 </div>
 
 <script>
@@ -203,11 +278,20 @@
 
   // State
   const byBssid = new Map();
+  // When viewing a single session, trackPts is a single [lat,lon] array.
+  // When viewing __all__, we keep a Map<sessionName, [[lat,lon], ...]> for
+  // rendering as a MultiLineString (prevents teleport lines between sessions).
   const trackPts = [];
+  const tracksBySession = new Map();
   let currentSession = null, since = 0;
-  let totalRows = 0, fileSize = 0, fileMtime = 0;
+  let totalRows = 0, fileSize = 0, fileMtime = 0, sessionCount = 0;
   let firstFit = true, pollBusy = false;
   let follow = true, youMarker = null, paused = false;
+  let pollTimer = null;
+  const isAll = () => currentSession === '__all__';
+  // WiGLE enrichment cache { bssid: {encryption, ssid, status, ...} }
+  const wigleCache = new Map();
+  let colorBySecurity = false;
 
   // MapLibre style
   const style = {
@@ -255,7 +339,7 @@
     });
     map.addSource('track', {
       type: 'geojson',
-      data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+      data: { type: 'Feature', geometry: { type: 'MultiLineString', coordinates: [] } },
     });
 
     // Heatmap (behind dots)
@@ -294,7 +378,7 @@
       },
     });
 
-    // AP dots (clickable)
+    // AP dots (clickable) — color is re-applied via applyApColor()
     map.addLayer({
       id: 'aps', type: 'circle', source: 'aps',
       paint: {
@@ -303,17 +387,13 @@
           14, 5,
           18, ['+', 5, ['min', 8, ['*', 1.5, ['log2', ['get', 'sightings']]]]],
         ],
-        'circle-color': [
-          'case',
-          ['>', ['get', 'rssi'], -50], '#2dd4bf',
-          ['>', ['get', 'rssi'], -70], '#facc15',
-          '#f472b6',
-        ],
+        'circle-color': '#60a5fa',  // placeholder; set by applyApColor()
         'circle-stroke-color': '#0a0a1a',
         'circle-stroke-width': 1.5,
         'circle-opacity': 0.95,
       },
     });
+    applyApColor();
 
     // Cursor feedback + clicks
     map.on('mouseenter', 'aps', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -325,9 +405,95 @@
     });
 
     pollData();
-    setInterval(() => { if (!paused) pollData(); }, 3000);
+    pollTimer = setInterval(() => { if (!paused && !isAll()) pollData(); }, 3000);
     setInterval(loadSessions, 15000);
+    loadWigleCache();
   });
+
+  function buildTrackGeom() {
+    if (isAll()) {
+      const lines = [];
+      tracksBySession.forEach(pts => {
+        if (pts.length >= 2) lines.push(pts.map(p => [p[1], p[0]]));
+      });
+      return { type: 'Feature',
+        geometry: { type: 'MultiLineString', coordinates: lines } };
+    }
+    return { type: 'Feature',
+      geometry: { type: 'MultiLineString',
+        coordinates: trackPts.length >= 2
+          ? [trackPts.map(p => [p[1], p[0]])] : [] } };
+  }
+
+  // --- WiGLE / security coloring ---
+  const SEC_COLORS = {
+    'none':    '#ef4444',   // red — open
+    'wep':     '#fb923c',   // orange — WEP
+    'wpa':     '#facc15',   // yellow — WPA
+    'wpa2':    '#22c55e',   // green — WPA2
+    'wpa3':    '#3b82f6',   // blue — WPA3
+    'unknown': '#9ca3af',   // gray — WiGLE knows, encryption undetermined
+  };
+  const UNCACHED_COLOR  = '#6b7280';   // not yet looked up
+  const NOT_FOUND_COLOR = '#4b5563';   // looked up, not in WiGLE
+
+  function applyApColor() {
+    if (!map.getLayer('aps')) return;
+    if (colorBySecurity) {
+      const matches = [];
+      wigleCache.forEach((info, bssid) => {
+        const color = info.status === 'ok'
+          ? (SEC_COLORS[info.encryption] || SEC_COLORS.unknown)
+          : (info.status === 'not_found' ? NOT_FOUND_COLOR : UNCACHED_COLOR);
+        matches.push(bssid, color);
+      });
+      const expr = matches.length
+        ? ['match', ['get', 'bssid'], ...matches, UNCACHED_COLOR]
+        : UNCACHED_COLOR;
+      map.setPaintProperty('aps', 'circle-color', expr);
+    } else {
+      map.setPaintProperty('aps', 'circle-color', [
+        'case',
+        ['>', ['get', 'rssi'], -50], '#2dd4bf',
+        ['>', ['get', 'rssi'], -70], '#facc15',
+        '#f472b6',
+      ]);
+    }
+    updateLegend();
+  }
+
+  function updateLegend() {
+    const legend = document.querySelector('.legend');
+    if (!legend) return;
+    if (colorBySecurity) {
+      legend.innerHTML = `
+        <h4>SECURITY</h4>
+        <div class="li"><span class="dot" style="background:${SEC_COLORS.none}"></span>Open</div>
+        <div class="li"><span class="dot" style="background:${SEC_COLORS.wep}"></span>WEP</div>
+        <div class="li"><span class="dot" style="background:${SEC_COLORS.wpa}"></span>WPA</div>
+        <div class="li"><span class="dot" style="background:${SEC_COLORS.wpa2}"></span>WPA2</div>
+        <div class="li"><span class="dot" style="background:${SEC_COLORS.wpa3}"></span>WPA3</div>
+        <div class="li"><span class="dot" style="background:${UNCACHED_COLOR}"></span>Not checked</div>`;
+    } else {
+      legend.innerHTML = `
+        <h4>SIGNAL</h4>
+        <div class="li"><span class="dot" style="background:#2dd4bf"></span>&gt; −50 dBm</div>
+        <div class="li"><span class="dot" style="background:#facc15"></span>−50 / −70</div>
+        <div class="li"><span class="dot" style="background:#f472b6"></span>&lt; −70 dBm</div>
+        <div class="li"><span class="dot" style="background:#60a5fa"></span>Track</div>`;
+    }
+  }
+
+  async function loadWigleCache() {
+    try {
+      const r = await fetch('/api/wigle/cached', { credentials: 'same-origin' });
+      if (!r.ok) return;
+      const j = await r.json();
+      wigleCache.clear();
+      Object.entries(j.cache || {}).forEach(([b, v]) => wigleCache.set(b, v));
+      if (colorBySecurity) applyApColor();
+    } catch (e) { /* ignore */ }
+  }
 
   // Pause polling when tab hidden
   document.addEventListener('visibilitychange', () => {
@@ -397,18 +563,30 @@
       totalRows = j.total_rows;
       fileSize = j.size;
       fileMtime = j.mtime;
+      sessionCount = j.sessions || 0;
 
       let newCount = 0;
-      let lastPt = trackPts.length ? trackPts[trackPts.length - 1] : null;
+      let lastPt = (!isAll() && trackPts.length) ? trackPts[trackPts.length - 1] : null;
       const nowSec = Date.now() / 1000;
 
       for (const row of j.rows) {
-        since = row.idx + 1;
+        if (!isAll()) since = row.idx + 1;
         if (!row.bssid || row.lat == null || row.lon == null) continue;
-        if (!lastPt || Math.abs(lastPt[0] - row.lat) > 1e-6
-                    || Math.abs(lastPt[1] - row.lon) > 1e-6) {
-          trackPts.push([row.lat, row.lon]);
-          lastPt = [row.lat, row.lon];
+        if (isAll()) {
+          const key = row.session || '_';
+          let arr = tracksBySession.get(key);
+          if (!arr) { arr = []; tracksBySession.set(key, arr); }
+          const last = arr.length ? arr[arr.length - 1] : null;
+          if (!last || Math.abs(last[0] - row.lat) > 1e-6
+                   || Math.abs(last[1] - row.lon) > 1e-6) {
+            arr.push([row.lat, row.lon]);
+          }
+        } else {
+          if (!lastPt || Math.abs(lastPt[0] - row.lat) > 1e-6
+                      || Math.abs(lastPt[1] - row.lon) > 1e-6) {
+            trackPts.push([row.lat, row.lon]);
+            lastPt = [row.lat, row.lon];
+          }
         }
         const ex = byBssid.get(row.bssid);
         if (!ex) {
@@ -427,19 +605,14 @@
         }
       }
 
-      if (newCount > 0) {
-        // Update sources — only when data actually changed
+      if (newCount > 0 || isAll()) {
         const src = map.getSource('aps');
         if (src) src.setData(apsFeatureCollection());
         const tsrc = map.getSource('track');
-        if (tsrc) tsrc.setData({
-          type: 'Feature',
-          geometry: { type: 'LineString',
-                      coordinates: trackPts.map(p => [p[1], p[0]]) },
-        });
+        if (tsrc) tsrc.setData(buildTrackGeom());
       }
 
-      if (trackPts.length) {
+      if (!isAll() && trackPts.length) {
         const last = trackPts[trackPts.length - 1];
         const coord = [last[1], last[0]];
         if (!youMarker) {
@@ -453,11 +626,17 @@
         if (follow) map.easeTo({ center: coord, duration: 800 });
       }
 
-      const isLive = (Date.now() / 1000 - fileMtime) < 10;
-      setStatus(isLive ? '● LIVE' : `${fmtAge(Date.now()/1000 - fileMtime)} ago`,
-                isLive ? 'live' : 'stale');
-      const stats = `${byBssid.size} APs · ${totalRows} rows · ${fmtSize(fileSize)}`;
-      document.getElementById('menu-stats').textContent = stats;
+      if (isAll()) {
+        setStatus(`${sessionCount} sessions`, 'ghost');
+        document.getElementById('menu-stats').textContent =
+          `${byBssid.size} APs · ${totalRows} rows · ${sessionCount} sessions`;
+      } else {
+        const isLive = (Date.now() / 1000 - fileMtime) < 10;
+        setStatus(isLive ? '● LIVE' : `${fmtAge(Date.now()/1000 - fileMtime)} ago`,
+                  isLive ? 'live' : 'stale');
+        document.getElementById('menu-stats').textContent =
+          `${byBssid.size} APs · ${totalRows} rows · ${fmtSize(fileSize)}`;
+      }
 
       if (firstFit && byBssid.size > 0) { fitAll(); firstFit = false; }
     } finally {
@@ -478,15 +657,20 @@
     if (j.sessions.length === 0) {
       sel.innerHTML = '<option disabled>No sessions</option>'; return;
     }
+    const all = document.createElement('option');
+    all.value = '__all__'; all.textContent = 'ALL SESSIONS';
+    sel.appendChild(all);
     j.sessions.forEach(s => {
       const opt = document.createElement('option');
-      const label = s.name.replace('wardrive-', '').replace('.csv', '') +
-        (s.live ? ' · LIVE' : '');
-      opt.value = s.name; opt.textContent = label;
+      const ts = s.name.replace('wardrive-', '').replace('.csv', '');
+      const base = s.label && s.label.length ? s.label : ts;
+      opt.value = s.name;
+      opt.textContent = base + (s.live ? ' · LIVE' : '');
       sel.appendChild(opt);
     });
-    sel.value = current || j.sessions[0].name;
-    if (!currentSession) currentSession = j.sessions[0].name;
+    // Keep selection across refresh; default to ALL on first load.
+    sel.value = current || '__all__';
+    if (!currentSession) currentSession = '__all__';
   }
 
   function fitAll() {
@@ -512,18 +696,22 @@
     document.getElementById('opt-follow').checked = follow;
   }
 
-  // Controls
-  document.getElementById('session-select').addEventListener('change', e => {
-    currentSession = e.target.value;
+  function resetSessionState() {
     since = 0; totalRows = 0;
-    byBssid.clear(); trackPts.length = 0;
+    byBssid.clear(); trackPts.length = 0; tracksBySession.clear();
     if (youMarker) { youMarker.remove(); youMarker = null; }
     firstFit = true;
     if (map.getSource('aps'))
       map.getSource('aps').setData({ type:'FeatureCollection', features:[] });
     if (map.getSource('track'))
       map.getSource('track').setData({ type:'Feature',
-        geometry:{ type:'LineString', coordinates:[] } });
+        geometry:{ type:'MultiLineString', coordinates:[] } });
+  }
+
+  // Controls
+  document.getElementById('session-select').addEventListener('change', e => {
+    currentSession = e.target.value;
+    resetSessionState();
     pollData();
   });
   document.getElementById('opt-heat').addEventListener('change', e => {
@@ -544,6 +732,192 @@
     if (follow && youMarker) map.easeTo({ center: youMarker.getLngLat(), duration: 800 });
   });
   document.getElementById('fab-fit').addEventListener('click', fitAll);
+
+  // ---- Manage sessions modal ----
+  const modal = document.getElementById('manage-modal');
+  const mgList = document.getElementById('manage-list');
+  const mgToast = document.getElementById('manage-toast');
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'
+  }[c]));
+  function toast(msg, ok=true) {
+    mgToast.textContent = msg;
+    mgToast.style.color = ok ? 'hsl(var(--su))' : 'hsl(var(--er))';
+    setTimeout(() => { if (mgToast.textContent === msg) mgToast.textContent=''; }, 2500);
+  }
+
+  async function renderManage() {
+    mgList.innerHTML = '<div style="opacity:.6;font-size:12px">Loading…</div>';
+    let r; try {
+      r = await fetch('/api/wardrive/sessions', { credentials: 'same-origin' });
+    } catch { mgList.innerHTML = '<div style="color:hsl(var(--er))">Network error</div>'; return; }
+    if (!r.ok) { mgList.innerHTML = `<div style="color:hsl(var(--er))">HTTP ${r.status}</div>`; return; }
+    const j = await r.json();
+    const sessions = j.sessions || [];
+    if (!sessions.length) {
+      mgList.innerHTML = '<div style="opacity:.6">No sessions</div>';
+      document.getElementById('manage-delete-empty').textContent = 'Delete empty';
+      return;
+    }
+    const emptyCount = sessions.filter(s => (s.row_count||0) <= 1).length;
+    document.getElementById('manage-delete-empty').textContent =
+      emptyCount ? `Delete ${emptyCount} empty` : 'Delete empty';
+    document.getElementById('manage-delete-empty').disabled = !emptyCount;
+
+    mgList.innerHTML = '';
+    sessions.forEach(s => {
+      const ts = s.name.replace('wardrive-', '').replace('.csv', '');
+      const row = document.createElement('div');
+      row.className = 'mg-row';
+      row.innerHTML = `
+        <div>
+          <input class="mg-label" type="text" maxlength="80"
+                 placeholder="${esc(ts)}" value="${esc(s.label || '')}" />
+          <div class="mg-meta">${esc(ts)} · ${s.row_count||0} rows · ${fmtSize(s.size)}</div>
+        </div>
+        <button class="mg-del" type="button">Delete</button>
+      `;
+      const input = row.querySelector('input.mg-label');
+      const delBtn = row.querySelector('.mg-del');
+      input.addEventListener('change', async () => {
+        try {
+          const rr = await fetch('/api/wardrive/rename', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: s.name, label: input.value.trim() }),
+          });
+          if (!rr.ok) throw new Error('HTTP ' + rr.status);
+          toast('Renamed');
+          loadSessions();
+        } catch (e) { toast('Rename failed', false); }
+      });
+      delBtn.addEventListener('click', async () => {
+        if (!confirm(`Delete "${s.label || ts}"?\n\nMoved to .trash/ — recoverable.`)) return;
+        try {
+          const rr = await fetch('/api/wardrive/delete', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: s.name }),
+          });
+          if (!rr.ok) throw new Error('HTTP ' + rr.status);
+          toast('Deleted');
+          row.remove();
+          await loadSessions();
+          if (currentSession === s.name) {
+            currentSession = '__all__';
+            document.getElementById('session-select').value = '__all__';
+            resetSessionState();
+            pollData();
+          } else if (isAll()) {
+            resetSessionState();
+            pollData();
+          }
+          renderManage();
+        } catch (e) { toast('Delete failed', false); }
+      });
+      mgList.appendChild(row);
+    });
+  }
+
+  document.getElementById('menu-manage').addEventListener('click', (e) => {
+    e.preventDefault();
+    // Close the dropdown by blurring its parent
+    document.activeElement && document.activeElement.blur();
+    renderManage();
+    if (typeof modal.showModal === 'function') modal.showModal();
+    else modal.setAttribute('open', '');
+  });
+  document.getElementById('manage-close').addEventListener('click', () => modal.close());
+  document.getElementById('manage-delete-empty').addEventListener('click', async () => {
+    if (!confirm('Delete all empty sessions?\n\nMoved to .trash/ — recoverable.')) return;
+    try {
+      const rr = await fetch('/api/wardrive/delete-empty', {
+        method: 'POST', credentials: 'same-origin',
+      });
+      if (!rr.ok) throw new Error('HTTP ' + rr.status);
+      const jj = await rr.json();
+      toast(`Deleted ${jj.count}`);
+      await loadSessions();
+      if (isAll()) { resetSessionState(); pollData(); }
+      renderManage();
+    } catch (e) { toast('Delete-empty failed', false); }
+  });
+
+  // ---- Security color toggle ----
+  document.getElementById('opt-color-sec').addEventListener('change', e => {
+    colorBySecurity = e.target.checked;
+    if (colorBySecurity) loadWigleCache();
+    applyApColor();
+  });
+
+  // ---- WiGLE enrichment modal ----
+  const wigleModal  = document.getElementById('wigle-modal');
+  const wigleStatus = document.getElementById('wigle-status');
+  const wigleResult = document.getElementById('wigle-result');
+  const wigleRun    = document.getElementById('wigle-run');
+  const wigleBatch  = document.getElementById('wigle-batch');
+
+  async function refreshWigleStatus() {
+    wigleStatus.innerHTML = 'Loading…';
+    let r; try {
+      r = await fetch('/api/wigle/status', { credentials: 'same-origin' });
+    } catch { wigleStatus.innerHTML = 'Network error'; return; }
+    if (!r.ok) { wigleStatus.innerHTML = `HTTP ${r.status}`; return; }
+    const j = await r.json();
+    const uncached = Array.from(byBssid.keys())
+      .filter(b => !wigleCache.has(b)).length;
+    const limit = j.rate_limited ? '<span style="color:hsl(var(--er))">⚠ rate-limited — try later</span><br>' : '';
+    wigleStatus.innerHTML = `
+      ${limit}
+      <b>Token:</b> ${j.configured ? '✓ configured' : '<span style="color:hsl(var(--er))">NOT configured</span>'}<br>
+      <b>Cached:</b> ${j.cache_count} BSSIDs<br>
+      <b>Queries today:</b> ${j.queries_today}<br>
+      <b>Currently visible & uncached:</b> ${uncached} of ${byBssid.size} APs
+    `;
+    wigleRun.disabled = !j.configured || j.rate_limited || uncached === 0;
+  }
+
+  document.getElementById('menu-wigle').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.activeElement && document.activeElement.blur();
+    wigleResult.textContent = '';
+    refreshWigleStatus();
+    if (typeof wigleModal.showModal === 'function') wigleModal.showModal();
+    else wigleModal.setAttribute('open', '');
+  });
+  document.getElementById('wigle-close').addEventListener('click', () => wigleModal.close());
+
+  wigleRun.addEventListener('click', async () => {
+    const max = Math.max(1, Math.min(200, parseInt(wigleBatch.value, 10) || 25));
+    const bssids = Array.from(byBssid.keys()).filter(b => !wigleCache.has(b));
+    if (bssids.length === 0) {
+      wigleResult.textContent = 'Nothing to enrich — all visible APs are already cached.';
+      return;
+    }
+    wigleRun.disabled = true;
+    wigleResult.innerHTML = `<span class="live-pulse">Querying WiGLE (${Math.min(max, bssids.length)} BSSIDs)…</span>`;
+    try {
+      const rr = await fetch('/api/wigle/enrich', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bssids, max }),
+      });
+      const jj = await rr.json();
+      if (!rr.ok) {
+        wigleResult.innerHTML = `<span style="color:hsl(var(--er))">${jj.error || 'Error'}</span>`;
+      } else if (jj.rate_limited) {
+        wigleResult.innerHTML = `<span style="color:hsl(var(--wa))">${jj.message || 'Rate limited — try again in ~24h'}</span>`;
+      } else {
+        wigleResult.innerHTML =
+          `Checked ${jj.checked} — <b style="color:${SEC_COLORS.wpa2}">${jj.ok} found</b>, ${jj.not_found} unknown, ${jj.error} errors. Queue: ${jj.queue}.`;
+      }
+    } catch (e) {
+      wigleResult.innerHTML = `<span style="color:hsl(var(--er))">Request failed</span>`;
+    }
+    await loadWigleCache();
+    applyApColor();
+    refreshWigleStatus();
+  });
 })();
 </script>
 </body>

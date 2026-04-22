@@ -597,6 +597,517 @@ _MENU = [
 ]
 
 
+WARDRIVE_LOG_DIR = os.path.expanduser("~/esp32/marauder-logs")
+WARDRIVE_CSV_GLOB = "wardrive-*.csv"
+
+
+def _resolve_wardrive_csv(arg):
+    """Accept 'latest', a filename, a session stamp, or a full path."""
+    import glob as _glob
+    if arg == "latest":
+        cands = sorted(_glob.glob(os.path.join(
+            WARDRIVE_LOG_DIR, WARDRIVE_CSV_GLOB)), reverse=True)
+        if not cands:
+            raise FileNotFoundError(
+                f"no wardrive-*.csv in {WARDRIVE_LOG_DIR}")
+        return cands[0]
+    if os.path.isabs(arg) or os.path.exists(arg):
+        return os.path.abspath(arg)
+    bare = os.path.join(WARDRIVE_LOG_DIR, arg)
+    if os.path.exists(bare):
+        return bare
+    stamped = os.path.join(WARDRIVE_LOG_DIR, f"wardrive-{arg}.csv")
+    if os.path.exists(stamped):
+        return stamped
+    raise FileNotFoundError(f"cannot find war-drive CSV: {arg}")
+
+
+def load_wardrive_csv(path):
+    """Parse a wardrive-*.csv.
+
+    Returns (track_rows, aggregated_seen, center_lat, center_lon).
+    track_rows: list of (ts_epoch, lat, lon, bssid, essid, ch, rssi)
+    aggregated_seen: dict bssid -> final ap-record (not used by replay
+    but convenient for static summaries).
+    """
+    import csv as _csv
+    rows = []
+    seen = {}
+    all_lats, all_lons = [], []
+    with open(path, "r") as f:
+        reader = _csv.DictReader(f)
+        for row in reader:
+            try:
+                lat_raw = (row.get("lat") or "").strip()
+                lon_raw = (row.get("lon") or "").strip()
+                if not lat_raw or not lon_raw:
+                    continue
+                lat = float(lat_raw)
+                lon = float(lon_raw)
+                rssi = int(row["rssi"])
+                ch = int(row["channel"])
+                bssid = row["bssid"]
+            except (ValueError, KeyError):
+                continue
+            try:
+                ts = datetime.fromisoformat(
+                    row["timestamp_iso"].replace("Z", "+00:00")).timestamp()
+            except (ValueError, KeyError):
+                ts = time.time()
+            essid = (row.get("essid") or "").strip() or "(hidden)"
+            rows.append((ts, lat, lon, bssid, essid, ch, rssi))
+            all_lats.append(lat)
+            all_lons.append(lon)
+            ex = seen.get(bssid)
+            if ex is None:
+                seen[bssid] = {
+                    "first_ts": ts, "last_seen": ts,
+                    "best_rssi": rssi, "last_rssi": rssi,
+                    "ch": ch, "essid": essid, "bssid": bssid,
+                    "lat": lat, "lon": lon,
+                }
+            else:
+                ex["last_seen"] = ts
+                ex["last_rssi"] = rssi
+                if rssi > ex["best_rssi"]:
+                    ex["best_rssi"] = rssi
+                    ex["lat"] = lat
+                    ex["lon"] = lon
+                if essid != "(hidden)":
+                    ex["essid"] = essid
+                ex["ch"] = ch
+    if not all_lats:
+        raise ValueError(f"no rows with valid coordinates in {path}")
+    center_lat = sum(all_lats) / len(all_lats)
+    center_lon = sum(all_lons) / len(all_lons)
+    return rows, seen, center_lat, center_lon
+
+
+def list_wardrive_sessions():
+    """Return [(path, size, mtime, rows_hint, kind)] for picker UIs."""
+    import glob as _glob
+    out = []
+    for p in _glob.glob(os.path.join(WARDRIVE_LOG_DIR, WARDRIVE_CSV_GLOB)):
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        name = os.path.basename(p)
+        kind = "DEMO" if "DEMO" in name else "LIVE"
+        out.append({
+            "path": p, "name": name,
+            "size": st.st_size, "mtime": st.st_mtime, "kind": kind,
+        })
+    out.sort(key=lambda r: r["mtime"], reverse=True)
+    return out
+
+
+def _wardrive_replay_loop(scr, csv_path=None, speed=30.0, start_static=False,
+                          show_header=True, preloaded=None, title=None):
+    """Replay a wardrive CSV on the braille map.
+
+    Either pass `csv_path` to load a single file, or pass `preloaded` as
+    (rows, center_lat, center_lon) for combined/cross-session views.
+    `title` overrides the header label (default: basename of csv_path).
+    """
+    tui.init_gauge_colors()
+    js = open_gamepad()
+    scr.timeout(100)
+
+    if preloaded is not None:
+        track_rows, center_lat, center_lon = preloaded
+    else:
+        try:
+            track_rows, _final, center_lat, center_lon = \
+                load_wardrive_csv(csv_path)
+        except (FileNotFoundError, ValueError) as e:
+            h, w = scr.getmaxyx()
+            scr.erase()
+            msg = f"Replay error: {e}"
+            tui.put(scr, h // 2, max(0, (w - len(msg)) // 2),
+                    msg[:w], min(w, len(msg)),
+                    curses.color_pair(C_CRIT) | curses.A_BOLD)
+            scr.refresh()
+            scr.timeout(-1)
+            scr.getch()
+            if js:
+                close_gamepad(js)
+            return
+
+    total = len(track_rows)
+    if total == 0:
+        return
+
+    fetcher = _OsmStreetFetcher()
+    fetcher.start()
+    fetcher.update_position(center_lat, center_lon)
+    for _ in range(10):
+        time.sleep(0.2)
+        if fetcher.get_streets():
+            break
+
+    seen = {}
+    track = []
+    idx = 0
+    paused = False
+    streets_on = True
+    cur_speed = float(speed)
+    zoom = 1.0
+    pan_lat_off = 0.0
+    pan_lon_off = 0.0
+
+    def apply_row(row):
+        ts, lat, lon, bssid, essid, ch, rssi = row
+        track.append((ts, lat, lon))
+        ex = seen.get(bssid)
+        if ex is None:
+            seen[bssid] = {
+                "first_ts": ts, "last_seen": ts,
+                "best_rssi": rssi, "last_rssi": rssi,
+                "ch": ch, "essid": essid, "bssid": bssid,
+                "lat": lat, "lon": lon,
+            }
+        else:
+            ex["last_seen"] = ts
+            ex["last_rssi"] = rssi
+            if rssi > ex["best_rssi"]:
+                ex["best_rssi"] = rssi
+                ex["lat"] = lat
+                ex["lon"] = lon
+            if essid != "(hidden)":
+                ex["essid"] = essid
+            ex["ch"] = ch
+
+    if start_static:
+        for r in track_rows:
+            apply_row(r)
+        idx = total
+
+    first_ts = track_rows[0][0]
+    last_ts = track_rows[-1][0]
+    wall_start = time.time()
+    sim_cursor = first_ts
+
+    try:
+        while True:
+            real_now = time.time()
+            if not paused and idx < total:
+                elapsed_real = real_now - wall_start
+                sim_cursor = first_ts + elapsed_real * cur_speed
+                while idx < total and track_rows[idx][0] <= sim_cursor:
+                    apply_row(track_rows[idx])
+                    fetcher.update_position(track_rows[idx][1],
+                                            track_rows[idx][2])
+                    idx += 1
+
+            if track:
+                _t, clat, clon = track[-1]
+            else:
+                clat, clon = center_lat, center_lon
+            gps_state = {"mode": 3, "lat": clat, "lon": clon, "alt": 15.0,
+                         "speed": 0, "sats_used": 8, "sats_seen": 14,
+                         "eph": 8.5, "ts": real_now, "error": None}
+
+            h, w = scr.getmaxyx()
+            scr.erase()
+            if show_header:
+                pct = 100 * idx // total if total else 100
+                state = ("\u25a0 DONE" if idx >= total
+                         else "\u2016 PAUSED" if paused
+                         else "\u25ba PLAYING")
+                detail = (f"{len(seen)} APs  {idx}/{total} rows  "
+                          f"{pct}%  {cur_speed:g}x")
+                header_label = title or "REPLAY"
+                tui.panel_top(scr, 0, 0, w,
+                              f"{header_label}  {state}", detail,
+                              title_pair=curses.color_pair(C_OK)
+                              | curses.A_BOLD)
+                tui.panel_side(scr, 1, 0, w)
+                name = (os.path.basename(csv_path) if csv_path
+                        else f"{total} sightings combined")
+                info = (f"{name}  \u00b7  streets:"
+                        f"{'on' if streets_on else 'off'}")
+                tui.put(scr, 1, 2, info[:w - 4], w - 4,
+                        curses.color_pair(C_DIM) | curses.A_DIM)
+                content_y, content_h = 2, h - 4
+            else:
+                content_y, content_h = 0, h - 1
+
+            _draw_wardrive_map(
+                scr, content_y, content_h, w,
+                list(seen.values()), track, gps_state,
+                streets=(fetcher.get_streets() if streets_on else None),
+                zoom=zoom, pan_offset=(pan_lat_off, pan_lon_off))
+
+            tui.panel_bot(scr, h - 2, 0, w)
+            foot = (f" {'X Resume' if paused else 'X Pause'} \u2502 "
+                    f"+/- Speed \u2502 \u2190\u2191\u2193\u2192 Pan \u2502 "
+                    f"[ ] Zoom \u2502 0 Reset \u2502 R Restart \u2502 S Streets \u2502 B Back ")
+            tui.put(scr, h - 1, 0, foot.center(w), w,
+                    curses.color_pair(C_FOOTER))
+            scr.refresh()
+
+            key, gp = _tui_input_loop(scr, js)
+            if key == -1 and gp is None:
+                continue
+            if key in (ord('q'), ord('Q'), 27) or gp == "back":
+                break
+            if key in (ord('x'), ord('X'), ord(' ')) or gp == "refresh":
+                paused = not paused
+                if not paused:
+                    elapsed_sim = sim_cursor - first_ts
+                    wall_start = real_now - elapsed_sim / cur_speed
+            if key in (ord('+'), ord('=')):
+                cur_speed = min(300, cur_speed * 1.5)
+                elapsed_sim = sim_cursor - first_ts
+                wall_start = real_now - elapsed_sim / cur_speed
+            if key in (ord('-'), ord('_')):
+                cur_speed = max(0.25, cur_speed / 1.5)
+                elapsed_sim = sim_cursor - first_ts
+                wall_start = real_now - elapsed_sim / cur_speed
+            if key in (ord('r'), ord('R')):
+                seen.clear(); track.clear(); idx = 0
+                wall_start = real_now
+                sim_cursor = first_ts
+            if key in (ord('s'), ord('S')):
+                streets_on = not streets_on
+            # Zoom + pan (arrows, [ ], 0). +/- remain reserved for speed.
+            step = 0.001 / max(0.2, zoom)
+            if key == curses.KEY_UP:
+                pan_lat_off += step
+            elif key == curses.KEY_DOWN:
+                pan_lat_off -= step
+            elif key == curses.KEY_LEFT:
+                pan_lon_off -= step
+            elif key == curses.KEY_RIGHT:
+                pan_lon_off += step
+            elif key == ord(']'):
+                zoom = min(zoom * 1.25, 16.0)
+            elif key == ord('['):
+                zoom = max(zoom / 1.25, 0.2)
+            elif key in (ord('0'), curses.KEY_HOME):
+                zoom = 1.0
+                pan_lat_off = 0.0
+                pan_lon_off = 0.0
+    finally:
+        fetcher.stop()
+        if js:
+            close_gamepad(js)
+
+
+def load_all_wardrive_sessions():
+    """Load every wardrive-*.csv and return a single combined dataset.
+
+    Returns (rows, center_lat, center_lon) matching the shape the replay
+    loop expects via `preloaded=`. Rows are globally time-sorted so
+    static playback feels chronological across sessions.
+    """
+    sessions = list_wardrive_sessions()
+    all_rows = []
+    all_lats = []
+    all_lons = []
+    for s in sessions:
+        try:
+            rows, _seen, _cl, _clo = load_wardrive_csv(s["path"])
+        except (FileNotFoundError, ValueError):
+            continue
+        all_rows.extend(rows)
+        for _ts, lat, lon, *_ in rows:
+            all_lats.append(lat)
+            all_lons.append(lon)
+    if not all_lats:
+        raise ValueError("no wardrive CSVs with coordinates found")
+    all_rows.sort(key=lambda r: r[0])  # global timeline
+    return all_rows, (sum(all_lats) / len(all_lats)), \
+        (sum(all_lons) / len(all_lons))
+
+
+def run_wardrive_combined(scr):
+    """Static combined map of every past wardrive session.
+
+    Dedupes APs by BSSID (latest strongest wins) and concatenates tracks
+    in chronological order. Shown static; pan/zoom work as usual.
+    """
+    try:
+        rows, clat, clon = load_all_wardrive_sessions()
+    except ValueError as e:
+        h, w = scr.getmaxyx()
+        scr.erase()
+        msg = str(e)
+        tui.put(scr, h // 2, max(0, (w - len(msg)) // 2),
+                msg[:w], min(w, len(msg)),
+                curses.color_pair(C_WARN) | curses.A_BOLD)
+        tui.put(scr, h // 2 + 2, max(0, (w - 22) // 2),
+                "Press any key to exit", 22,
+                curses.color_pair(C_DIM) | curses.A_DIM)
+        scr.refresh()
+        scr.timeout(-1)
+        scr.getch()
+        return
+    _wardrive_replay_loop(scr, csv_path=None,
+                          preloaded=(rows, clat, clon),
+                          start_static=True, show_header=True,
+                          title="ALL SESSIONS")
+
+
+_COMBINED_SENTINEL = "__combined__"
+
+
+def _wardrive_session_picker(scr):
+    """Curses picker for past wardrive-*.csv.
+
+    Returns one of: a path, the string "__combined__", or None.
+    """
+    js = open_gamepad()
+    scr.timeout(100)
+    sessions = list_wardrive_sessions()
+    sel = 0
+    scroll = 0
+
+    try:
+        while True:
+            h, w = scr.getmaxyx()
+            scr.erase()
+            tui.panel_top(scr, 0, 0, w, "SELECT SESSION",
+                          f"{len(sessions)} files")
+
+            if not sessions:
+                tui.panel_side(scr, 2, 0, w)
+                msg = f"No wardrive-*.csv files in {WARDRIVE_LOG_DIR}"
+                tui.put(scr, 2, 2, msg[:w - 4], w - 4,
+                        curses.color_pair(C_DIM) | curses.A_DIM)
+                tui.panel_bot(scr, h - 2, 0, w)
+                tui.put(scr, h - 1, 0, " B Back ".center(w), w,
+                        curses.color_pair(C_FOOTER))
+                scr.refresh()
+                key, gp = _tui_input_loop(scr, js)
+                if key in (ord('q'), ord('Q'), 27) or gp == "back":
+                    return None
+                continue
+
+            # Header row
+            tui.panel_side(scr, 1, 0, w)
+            hdr = f"  {'NAME':<28} {'SIZE':>8} {'AGE':>10}  KIND"
+            tui.put(scr, 1, 2, hdr[:w - 4], w - 4,
+                    curses.color_pair(C_CAT) | curses.A_BOLD)
+
+            # Rows: index 0 is the "COMBINED" virtual entry, rest are files
+            total_items = len(sessions) + 1
+            vis = h - 5
+            if sel < scroll:
+                scroll = sel
+            if sel >= scroll + vis:
+                scroll = sel - vis + 1
+
+            now = time.time()
+            for i in range(vis):
+                y = 2 + i
+                tui.panel_side(scr, y, 0, w)
+                idx = scroll + i
+                if idx >= total_items:
+                    continue
+                is_sel = idx == sel
+                mk = "\u25b8" if is_sel else " "
+                attr = (curses.color_pair(C_SEL) | curses.A_BOLD if is_sel
+                        else curses.color_pair(C_ITEM))
+                if idx == 0:
+                    # Virtual combined entry
+                    total_kb = sum(s["size"] for s in sessions) / 1024
+                    sz = (f"{total_kb:.1f}K" if total_kb < 1024
+                          else f"{total_kb / 1024:.2f}M")
+                    row = (f"{mk} \u22c6 ALL SESSIONS (combined){' ':<6}"
+                           f"{sz:>8} {len(sessions):>5} files  \u2217")
+                    tui.put(scr, y, 2, row[:w - 4], w - 4,
+                            curses.color_pair(C_OK) | curses.A_BOLD
+                            if is_sel else
+                            curses.color_pair(C_CAT) | curses.A_BOLD)
+                    continue
+                s = sessions[idx - 1]
+                age_s = int(now - s["mtime"])
+                if age_s < 60:
+                    age = f"{age_s}s ago"
+                elif age_s < 3600:
+                    age = f"{age_s // 60}m ago"
+                elif age_s < 86400:
+                    age = f"{age_s // 3600}h ago"
+                else:
+                    age = f"{age_s // 86400}d ago"
+                size_kb = s["size"] / 1024
+                size_s = (f"{size_kb:.1f}K" if size_kb < 1024
+                          else f"{size_kb / 1024:.2f}M")
+                name = s["name"].replace("wardrive-", "").replace(".csv", "")
+                row = f"{mk} {name:<28} {size_s:>8} {age:>10}  {s['kind']}"
+                tui.put(scr, y, 2, row[:w - 4], w - 4, attr)
+
+            tui.panel_bot(scr, h - 2, 0, w)
+            tui.put(scr, h - 1, 0,
+                    " \u2191\u2193 Select \u2502 Enter View \u2502 B Back ".center(w),
+                    w, curses.color_pair(C_FOOTER))
+            scr.refresh()
+
+            key, gp = _tui_input_loop(scr, js)
+            if key == -1 and gp is None:
+                continue
+            if key in (ord('q'), ord('Q'), 27) or gp == "back":
+                return None
+            if key in (curses.KEY_UP, ord('k')):
+                sel = max(0, sel - 1)
+            elif key in (curses.KEY_DOWN, ord('j')):
+                sel = min(total_items - 1, sel + 1)
+            elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
+                if sel == 0:
+                    return _COMBINED_SENTINEL
+                return sessions[sel - 1]["path"]
+    finally:
+        if js:
+            close_gamepad(js)
+
+
+def run_wardrive_replay(scr):
+    """Standalone TUI entry point: pick a past session, then replay it.
+
+    The picker also offers a "COMBINED" entry that renders every past
+    session merged into one static map.
+    """
+    choice = _wardrive_session_picker(scr)
+    if not choice:
+        return
+    if choice == _COMBINED_SENTINEL:
+        run_wardrive_combined(scr)
+    else:
+        _wardrive_replay_loop(scr, choice, speed=30.0,
+                              start_static=False, show_header=True)
+
+
+def run_wardrive(scr):
+    """Standalone War Drive entry — opens the view directly without
+    going through the Marauder tile grid."""
+    tui.init_gauge_colors()
+    mrd = _get_conn()
+    if not mrd or not mrd.ok:
+        # Minimal "not connected" screen — wait for any key then exit.
+        h, w = scr.getmaxyx()
+        scr.erase()
+        msg = "ESP32 not connected \u2014 check /dev/esp32"
+        tui.put(scr, h // 2 - 1, max(0, (w - len(msg)) // 2),
+                msg[:w], min(w, len(msg)),
+                curses.color_pair(C_CRIT) | curses.A_BOLD)
+        tui.put(scr, h // 2 + 1, max(0, (w - 22) // 2),
+                "Press any key to exit", 22,
+                curses.color_pair(C_DIM) | curses.A_DIM)
+        scr.refresh()
+        scr.timeout(-1)
+        scr.getch()
+        return
+    try:
+        _wardrive(scr, mrd)
+    finally:
+        try:
+            mrd.close()
+        except Exception:
+            pass
+
+
 def run_marauder(scr):
     """Marauder ESP32 WiFi/BLE attack toolkit."""
     tui.init_gauge_colors()
@@ -1838,12 +2349,16 @@ def _wd_project(canvas_pw, canvas_ph, mid_lat, mid_lon, lat_span, lon_span):
 
 
 def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
-                       streets=None):
+                       streets=None, zoom=1.0, pan_offset=(0.0, 0.0)):
     """Braille map: streets (dim), walked track, APs, position crosshair.
 
     When `streets` is provided (list of [(lat, lon), ...] polylines), they
     are drawn on a separate canvas rendered BEHIND the data canvas in a
     dim color. Cells that contain both are shown in bright (data wins).
+
+    `zoom` > 1 magnifies (smaller span). `pan_offset` is a (lat, lon)
+    delta in degrees applied on top of the auto-fit center. (0, 0) + 1.0
+    reproduces the original auto-fit behavior.
     """
     cw = max(10, w - 4)
     ch = max(5, h_avail - 1)
@@ -1883,6 +2398,14 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
     lon_span *= 1.15
     mid_lat = (min(lats) + max(lats)) / 2
     mid_lon = (min(lons) + max(lons)) / 2
+
+    # Apply user zoom + pan on top of the auto-fit viewport
+    if zoom and zoom > 0 and zoom != 1.0:
+        lat_span /= zoom
+        lon_span /= zoom
+    if pan_offset and (pan_offset[0] or pan_offset[1]):
+        mid_lat += pan_offset[0]
+        mid_lon += pan_offset[1]
 
     major_canvas = tui.BrailleCanvas(cw, ch) if streets else None
     minor_canvas = tui.BrailleCanvas(cw, ch) if streets else None
@@ -1997,7 +2520,13 @@ def _draw_wardrive_map(scr, y0, h_avail, w, seen_aps, track, gps_state,
         street_tag = f"  \u22b8 {n_major}/{len(streets)} major"
     else:
         street_tag = ""
-    cap = (f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m{street_tag}")
+    zoom_tag = ""
+    if zoom and abs(zoom - 1.0) > 0.01:
+        zoom_tag = f"  {zoom:.2g}x"
+    if pan_offset and (pan_offset[0] or pan_offset[1]):
+        zoom_tag += "  \u271a"  # panned indicator
+    cap = (f"\u229e you  \u2022 AP  ~{width_m}m x {height_m}m"
+           f"{street_tag}{zoom_tag}")
     cap_y = y0 + ch
     if cap_y < y0 + h_avail:
         tui.panel_side(scr, cap_y, 0, w)
@@ -2164,6 +2693,9 @@ def _wardrive(scr, mrd):
     view = "map"  # or "list"
     streets_on = True
     status = ""
+    zoom = 1.0
+    pan_lat_off = 0.0
+    pan_lon_off = 0.0
 
     def start_scan():
         mrd.send("stopscan")
@@ -2370,7 +2902,9 @@ def _wardrive(scr, mrd):
                                if streets_on else None)
                 _draw_wardrive_map(scr, content_y, content_h, w,
                                    list(seen.values()), list(track),
-                                   gps_state, streets=street_data)
+                                   gps_state, streets=street_data,
+                                   zoom=zoom,
+                                   pan_offset=(pan_lat_off, pan_lon_off))
             else:
                 _draw_wardrive_list(scr, content_y, content_h, w,
                                     recent, now)
@@ -2384,11 +2918,15 @@ def _wardrive(scr, mrd):
             # Footer
             view_hint = "List" if view == "map" else "Map"
             s_state = "on" if streets_on else "off"
-            base_foot = f" X Pause \u2502 Tab {view_hint} \u2502 S Streets:{s_state} \u2502 B Save & Exit "
-            if paused:
-                foot = f" X Resume \u2502 Tab {view_hint} \u2502 S Streets:{s_state} \u2502 B Save & Exit "
+            if view == "map":
+                foot = (f" {'X Resume' if paused else 'X Pause'} \u2502 "
+                        f"Tab {view_hint} \u2502 \u2190\u2191\u2193\u2192 Pan \u2502 "
+                        f"[ ] Zoom \u2502 0 Reset \u2502 "
+                        f"S Streets:{s_state} \u2502 B Save ")
             else:
-                foot = base_foot
+                foot = (f" {'X Resume' if paused else 'X Pause'} \u2502 "
+                        f"Tab {view_hint} \u2502 "
+                        f"S Streets:{s_state} \u2502 B Save & Exit ")
             tui.put(scr, h - 1, 0, foot.center(w), w,
                     curses.color_pair(C_FOOTER))
             scr.refresh()
@@ -2434,6 +2972,26 @@ def _wardrive(scr, mrd):
                 else:
                     status = (f"Streets {'on' if streets_on else 'off'}"
                               f"  ({st['count']} segments cached)")
+            else:
+                # Zoom + pan keybinds (only affect map view)
+                if view == "map":
+                    step = 0.001 / max(0.2, zoom)  # smaller when zoomed in
+                    if key == curses.KEY_UP:
+                        pan_lat_off += step
+                    elif key == curses.KEY_DOWN:
+                        pan_lat_off -= step
+                    elif key == curses.KEY_LEFT:
+                        pan_lon_off -= step
+                    elif key == curses.KEY_RIGHT:
+                        pan_lon_off += step
+                    elif key in (ord("]"), ord("+"), ord("=")):
+                        zoom = min(zoom * 1.25, 16.0)
+                    elif key in (ord("["), ord("-"), ord("_")):
+                        zoom = max(zoom / 1.25, 0.2)
+                    elif key in (ord("0"), curses.KEY_HOME):
+                        zoom = 1.0
+                        pan_lat_off = 0.0
+                        pan_lon_off = 0.0
 
     finally:
         try:
