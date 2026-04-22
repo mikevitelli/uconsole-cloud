@@ -18,6 +18,7 @@ class Firmware(enum.Enum):
     MICROPYTHON = "micropython"
     MARAUDER = "marauder"
     BRUCE = "bruce"
+    MIMICLAW = "mimiclaw"
     UNKNOWN = "unknown"
 
 
@@ -144,6 +145,23 @@ def detect(port=None, timeout=2.0, force=None):
         # Phase 2: MicroPython check
         if ">>>" in resp or "MicroPython" in resp:
             fw = Firmware.MICROPYTHON
+            _update_cache(fw, port)
+            return fw
+
+        # Phase 2.5: MimiClaw probe — check for CLI prompt or MimiClaw identifier
+        if "MimiClaw" in resp or "mimi:" in resp or "Type 'help'" in resp:
+            fw = Firmware.MIMICLAW
+            _update_cache(fw, port)
+            return fw
+
+        # If nothing matched yet, try sending help command for MimiClaw
+        ser.reset_input_buffer()
+        ser.write(b"help\r\n")
+        time.sleep(0.8)
+        raw_mimi = ser.read(ser.in_waiting or 2048)
+        resp_mimi = raw_mimi.decode("utf-8", errors="replace")
+        if "MimiClaw" in resp_mimi or "agent" in resp_mimi.lower():
+            fw = Firmware.MIMICLAW
             _update_cache(fw, port)
             return fw
 
