@@ -5,13 +5,17 @@ import curses
 import os
 import sys
 
-# Add module paths — prefer dev tree over installed package
-_pkg_lib = '/opt/uconsole/lib'
-_dev_lib = os.path.expanduser('~/uconsole-cloud/device/lib')
+# One source of truth: ~/pkg/lib (the dev mirror) if present, else
+# /opt/uconsole/lib (the APT-installed copy). Switch branches in ~/pkg/
+# to toggle between stable and in-flight TUI code without touching this
+# file. Keeping only one candidate on sys.path avoids the "which tree
+# is this actually running?" class of bug.
+_pkg_lib = os.path.expanduser('~/pkg/lib')
+_installed_lib = '/opt/uconsole/lib'
 if os.path.isdir(_pkg_lib):
     sys.path.insert(0, _pkg_lib)
-if not os.environ.get('UCONSOLE_PKG_ONLY') and os.path.isdir(_dev_lib):
-    sys.path.insert(0, _dev_lib)
+elif os.path.isdir(_installed_lib):
+    sys.path.insert(0, _installed_lib)
 
 from tui.framework import entry
 
