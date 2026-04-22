@@ -52,3 +52,10 @@ __pycache__/
 
 # user TUI preferences (theme, view mode)
 device/scripts/.console-config.json
+
+# device backups — these live in the private ~/pkg repo, never in this public
+# one. If backup.sh ever gets re-introduced or run from the wrong tree, these
+# patterns keep credentials out of git.
+device/scripts/system/wifi/
+device/scripts/system/etc/shadow
+device/scripts/system/etc/sudoers.d/
