@@ -10,7 +10,7 @@ This is a READ-ONLY design exercise. Do NOT write code. Output a design document
 ## Process
 
 ### 1. Context
-Read FEATURES.md and CLAUDE.md to understand where this fits. Identify the user persona (Mike on phone, new user on SSH, someone on the same WiFi, etc.).
+Read docs/FEATURES.md and CLAUDE.md to understand where this fits. Identify the user persona (Mike on phone, new user on SSH, someone on the same WiFi, etc.).
 
 ### 2. User Journey
 Map the step-by-step flow from the user's perspective:

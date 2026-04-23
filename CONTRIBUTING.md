@@ -259,7 +259,7 @@ packaging/
 ## What to work on
 
 - Check [open issues](https://github.com/mikevitelli/uconsole-cloud/issues) for bugs or feature requests
-- See [FEATURES.md](FEATURES.md) for the roadmap
+- See [FEATURES.md](docs/FEATURES.md) for the roadmap
 - See [CHANGELOG.md](CHANGELOG.md) "What's next" section for planned work
 - If you have a uConsole, testing the device scripts and CLI is especially helpful
 
