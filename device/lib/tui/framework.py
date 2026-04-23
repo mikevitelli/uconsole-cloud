@@ -1917,10 +1917,17 @@ _ESP32_MARAUDER_ITEMS = [
 _ESP32_COMMON_ITEMS = [
     ("Install Bruce","_esp32_install_watchdogs",  "one-tap: detect chip, fetch, flash",     "action",     "▶"),
     ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython, Marauder, or Bruce", "action",  "⇄"),
+    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython, Marauder, Bruce, MimiClaw", "action", "⇄"),
     ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
     ("Clear FW Cache",   "_esp32_fw_cache_clear",     "delete downloaded Bruce firmware",   "action",     "🗑"),
     ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
+]
+
+
+_ESP32_MIMICLAW_ITEMS = [
+    ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
+    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
+    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
 ]
 
 
@@ -1931,10 +1938,13 @@ def _esp32_menu_for(firmware):
         items = list(_ESP32_MICROPYTHON_ITEMS)
     elif firmware == Firmware.MARAUDER:
         items = list(_ESP32_MARAUDER_ITEMS)
+    elif firmware == Firmware.MIMICLAW:
+        items = list(_ESP32_MIMICLAW_ITEMS)
     else:
         items = [
             ("Manual: MicroPython", "_esp32_force_mp",  "assume MicroPython firmware",  "action", "🐍"),
             ("Manual: Marauder",    "_esp32_force_mrd", "assume Marauder firmware",     "action", "☠"),
+            ("Manual: MimiClaw",    "_esp32_force_mc",  "assume MimiClaw firmware",     "action", "🐾"),
         ]
     items.extend(_ESP32_COMMON_ITEMS)
     return items
@@ -1971,6 +1981,7 @@ def run_esp32_hub(scr):
         Firmware.MICROPYTHON: "MicroPython",
         Firmware.MARAUDER: "Marauder",
         Firmware.BRUCE: "Bruce",
+        Firmware.MIMICLAW: "MimiClaw",
         Firmware.UNKNOWN: "Unknown",
     }.get(firmware, "Unknown")
 
@@ -1988,7 +1999,8 @@ def run_esp32_flash_picker(scr):
     options = [
         (Firmware.MICROPYTHON, "MicroPython"),
         (Firmware.MARAUDER,    "Marauder"),
-        (Firmware.BRUCE,   "Bruce"),
+        (Firmware.BRUCE,       "Bruce"),
+        (Firmware.MIMICLAW,    "MimiClaw"),
     ]
 
     h, w = scr.getmaxyx()
@@ -2030,7 +2042,7 @@ def run_esp32_flash_picker(scr):
             sel = (sel - 1) % len(options)
         elif key in (curses.KEY_DOWN, ord("j")):
             sel = (sel + 1) % len(options)
-        elif key in (ord("1"), ord("2"), ord("3")):
+        elif ord("1") <= key < ord("1") + len(options):
             sel = key - ord("1")
             break
         elif key in (10, 13, curses.KEY_ENTER):
@@ -2041,6 +2053,14 @@ def run_esp32_flash_picker(scr):
     scr.timeout(100)
 
     target, target_name = options[sel]
+
+    # MimiClaw uses local ~/mimiclaw-flash/ binaries, not the Bruce fetch
+    # flow. Short-circuit to its self-contained flasher.
+    if target == Firmware.MIMICLAW:
+        from tui.mimiclaw import run_mimiclaw_flash
+        run_mimiclaw_flash(scr)
+        invalidate_cache()
+        return
 
     if target == current:
         scr.addnstr(h - 2, 0,
@@ -2511,6 +2531,11 @@ def _Firmware_MRD():
     return Firmware.MARAUDER
 
 
+def _Firmware_MC():
+    from tui.esp32_detect import Firmware
+    return Firmware.MIMICLAW
+
+
 def _get_native_tools():
     """Lazy-load native tools from submodules to avoid circular imports."""
     from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle, run_trackball_scroll_toggle
@@ -2599,6 +2624,10 @@ def _get_native_tools():
         "_esp32_install_watchdogs": lambda scr: _esp32_install_watchdogs(scr),
         "_esp32_force_mp":  lambda scr: run_esp32_force(scr, _Firmware_MP()),
         "_esp32_force_mrd": lambda scr: run_esp32_force(scr, _Firmware_MRD()),
+        "_esp32_force_mc":  lambda scr: run_esp32_force(scr, _Firmware_MC()),
+        "_mimiclaw_chat":   lambda scr: _run_mimiclaw("run_mimiclaw_chat", scr),
+        "_mimiclaw_serial": lambda scr: _run_mimiclaw("run_mimiclaw_serial", scr),
+        "_mimiclaw_status": lambda scr: _run_mimiclaw("run_mimiclaw_status", scr),
         "_marauder":      lambda scr: run_marauder(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
@@ -2664,6 +2693,12 @@ def _adsb_fetch_hires_entry(scr, hires_mod, adsb_mod):
         if k in (ord('n'), ord('N'), ord('q'), 27):
             scr.timeout(100)
             return
+
+
+def _run_mimiclaw(fn_name, scr):
+    import tui.mimiclaw as _mc
+    return getattr(_mc, fn_name)(scr)
+
 
 NATIVE_TOOLS = None
 
