@@ -18,6 +18,7 @@ class Firmware(enum.Enum):
     MICROPYTHON = "micropython"
     MARAUDER = "marauder"
     BRUCE = "bruce"
+    MIMICLAW = "mimiclaw"
     UNKNOWN = "unknown"
 
 
@@ -144,6 +145,14 @@ def detect(port=None, timeout=2.0, force=None):
         # Phase 2: MicroPython check
         if ">>>" in resp or "MicroPython" in resp:
             fw = Firmware.MICROPYTHON
+            _update_cache(fw, port)
+            return fw
+
+        # Phase 2.5: MimiClaw — the ESP-IDF console auto-prints a "mimi>"
+        # prompt after any newline, so the Phase 1 probe's response
+        # already contains the marker. No extra round-trip needed.
+        if "mimi>" in resp:
+            fw = Firmware.MIMICLAW
             _update_cache(fw, port)
             return fw
 
