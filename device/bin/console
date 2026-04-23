@@ -5,17 +5,14 @@ import curses
 import os
 import sys
 
-# One source of truth: ~/pkg/lib (the dev mirror) if present, else
-# /opt/uconsole/lib (the APT-installed copy). Switch branches in ~/pkg/
-# to toggle between stable and in-flight TUI code without touching this
-# file. Keeping only one candidate on sys.path avoids the "which tree
-# is this actually running?" class of bug.
-_pkg_lib = os.path.expanduser('~/pkg/lib')
-_installed_lib = '/opt/uconsole/lib'
-if os.path.isdir(_pkg_lib):
-    sys.path.insert(0, _pkg_lib)
-elif os.path.isdir(_installed_lib):
-    sys.path.insert(0, _installed_lib)
+# Single runtime source: /opt/uconsole/lib (where the .deb installs).
+# For rare dev cases — running a not-yet-installed tree to test — export
+# UCONSOLE_DEV_LIB=/path/to/lib. No implicit dev-tree override: the code
+# that runs is always whatever was last `make install`'d. "Which tree is
+# this?" always has one answer.
+_lib = os.environ.get('UCONSOLE_DEV_LIB', '/opt/uconsole/lib')
+if os.path.isdir(_lib):
+    sys.path.insert(0, _lib)
 
 from tui.framework import entry
 
