@@ -116,6 +116,416 @@ def _resolve_ip(prefer_fresh=False):
     return fresh
 
 
+# ── WiFi config helpers ──────────────────────────────────────────────────
+
+_WIFI_SCAN_LINE_RE = re.compile(
+    r"\[(\d+)\]\s+SSID=(.*?)\s+RSSI=(-?\d+)\s+CH=(\d+)\s+Auth=(\d+)\s*$"
+)
+_WIFI_SAVED_RE = re.compile(r"WiFi credentials saved for SSID:\s*(.*?)\s*$",
+                            re.MULTILINE)
+
+
+def _wifi_scan_parse(raw):
+    """Parse MimiClaw's `wifi_scan` output into a sorted list of networks.
+
+    Returns list of dicts with keys: idx, ssid, rssi, ch, auth.
+    Sorted by rssi descending. Empty SSIDs and duplicates dropped.
+    """
+    seen = set()
+    nets = []
+    for line in raw.splitlines():
+        m = _WIFI_SCAN_LINE_RE.search(line)
+        if not m:
+            continue
+        ssid = m.group(2).strip()
+        if not ssid or ssid in seen:
+            continue
+        seen.add(ssid)
+        nets.append({
+            "idx": int(m.group(1)),
+            "ssid": ssid,
+            "rssi": int(m.group(3)),
+            "ch": int(m.group(4)),
+            "auth": int(m.group(5)),
+        })
+    nets.sort(key=lambda n: n["rssi"], reverse=True)
+    return nets
+
+
+def _format_apply_payload(ssid, password):
+    """Build the `set_wifi` serial payload. Always quotes SSID.
+
+    Rejects SSID or password containing \\r or \\n (would break the line
+    protocol). Escapes embedded double-quotes via backslash.
+    Returns bytes ready to write to the serial port.
+    """
+    for name, val in (("SSID", ssid), ("password", password or "")):
+        if "\r" in val or "\n" in val:
+            raise ValueError(f"{name} contains a newline — refusing")
+    esc = (ssid or "").replace("\\", "\\\\").replace('"', '\\"')
+    pw = password or ""
+    return f'set_wifi "{esc}" {pw}\r\n'.encode("utf-8")
+
+
+def _signal_bars(rssi):
+    """Map RSSI (dBm) → 4-char block glyph, matches iwconfig-ish aesthetic."""
+    if rssi >= -50:
+        return "▂▄▆█"
+    if rssi >= -60:
+        return "▂▄▆_"
+    if rssi >= -70:
+        return "▂▄__"
+    if rssi >= -80:
+        return "▂___"
+    return "____"
+
+
+def _get_uconsole_wifi():
+    """Read the currently-active uConsole WiFi (SSID, PSK). Returns tuple or None."""
+    import subprocess
+    try:
+        name = subprocess.check_output(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"],
+            text=True, timeout=3,
+        )
+        ssid = None
+        for line in name.splitlines():
+            parts = line.split(":", 1)
+            if len(parts) == 2 and parts[1] == "802-11-wireless":
+                ssid = parts[0]
+                break
+        if not ssid:
+            return None
+        psk = subprocess.check_output(
+            ["sudo", "-n", "nmcli", "-s", "-g",
+             "802-11-wireless-security.psk", "connection", "show", ssid],
+            text=True, timeout=3, stderr=subprocess.DEVNULL,
+        ).strip()
+        return (ssid, psk) if psk else None
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
+
+
+def _serial_write_and_read(cmd, wait_secs=1.0, timeout=2.0):
+    """One-shot serial write → read. Returns decoded response, or None on port error."""
+    try:
+        import serial as pyserial
+    except ImportError:
+        return None
+    try:
+        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=timeout)
+    except Exception:
+        return None
+    try:
+        ser.reset_input_buffer()
+        ser.write(b"\r\n")
+        time.sleep(0.2)
+        ser.read(ser.in_waiting or 1024)
+        ser.write(cmd)
+        time.sleep(wait_secs)
+        buf = b""
+        for _ in range(int(wait_secs * 10) + 10):
+            if ser.in_waiting:
+                buf += ser.read(ser.in_waiting)
+                time.sleep(0.1)
+            else:
+                break
+        return buf.decode("utf-8", errors="replace")
+    finally:
+        try:
+            ser.close()
+        except Exception:
+            pass
+
+
+def _apply_wifi_creds(scr, ssid, password):
+    """Send set_wifi + restart, poll for reconnect. Returns (ok, ip_or_error)."""
+    try:
+        payload = _format_apply_payload(ssid, password)
+    except ValueError as e:
+        return False, str(e)
+
+    import serial as pyserial
+    try:
+        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=2)
+    except Exception as e:
+        return False, f"Serial port busy: {e}. Close Serial Monitor and retry."
+
+    try:
+        # Step 1: set_wifi + wait for confirmation
+        ser.reset_input_buffer()
+        ser.write(b"\r\n"); time.sleep(0.2); ser.read(ser.in_waiting or 1024)
+        ser.write(payload)
+        deadline = time.time() + 3.0
+        saved_buf = ""
+        while time.time() < deadline:
+            if ser.in_waiting:
+                saved_buf += ser.read(ser.in_waiting).decode(
+                    "utf-8", "replace")
+                if _WIFI_SAVED_RE.search(saved_buf):
+                    break
+            time.sleep(0.1)
+        else:
+            return False, "Timed out waiting for 'credentials saved' confirmation"
+        # Step 2: restart
+        ser.write(b"restart\r\n"); time.sleep(0.2)
+    finally:
+        try:
+            ser.close()
+        except Exception:
+            pass
+
+    # Step 3: progress screen while device reboots (~10s boot + connect time)
+    h, w = scr.getmaxyx()
+    for i in range(10):
+        scr.erase()
+        msg = f"  Restarting MimiClaw …{'.' * (i % 4):<3}"
+        try:
+            scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                        curses.color_pair(C_HEADER) | curses.A_BOLD)
+        except curses.error:
+            pass
+        scr.refresh()
+        time.sleep(1.0)
+
+    # Step 4: poll wifi_status up to 15s for a real IP
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        ip = _probe_ip_via_serial()
+        if ip:
+            _save_ip(ip, ssid=ssid)
+            return True, ip
+        elapsed = int(time.time() - deadline + 15)
+        scr.erase()
+        msg = f"  Waiting for WiFi connection … ({elapsed}/15s)"
+        try:
+            scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+        except curses.error:
+            pass
+        scr.refresh()
+        time.sleep(2.0)
+
+    return False, (f"Credentials saved but no IP after 25s. "
+                   f"SSID may be wrong/out of range, or 5GHz-only.")
+
+
+def _wifi_text_input(scr, prompt, y, masked=False, initial=""):
+    """Single-line text input. Returns str, or None on cancel."""
+    h, w = scr.getmaxyx()
+    buf = initial
+    reveal = False
+    scr.timeout(-1)
+    try:
+        while True:
+            line = prompt + (buf if not masked or reveal else "•" * len(buf))
+            try:
+                scr.addnstr(y, 2, " " * (w - 4), w - 4,
+                            curses.color_pair(C_ITEM))
+                scr.addnstr(y, 2, line[:w - 4], w - 4,
+                            curses.color_pair(C_SEL) | curses.A_BOLD)
+                if masked:
+                    hint = " ⏎ submit · Esc cancel · Ctrl-R reveal "
+                else:
+                    hint = " ⏎ submit · Esc cancel "
+                scr.addnstr(h - 1, 0, hint.center(w), w,
+                            curses.color_pair(C_FOOTER))
+            except curses.error:
+                pass
+            scr.refresh()
+            k = scr.getch()
+            if k in (27,):  # Esc
+                return None
+            if k in (10, 13, curses.KEY_ENTER):
+                return buf
+            if k in (curses.KEY_BACKSPACE, 127, 8):
+                buf = buf[:-1]
+            elif masked and k == 18:  # Ctrl-R
+                reveal = not reveal
+            elif 32 <= k < 127:
+                buf += chr(k)
+    finally:
+        scr.timeout(100)
+
+
+def _wifi_pick_from_scan(scr):
+    """Run wifi_scan over serial, show picker. Returns chosen SSID or None."""
+    h, w = scr.getmaxyx()
+    scr.erase()
+    msg = "  Scanning … (up to 6s)"
+    try:
+        scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+    except curses.error:
+        pass
+    scr.refresh()
+
+    raw = _serial_write_and_read(b"wifi_scan\r\n", wait_secs=6.0, timeout=8.0)
+    if raw is None:
+        return _wifi_msg_and_wait(scr, "Serial port busy. Close Serial Monitor and retry.")
+    nets = _wifi_scan_parse(raw)
+    if not nets:
+        return _wifi_msg_and_wait(scr, "No networks found. Try Manual entry.")
+
+    sel = 0
+    scr.timeout(-1)
+    try:
+        while True:
+            scr.erase()
+            title = " Select network "
+            try:
+                scr.addnstr(0, 0, title.center(w), w,
+                            curses.color_pair(C_HEADER) | curses.A_BOLD)
+            except curses.error:
+                pass
+            for i, net in enumerate(nets[:h - 4]):
+                marker = "▶" if i == sel else " "
+                lock = "🔒" if net["auth"] != 0 else "  "
+                bars = _signal_bars(net["rssi"])
+                line = f" {marker} {bars}  {lock} {net['ssid'][:w - 20]}"
+                attr = (curses.color_pair(C_SEL) | curses.A_BOLD
+                        if i == sel else curses.color_pair(C_ITEM))
+                try:
+                    scr.addnstr(2 + i, 1, line, w - 2, attr)
+                except curses.error:
+                    pass
+            hint = " ↑↓ select · ⏎ choose · Esc back "
+            try:
+                scr.addnstr(h - 1, 0, hint.center(w), w,
+                            curses.color_pair(C_FOOTER))
+            except curses.error:
+                pass
+            scr.refresh()
+            k = scr.getch()
+            if k in (27,):
+                return None
+            if k in (curses.KEY_UP, ord("k")):
+                sel = (sel - 1) % len(nets)
+            elif k in (curses.KEY_DOWN, ord("j")):
+                sel = (sel + 1) % len(nets)
+            elif k in (10, 13, curses.KEY_ENTER):
+                return nets[sel]
+    finally:
+        scr.timeout(100)
+
+
+def _wifi_msg_and_wait(scr, msg):
+    """Show a centered message, wait for any key, return None."""
+    h, w = scr.getmaxyx()
+    scr.erase()
+    try:
+        scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+        scr.addnstr(h - 1, 0, " Press any key ".center(w), w,
+                    curses.color_pair(C_FOOTER))
+    except curses.error:
+        pass
+    scr.refresh()
+    scr.timeout(-1)
+    scr.getch()
+    scr.timeout(100)
+    return None
+
+
+def run_mimiclaw_wifi(scr):
+    """MimiClaw WiFi config panel — scan / copy / manual / disconnect."""
+    h, w = scr.getmaxyx()
+    scr.timeout(-1)
+    options = [
+        ("scan",       "Scan nearby networks"),
+        ("copy",       "Copy from uConsole WiFi"),
+        ("manual",     "Enter manually"),
+        ("disconnect", "Disconnect"),
+    ]
+    sel = 0
+    try:
+        while True:
+            ip = _load_cached_ip() or _probe_ip_via_serial()
+            status = f"Current:  IP {ip}" if ip else "Current:  not connected"
+            scr.erase()
+            try:
+                scr.addnstr(0, 0, " MimiClaw WiFi ".center(w), w,
+                            curses.color_pair(C_HEADER) | curses.A_BOLD)
+                scr.addnstr(2, 2, status, w - 4, curses.color_pair(C_DIM))
+            except curses.error:
+                pass
+            for i, (_, label) in enumerate(options):
+                marker = "▶" if i == sel else " "
+                line = f" {marker}  {label}"
+                attr = (curses.color_pair(C_SEL) | curses.A_BOLD
+                        if i == sel else curses.color_pair(C_ITEM))
+                try:
+                    scr.addnstr(4 + i, 2, line, w - 4, attr)
+                except curses.error:
+                    pass
+            hint = " ↑↓ select · ⏎ choose · Esc back "
+            try:
+                scr.addnstr(h - 1, 0, hint.center(w), w,
+                            curses.color_pair(C_FOOTER))
+            except curses.error:
+                pass
+            scr.refresh()
+            k = scr.getch()
+            if k in (27, ord("q"), ord("Q")):
+                return
+            if k in (curses.KEY_UP, ord("k")):
+                sel = (sel - 1) % len(options)
+            elif k in (curses.KEY_DOWN, ord("j")):
+                sel = (sel + 1) % len(options)
+            elif k in (10, 13, curses.KEY_ENTER):
+                action = options[sel][0]
+                if action == "scan":
+                    net = _wifi_pick_from_scan(scr)
+                    if net:
+                        _wifi_apply_flow(scr, net["ssid"], open_net=(net["auth"] == 0))
+                elif action == "copy":
+                    creds = _get_uconsole_wifi()
+                    if not creds:
+                        _wifi_msg_and_wait(scr, "Could not read uConsole WiFi (sudo nmcli required)")
+                        continue
+                    ssid, psk = creds
+                    if run_confirm(scr, f"Copy '{ssid}' to MimiClaw?"):
+                        _wifi_apply_flow(scr, ssid, password=psk)
+                elif action == "manual":
+                    ssid = _wifi_text_input(scr, "SSID: ", h // 2 - 1)
+                    if not ssid:
+                        continue
+                    pw = _wifi_text_input(scr, "Password: ", h // 2 + 1,
+                                          masked=True)
+                    if pw is None:
+                        continue
+                    _wifi_apply_flow(scr, ssid, password=pw)
+                elif action == "disconnect":
+                    if not run_confirm(scr, "Disconnect MimiClaw WiFi?"):
+                        continue
+                    _wifi_apply_flow(scr, "", password="")
+    finally:
+        scr.timeout(100)
+
+
+def _wifi_apply_flow(scr, ssid, password=None, open_net=False):
+    """Shared apply wrapper — prompts for password if needed, runs pipeline, reports."""
+    h, w = scr.getmaxyx()
+    if password is None and not open_net:
+        pw = _wifi_text_input(scr, f"Password for {ssid}: ", h // 2,
+                              masked=True)
+        if pw is None:
+            return
+        password = pw
+    if password is None:
+        password = ""
+    ok, result = _apply_wifi_creds(scr, ssid, password)
+    msg = (f"Connected — IP {result}" if ok else f"Failed — {result}")
+    _wifi_msg_and_wait(scr, msg)
+
+
+def run_mimiclaw_settings(scr):
+    """MimiClaw Settings subfold. Currently just WiFi; room for more."""
+    # Delegated via SUBMENUS dict — see framework.py wiring. This stub
+    # exists as an explicit entry point for future non-menu settings pages.
+    run_mimiclaw_wifi(scr)
+
+
 def run_mimiclaw_chat(scr):
     """Chat with MimiClaw AI agent over WebSocket."""
     try:
