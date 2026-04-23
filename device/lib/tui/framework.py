@@ -1918,12 +1918,10 @@ _ESP32_MARAUDER_ITEMS = [
 ]
 
 _ESP32_COMMON_ITEMS = [
-    ("Install Bruce","_esp32_install_watchdogs",  "one-tap: detect chip, fetch, flash",     "action",     "▶"),
     ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython, Marauder, Bruce, MimiClaw", "action", "⇄"),
-    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
-    ("Clear FW Cache",   "_esp32_fw_cache_clear",     "delete downloaded Bruce firmware",   "action",     "🗑"),
     ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
+    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
+    ("Reflash",          "_esp32_flash",              "pick firmware: MicroPython, Marauder, Bruce, MimiClaw", "action", "⇄"),
 ]
 
 
