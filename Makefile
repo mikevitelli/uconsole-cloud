@@ -102,10 +102,10 @@ test-device:
 
 test-install: build-deb
 	@echo "=== Docker install test ==="
-	docker build -f Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
+	docker build -f packaging/Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
 
 test-e2e: build-deb
-	@bash scripts/test-e2e.sh
+	@bash packaging/scripts/test-e2e.sh
 
 test-frontend:
 	@echo "=== vitest ==="
