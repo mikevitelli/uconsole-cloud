@@ -1,5 +1,5 @@
 ---
-description: "Ship an entire phase from FEATURES.md — design UX, implement features, audit, test, commit"
+description: "Ship an entire phase from docs/FEATURES.md — design UX, implement features, audit, test, commit"
 allowed-tools: Agent, Bash, Read, Edit, Write, Glob, Grep
 ---
 
@@ -8,7 +8,7 @@ Ship Phase $ARGUMENTS from the feature map.
 ## Process
 
 ### 1. Load Phase
-Read FEATURES.md. Extract all TODO items (`[ ]`) for the specified phase. Check that all dependencies from earlier phases are marked `[x]`.
+Read docs/FEATURES.md. Extract all TODO items (`[ ]`) for the specified phase. Check that all dependencies from earlier phases are marked `[x]`.
 
 If dependencies are unmet, STOP and report what's blocking.
 
@@ -38,5 +38,5 @@ If both repos were modified, run /sync-repos to ensure shared files match.
 - Full /audit-fix on all changed files
 
 ### 7. Report
-Update FEATURES.md — mark completed items as `[x]`.
+Update docs/FEATURES.md — mark completed items as `[x]`.
 Present a summary of everything that was done, ready for commit.

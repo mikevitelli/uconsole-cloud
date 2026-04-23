@@ -1,5 +1,5 @@
 ---
-description: "Implement a feature from FEATURES.md with codebase exploration, implementation, testing, and audit"
+description: "Implement a feature from docs/FEATURES.md with codebase exploration, implementation, testing, and audit"
 allowed-tools: Agent, Bash, Read, Edit, Write, Glob, Grep
 ---
 
@@ -8,7 +8,7 @@ Implement a feature from the uconsole ecosystem. The feature description is: $AR
 ## Process
 
 ### Step 1: Locate in Feature Map
-Read `FEATURES.md` at the repo root and find the feature. Identify:
+Read `docs/FEATURES.md` at the repo root and find the feature. Identify:
 - Which phase it belongs to
 - What dependencies it has (are prerequisite features done?)
 - Which repo(s) it touches (uconsole-cloud, uconsole backup, or both)
@@ -44,6 +44,6 @@ Make the changes. For each file:
 Run the equivalent of /audit-fix (Phase 2 only — audit, no separate implementation) on the changed files. Report any findings.
 
 ### Step 7: Update Feature Map
-Mark the feature as `[x]` done in FEATURES.md.
+Mark the feature as `[x]` done in docs/FEATURES.md.
 
 Do NOT commit. Present the changes for user review.

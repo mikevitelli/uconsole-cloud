@@ -52,7 +52,7 @@ This policy covers:
 
 ### Known considerations
 
-- Device tokens are 90-day UUIDs — they expire silently if the device stops pushing. Token refresh on push is a planned improvement (see FEATURES.md Phase 5).
+- Device tokens are 90-day UUIDs — they expire silently if the device stops pushing. Token refresh on push is a planned improvement (see docs/FEATURES.md Phase 5).
 - The local webdash uses a self-signed SSL certificate. Browsers will show a warning on first visit.
 - Device code auth is rate-limited but codes are only 8 alphanumeric characters. The 10-minute TTL and single-use design mitigate brute-force risk.
 - The install script (`curl | sudo bash`) is served over HTTPS from Vercel CDN. The script adds the GPG key and APT source — it does not run arbitrary code beyond that.
