@@ -266,6 +266,9 @@ SUBMENUS = {
         ("Chat (P2P)",       "radio/lora.sh chat",                           "P2P — stop meshtasticd first",           "fullscreen"),
         ("Bridge to Web",    "radio/lora.sh bridge",                         "forward messages to webdash",            "fullscreen"),
     ],
+    "sub:mimiclaw:settings": [
+        ("WiFi",             "_mimiclaw_wifi",     "scan, copy from uConsole, manual entry", "action", "📶"),
+    ],
 }
 
 CATEGORIES = [
@@ -1928,6 +1931,7 @@ _ESP32_MIMICLAW_ITEMS = [
     ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
     ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
     ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
+    ("Settings",         "sub:mimiclaw:settings","WiFi, tokens, model provider",          "submenu",    "⚙"),
 ]
 
 
@@ -2628,6 +2632,7 @@ def _get_native_tools():
         "_mimiclaw_chat":   lambda scr: _run_mimiclaw("run_mimiclaw_chat", scr),
         "_mimiclaw_serial": lambda scr: _run_mimiclaw("run_mimiclaw_serial", scr),
         "_mimiclaw_status": lambda scr: _run_mimiclaw("run_mimiclaw_status", scr),
+        "_mimiclaw_wifi":   lambda scr: _run_mimiclaw("run_mimiclaw_wifi", scr),
         "_marauder":      lambda scr: run_marauder(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
