@@ -1,8 +1,10 @@
 """TUI module: MimiClaw AI agent chat portal."""
 
 import curses
+import datetime
 import json
 import os
+import re
 import textwrap
 import time
 
@@ -20,10 +22,98 @@ from tui.framework import (
     run_stream,
 )
 
-MIMI_IP = "192.168.1.23"
 WS_PORT = 18789
 CHAT_ID = "tui_console"
 FLASH_DIR = os.path.expanduser("~/mimiclaw-flash")
+_IP_CACHE_FILE = os.path.expanduser("~/.config/uconsole/mimiclaw.json")
+_WIFI_STATUS_IP_RE = re.compile(r"^\s*IP:\s*(\d+\.\d+\.\d+\.\d+)\s*$", re.MULTILINE)
+
+
+def _load_cached_ip():
+    """Return last-known IP from cache, or None if unreadable/absent."""
+    try:
+        with open(_IP_CACHE_FILE) as f:
+            data = json.load(f)
+        ip = data.get("ip")
+        return ip if isinstance(ip, str) and ip and ip != "0.0.0.0" else None
+    except (OSError, ValueError):
+        return None
+
+
+def _save_ip(ip, ssid=None):
+    """Persist discovered IP (chmod 600). Silent on failure — cache is advisory."""
+    try:
+        os.makedirs(os.path.dirname(_IP_CACHE_FILE), exist_ok=True)
+        payload = {
+            "ip": ip,
+            "ssid": ssid,
+            "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        tmp = _IP_CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _IP_CACHE_FILE)
+    except OSError:
+        pass
+
+
+def _probe_ip_via_serial(port="/dev/ttyACM0", timeout=2.0):
+    """Ask MimiClaw for its current IP over serial. Returns IP string or None.
+
+    Matches the `_query_mimiclaw_status` pattern below — short-lived serial,
+    no persistent connection, surface-level parsing. Does not raise.
+    """
+    try:
+        import serial as pyserial
+    except ImportError:
+        return None
+    try:
+        ser = pyserial.Serial(port, 115200, timeout=timeout)
+    except Exception:
+        return None
+    try:
+        ser.reset_input_buffer()
+        ser.write(b"\r\n")
+        time.sleep(0.2)
+        ser.read(ser.in_waiting or 1024)
+        ser.write(b"wifi_status\r\n")
+        time.sleep(1.0)
+        buf = b""
+        for _ in range(20):
+            if ser.in_waiting:
+                buf += ser.read(ser.in_waiting)
+                time.sleep(0.1)
+            else:
+                break
+        text = buf.decode("utf-8", errors="replace")
+        m = _WIFI_STATUS_IP_RE.search(text)
+        if not m:
+            return None
+        ip = m.group(1)
+        return ip if ip != "0.0.0.0" else None
+    finally:
+        try:
+            ser.close()
+        except Exception:
+            pass
+
+
+def _resolve_ip(prefer_fresh=False):
+    """Return a usable MimiClaw IP, or None if device is offline / unreachable.
+
+    Strategy: cache first (fast path), serial probe on miss or when caller
+    explicitly asks for a fresh read (e.g. after a WS connect failure).
+    Updates the cache whenever the serial probe returns a real IP.
+    """
+    if not prefer_fresh:
+        cached = _load_cached_ip()
+        if cached:
+            return cached
+    fresh = _probe_ip_via_serial()
+    if fresh:
+        _save_ip(fresh)
+    return fresh
 
 
 def run_mimiclaw_chat(scr):
@@ -40,7 +130,6 @@ def run_mimiclaw_chat(scr):
             sys.path.insert(0, site)
         import websocket
 
-    ws_url = f"ws://{MIMI_IP}:{WS_PORT}/ws"
     js = open_gamepad()
     scr.timeout(100)
 
@@ -49,16 +138,33 @@ def run_mimiclaw_chat(scr):
     scroll = 0
     ws = None
     connected = False
+    current_ip = None
 
-    def connect_ws():
-        nonlocal ws, connected
+    def connect_ws(prefer_fresh=False):
+        """Try to connect; on failure, re-probe serial once and retry."""
+        nonlocal ws, connected, current_ip
+        current_ip = _resolve_ip(prefer_fresh=prefer_fresh)
+        if not current_ip:
+            connected = False
+            messages.append(("sys",
+                "Device offline — wifi_status reports no IP. "
+                "Check WiFi credentials or run 'restart' over serial."))
+            return
         try:
-            ws = websocket.create_connection(ws_url, timeout=3)
+            ws = websocket.create_connection(
+                f"ws://{current_ip}:{WS_PORT}/ws", timeout=3)
             ws.settimeout(0.05)
             connected = True
-            messages.append(("sys", f"Connected to MimiClaw at {MIMI_IP}"))
+            messages.append(("sys", f"Connected to MimiClaw at {current_ip}"))
         except Exception as e:
             connected = False
+            # First failure with a cached IP: cache may be stale — re-probe
+            # once and retry before surfacing the error to the user.
+            if not prefer_fresh:
+                messages.append(("sys",
+                    f"Cached IP {current_ip} unreachable — re-probing…"))
+                connect_ws(prefer_fresh=True)
+                return
             messages.append(("sys", f"Connection failed: {e}"))
 
     def send_msg(text):
