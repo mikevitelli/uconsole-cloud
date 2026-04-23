@@ -60,17 +60,34 @@ If you have a uConsole (or any arm64 Debian device):
 # Edit source in device/
 vim device/lib/tui/framework.py
 
-# Deploy to device for testing
-make install          # rsyncs device/ → /opt/uconsole/ and ~/pkg/
+# Deploy to device for testing (requires sudo)
+make install          # rsyncs device/ → /opt/uconsole/
+                      # maintainers also mirror to a local backup repo
+```
 
-# Toggle between dev and package webdash
+Three TUI launchers, each for a different stage of the loop:
+
+| Launcher | Keybind (labwc) | Reads from | Use when |
+|----------|-----------------|------------|----------|
+| `console-dev` | Ctrl+\` | `~/uconsole-cloud/device/lib` | live dev loop — no `make install` needed |
+| `console-pkg` | Ctrl+Shift+P | `/opt/uconsole/lib` | verify the installed version matches your edits |
+| `console` | — | `/opt/uconsole/lib` | end-user launcher (what the `.deb` installs) |
+
+Typical TUI iteration: edit → Ctrl+\` to see it → commit. Only run `make
+install` when you want to verify the installed path too. To override for
+ad-hoc testing: `UCONSOLE_DEV_LIB=/some/path console`.
+
+Toggle webdash between dev and installed:
+
+```bash
 make dev-mode         # webdash runs from your repo checkout
 make pkg-mode         # webdash runs from /opt/uconsole/ (installed .deb)
 ```
 
-`make install` auto-restarts webdash if it's running. For TUI changes, just relaunch `console`.
+`make install` auto-restarts webdash if it's running.
 
-If you don't have a uConsole, you can still run the Python tests and lint the shell scripts — they don't require hardware.
+If you don't have a uConsole, you can still run `make test` — most
+checks don't require hardware.
 
 ## Testing
 
@@ -158,11 +175,16 @@ npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts  # one
 
 You don't need to manually bump versions during development.
 
-- **Dev tree**: the TUI footer auto-derives the version from `git describe --tags`, showing something like `v0.1.7-dev` (next version after the last release tag)
-- **Installed package**: reads the static `VERSION` file, showing the released version (e.g. `v0.1.6`)
-- **Releases**: maintainers run `make release` which bumps `VERSION`, builds the `.deb`, signs the APT repo, commits, and tags
+- **Installed package** (`console-pkg`, Ctrl+Shift+P): reads `VERSION`
+  directly — shows the released version, e.g. `0.2.1`.
+- **Dev tree** (`console-dev`, Ctrl+\`): reads `VERSION`, patch-bumps
+  it, and appends `-dev` — so `0.2.1` becomes `0.2.2-dev`, indicating
+  "working toward the next release".
+- **Releases**: maintainers run `/publish`, which bumps `VERSION`,
+  merges `dev` → `main`, builds the `.deb`, signs the APT repo,
+  commits, and tags.
 
-The `uconsole --version` CLI command shows `(dev)` when a dev.conf systemd drop-in is detected.
+The `uconsole --version` CLI reads the same `VERSION` file.
 
 ## Project layout
 
@@ -177,14 +199,22 @@ frontend/src/
 
 device/
 ├── bin/            Entry points (console, webdash, uconsole-setup, uconsole-passwd)
-├── lib/tui/        TUI modules — each file is a feature area:
+├── lib/tui/        TUI modules — 22 files, each a feature area:
 │   ├── framework.py    Main loop, menus, categories, themes, gamepad
+│   ├── launcher.py     Child-process launcher for external programs
 │   ├── monitor.py      Live system monitor
 │   ├── network.py      WiFi switcher, hotspot, bluetooth
-│   ├── tools.py        Git, notes, calculator, SSH bookmarks, etc.
+│   ├── tools.py        Git, notes, calculator, SSH bookmarks
 │   ├── games.py        Minesweeper, snake, tetris, 2048, ROM launcher
 │   ├── radio.py        GPS globe, FM radio
 │   ├── marauder.py     ESP32 Marauder interface
+│   ├── mimiclaw.py     MimiClaw AI agent chat/serial/status
+│   ├── meshtastic_map.py  Meshtastic mesh map
+│   ├── telegram.py     Telegram client (tg + tdlib)
+│   ├── watchdogs.py    Watch Dogs Go wardriving game
+│   ├── adsb.py, adsb_hires.py, adsb_home_picker.py,
+│   │   adsb_layer_picker.py, adsb_basemap_info.py
+│   │                   Global ADS-B map + basemap + pickers
 │   ├── services.py     Systemd service/timer management
 │   ├── config_ui.py    Theme picker, view mode, settings
 │   ├── files.py        File browser
