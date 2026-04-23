@@ -1,0 +1,17 @@
+#!/bin/bash
+# Launch console against the uconsole-cloud dev tree. Keybound to Ctrl+`.
+# Use this when you want to see/test edits BEFORE `make install`.
+# Installed/published TUI is still reachable via Ctrl+Shift+P (console-pkg).
+export UCONSOLE_DEV_LIB="$HOME/uconsole-cloud/device/lib"
+if [ ! -d "$UCONSOLE_DEV_LIB" ]; then
+    echo "Dev tree not found: $UCONSOLE_DEV_LIB"
+    echo "Falling back to installed version..."
+    unset UCONSOLE_DEV_LIB
+fi
+/usr/bin/console
+ret=$?
+if [ $ret -ne 0 ]; then
+    echo "console-dev exited with code $ret"
+    echo "Press Enter to close..."
+    read
+fi
