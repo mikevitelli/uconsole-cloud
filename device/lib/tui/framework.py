@@ -1898,23 +1898,19 @@ def main_tiles(scr):
 # ── ESP32 dynamic submenu items ──────────────────────────────────────────
 
 _ESP32_MICROPYTHON_ITEMS = [
-    ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel",      "📡"),
     ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📊"),
     ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "⌨"),
+    ("Status",           "radio/esp32.sh status",     "latest sensor reading + chip info",      "panel",      "📡"),
     ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "⟩⟩"),
     ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⇪"),
-    ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action",     "⟳"),
     ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "✎"),
-    ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel",      "ℹ"),
 ]
 
 _ESP32_MARAUDER_ITEMS = [
     ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
     ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
-    ("Scan APs",         "radio/esp32-marauder.sh scan ap", "scan nearby access points",             "stream",     "◎"),
-    ("Device Info",      "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "ℹ"),
+    ("Status",           "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "📡"),
     ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
-    ("Reboot",           "radio/esp32-marauder.sh reboot",  "reboot ESP32",                          "action",     "⟳"),
 ]
 
 _ESP32_COMMON_ITEMS = [
