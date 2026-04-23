@@ -48,7 +48,15 @@ except OSError:
     pass
 _IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
 if _IS_DEV and PKG_VERSION and not PKG_VERSION.endswith('-dev'):
-    PKG_VERSION += '-dev'
+    # Show the *next* patch version. VERSION tracks what was last released;
+    # dev work is always building toward the next one, so e.g. 0.2.1 becomes
+    # 0.2.2-dev until /publish cuts the real 0.2.2 and VERSION advances.
+    try:
+        _parts = PKG_VERSION.split('.')
+        _parts[-1] = str(int(_parts[-1]) + 1)
+        PKG_VERSION = '.'.join(_parts) + '-dev'
+    except (ValueError, IndexError):
+        PKG_VERSION += '-dev'
 if not PKG_VERSION:
     PKG_VERSION = "dev"
 
