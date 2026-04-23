@@ -32,36 +32,25 @@ SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
     else '/opt/uconsole/scripts')
 CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
-# Package version — dev mode uses git describe, package mode reads VERSION file
-_IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
+# Package version — always read VERSION (updated by /publish). Append '-dev'
+# when running from a non-installed tree so you can tell at a glance whether
+# the TUI you're looking at is a published build or a dev checkout. The old
+# git-describe logic read tags from _PKG_ROOT, which could be ~/pkg — whose
+# tags don't track uconsole-cloud releases — so it reported stale versions.
+_VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
+if not os.path.isfile(_VERSION_FILE):
+    _VERSION_FILE = '/opt/uconsole/VERSION'
 PKG_VERSION = ""
-if _IS_DEV:
-    try:
-        _desc = subprocess.check_output(
-            ["git", "describe", "--tags", "--always"],
-            cwd=_PKG_ROOT, stderr=subprocess.DEVNULL, text=True,
-        ).strip()
-        # v0.1.6-3-gabc1234 → 0.1.7-dev | v0.1.6 → 0.1.6-dev
-        _desc = _desc.lstrip('v')
-        _parts = _desc.split('-')
-        if len(_parts) >= 3:
-            # Ahead of tag — bump patch to show next version
-            _ver = _parts[0].split('.')
-            _ver[-1] = str(int(_ver[-1]) + 1)
-            PKG_VERSION = '.'.join(_ver) + '-dev'
-        else:
-            PKG_VERSION = f"{_desc}-dev"
-    except (OSError, subprocess.SubprocessError):
-        PKG_VERSION = "dev"
+try:
+    with open(_VERSION_FILE) as _f:
+        PKG_VERSION = _f.read().strip()
+except OSError:
+    pass
+_IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
+if _IS_DEV and PKG_VERSION and not PKG_VERSION.endswith('-dev'):
+    PKG_VERSION += '-dev'
 if not PKG_VERSION:
-    _VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
-    if not os.path.isfile(_VERSION_FILE):
-        _VERSION_FILE = '/opt/uconsole/VERSION'
-    try:
-        with open(_VERSION_FILE) as _f:
-            PKG_VERSION = _f.read().strip()
-    except OSError:
-        pass
+    PKG_VERSION = "dev"
 
 # ── Menu structure ──────────────────────────────────────────────────────────
 # Display modes:
