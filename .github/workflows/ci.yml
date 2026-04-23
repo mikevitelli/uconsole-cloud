@@ -78,7 +78,7 @@ jobs:
           docker buildx build \
             --platform linux/arm64 \
             --load \
-            -f Dockerfile.test \
+            -f packaging/Dockerfile.test \
             -t uconsole-test .
 
       - name: Verify test image
