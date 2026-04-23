@@ -526,6 +526,85 @@ def run_mimiclaw_settings(scr):
     run_mimiclaw_wifi(scr)
 
 
+# ── Markdown rendering for chat messages ─────────────────────────────────
+#
+# Curses terminal, no Rich. Support the subset MimiClaw's LLM output actually
+# uses: headings, bullet lists, blockquotes, fenced code blocks, inline
+# **bold** and `code`. Returns a flat list of "rendered lines", where each
+# line is a list of (text, attr) spans ready for curses.addnstr.
+
+_MD_INLINE_RE = re.compile(r'\*\*([^*]+?)\*\*|`([^`]+?)`')
+
+
+def _md_inline(line, base_attr):
+    """Split a single line into (text, attr) spans for inline **bold**/`code`."""
+    spans = []
+    pos = 0
+    for m in _MD_INLINE_RE.finditer(line):
+        if m.start() > pos:
+            spans.append((line[pos:m.start()], base_attr))
+        if m.group(1):  # **bold**
+            spans.append((m.group(1), base_attr | curses.A_BOLD))
+        elif m.group(2):  # `code`
+            spans.append((m.group(2), base_attr | curses.A_REVERSE))
+        pos = m.end()
+    if pos < len(line):
+        spans.append((line[pos:], base_attr))
+    return spans or [('', base_attr)]
+
+
+def _md_render(text, width):
+    """Render a markdown-ish message body into a list of line-span-lists."""
+    rendered = []
+    in_code = False
+    for raw in text.split('\n'):
+        # Fenced code block toggle
+        if raw.lstrip().startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            for w in (textwrap.wrap(raw, width) or [raw or '']):
+                rendered.append([(w, curses.A_REVERSE)])
+            continue
+        # Headings
+        if raw.startswith('### '):
+            rendered.append([(raw[4:], curses.A_BOLD | curses.A_UNDERLINE)])
+            continue
+        if raw.startswith('## '):
+            rendered.append([(raw[3:], curses.A_BOLD)])
+            continue
+        if raw.startswith('# '):
+            rendered.append([(raw[2:].upper(), curses.A_BOLD)])
+            continue
+        # Bullet list
+        stripped = raw.lstrip()
+        if stripped.startswith('- ') or stripped.startswith('* '):
+            indent = len(raw) - len(stripped)
+            body = stripped[2:]
+            prefix = ' ' * indent + '• '
+            wrapped = textwrap.wrap(body, max(1, width - len(prefix))) or [body]
+            for i, w in enumerate(wrapped):
+                pad = prefix if i == 0 else ' ' * len(prefix)
+                rendered.append([(pad, 0), *_md_inline(w, 0)])
+            continue
+        # Blockquote
+        if stripped.startswith('> '):
+            body = stripped[2:]
+            wrapped = textwrap.wrap(body, max(1, width - 2)) or [body]
+            for w in wrapped:
+                rendered.append([('│ ', curses.A_DIM),
+                                 *_md_inline(w, curses.A_DIM)])
+            continue
+        # Blank line
+        if not raw.strip():
+            rendered.append([('', 0)])
+            continue
+        # Regular paragraph
+        for w in (textwrap.wrap(raw, width) or [raw]):
+            rendered.append(_md_inline(w, 0))
+    return rendered
+
+
 def run_mimiclaw_chat(scr):
     """Chat with MimiClaw AI agent over WebSocket."""
     try:
@@ -603,15 +682,44 @@ def run_mimiclaw_chat(scr):
         except Exception:
             pass
 
-    def wrap(width):
-        lines = []
-        usable = width - 4
+    def build_view(width):
+        """Flatten all messages into (role, spans_or_label) lines.
+
+        Each entry is one of:
+          ("label", role, label_text)    — a role header line ("you" / "mimi")
+          ("body",  role, spans)         — a wrapped body line (list of (text, attr))
+          ("blank", None, None)          — spacer between turns
+        """
+        out = []
+        body_width = width - 4  # 2-char indent + 2-char padding
+        last_role = None
         for role, text in messages:
-            prefix = "> " if role == "you" else ("  " if role == "mimi" else "# ")
-            wrapped = textwrap.wrap(text, usable - len(prefix)) or [""]
-            for i, line in enumerate(wrapped):
-                lines.append((role, (prefix if i == 0 else " " * len(prefix)) + line))
-        return lines
+            if role == "sys":
+                # Inline, one-line, dim with a bullet marker. No separator needed.
+                for w in (textwrap.wrap(text, body_width) or [text]):
+                    out.append(("body", "sys", [(w, 0)]))
+                last_role = "sys"
+                continue
+            # Fresh turn separator between distinct user/agent turns.
+            if last_role in ("you", "mimi"):
+                out.append(("blank", None, None))
+            label = "you" if role == "you" else "mimi"
+            out.append(("label", role, label))
+            if role == "mimi":
+                for spans in _md_render(text, body_width):
+                    out.append(("body", role, spans))
+            else:
+                for w in (textwrap.wrap(text, body_width) or [text]):
+                    out.append(("body", role, [(w, 0)]))
+            last_role = role
+        return out
+
+    def role_attr(role):
+        if role == "you":
+            return curses.color_pair(C_CAT) | curses.A_BOLD
+        if role == "mimi":
+            return curses.color_pair(C_STATUS) | curses.A_BOLD
+        return curses.color_pair(C_DIM)
 
     connect_ws()
 
@@ -620,42 +728,76 @@ def run_mimiclaw_chat(scr):
         scr.erase()
         poll()
 
-        status = "CONNECTED" if connected else "DISCONNECTED"
-        title = f" MimiClaw Chat [{status}] "
-        scr.addnstr(0, 0, title.center(w), w, curses.color_pair(C_HEADER) | curses.A_BOLD)
-
-        view_h = h - 4
-        wrapped = wrap(w)
-        visible_start = max(0, len(wrapped) - view_h) if scroll == 0 else max(0, scroll)
-
-        for i in range(view_h):
-            li = visible_start + i
-            if li >= len(wrapped):
-                break
-            role, line = wrapped[li]
-            if role == "you":
-                attr = curses.color_pair(C_CAT) | curses.A_BOLD
-            elif role == "mimi":
-                attr = curses.color_pair(C_ITEM)
-            else:
-                attr = curses.color_pair(C_DIM)
-            try:
-                scr.addnstr(i + 1, 1, line[:w - 2], w - 2, attr)
-            except curses.error:
-                pass
-
-        prompt = f"> {input_buf}"
-        cursor_attr = curses.color_pair(C_SEL) | curses.A_BOLD
+        # Title bar — show IP when connected, "offline" otherwise.
+        if connected and current_ip:
+            title = f" MimiClaw — {current_ip} "
+        elif current_ip:
+            title = f" MimiClaw — {current_ip} (disconnected) "
+        else:
+            title = " MimiClaw — offline "
         try:
-            scr.addnstr(h - 2, 1, prompt[:w - 2], w - 2, cursor_attr)
-            cx = min(1 + len(prompt), w - 2)
-            scr.addnstr(h - 2, cx, "_", 1, cursor_attr | curses.A_BLINK)
+            scr.addnstr(0, 0, title.center(w), w,
+                        curses.color_pair(C_HEADER) | curses.A_BOLD)
         except curses.error:
             pass
 
-        bar = " Enter Send | Up/Down Scroll | X Reconnect | B Back "
+        view_h = h - 4
+        view = build_view(w)
+        visible_start = max(0, len(view) - view_h) if scroll == 0 else max(0, scroll)
+
+        for i in range(view_h):
+            li = visible_start + i
+            if li >= len(view):
+                break
+            kind, role, payload = view[li]
+            y = i + 1
+            try:
+                if kind == "label":
+                    label = f"  {payload}"
+                    scr.addnstr(y, 1, label, w - 2, role_attr(role))
+                elif kind == "body":
+                    x = 1
+                    if role == "sys":
+                        sys_prefix = "  · "
+                        scr.addnstr(y, x, sys_prefix, 4,
+                                    curses.color_pair(C_DIM))
+                        x += len(sys_prefix)
+                        base = curses.color_pair(C_DIM)
+                    else:
+                        indent = "    "
+                        scr.addnstr(y, x, indent, len(indent),
+                                    curses.color_pair(C_ITEM))
+                        x += len(indent)
+                        base = curses.color_pair(C_ITEM)
+                    for text, attr in payload:
+                        if x >= w - 1 or not text:
+                            continue
+                        take = min(len(text), w - 1 - x)
+                        scr.addnstr(y, x, text[:take], take, base | attr)
+                        x += take
+                # "blank" draws nothing
+            except curses.error:
+                pass
+
+        # Input box — visual boundary + prompt
         try:
-            scr.addnstr(h - 1, 0, bar.center(w), w, curses.color_pair(C_FOOTER))
+            scr.addnstr(h - 3, 0, "─" * w, w, curses.color_pair(C_DIM))
+        except curses.error:
+            pass
+        prompt_attr = curses.color_pair(C_CAT) | curses.A_BOLD
+        try:
+            scr.addnstr(h - 2, 1, "> ", 2, prompt_attr)
+            scr.addnstr(h - 2, 3, input_buf[:w - 5], w - 5,
+                        curses.color_pair(C_ITEM))
+            cx = min(3 + len(input_buf), w - 2)
+            scr.addnstr(h - 2, cx, "_", 1, prompt_attr | curses.A_BLINK)
+        except curses.error:
+            pass
+
+        bar = " ⏎ send · ↑↓ scroll · X reconnect · B back "
+        try:
+            scr.addnstr(h - 1, 0, bar.center(w), w,
+                        curses.color_pair(C_FOOTER))
         except curses.error:
             pass
         scr.refresh()
@@ -673,7 +815,7 @@ def run_mimiclaw_chat(scr):
         elif key == curses.KEY_BACKSPACE or key == 127:
             input_buf = input_buf[:-1]
         elif key == curses.KEY_UP or key == ord("k"):
-            total = len(wrap(w))
+            total = len(build_view(w))
             scroll = max(0, (scroll or max(0, total - view_h)) - 1)
         elif key == curses.KEY_DOWN or key == ord("j"):
             scroll = 0
