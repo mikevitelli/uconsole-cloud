@@ -377,7 +377,15 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
+    # Invalidate cache when app code OR any template changes.
     mtime = int(os.path.getmtime(__file__))
+    try:
+        tpl_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        for entry in os.scandir(tpl_dir):
+            if entry.is_file():
+                mtime = max(mtime, int(entry.stat().st_mtime))
+    except OSError:
+        pass
     sw = "var CACHE='webdash-%d';\n" % mtime + r'''
 var PRECACHE=['/favicon.png','/manifest.json'];
 self.addEventListener('install',function(e){
@@ -392,8 +400,9 @@ self.addEventListener('activate',function(e){
 });
 self.addEventListener('fetch',function(e){
   var u=new URL(e.request.url);
-  /* never cache auth, API, or socket.io */
+  /* never cache auth, API, socket.io, or live-data pages */
   if(u.pathname==='/'||u.pathname==='/login'||u.pathname==='/logout'){e.respondWith(fetch(e.request));return;}
+  if(u.pathname==='/wardrive'){e.respondWith(fetch(e.request));return;}
   if(u.pathname.indexOf('/api/')===0||u.pathname.indexOf('/socket.io/')===0){e.respondWith(fetch(e.request));return;}
   e.respondWith(caches.match(e.request).then(function(r){
     return r||fetch(e.request).then(function(resp){
@@ -407,19 +416,53 @@ self.addEventListener('fetch',function(e){
                               headers={'Service-Worker-Allowed': '/'})
 
 
+_WARDRIVE_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+    "https://unpkg.com https://cdn.tailwindcss.com "
+    "https://cdn.jsdelivr.net; "
+    "script-src-elem 'self' 'unsafe-inline' "
+    "https://unpkg.com https://cdn.tailwindcss.com "
+    "https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://unpkg.com "
+    "https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "style-src-elem 'self' 'unsafe-inline' https://unpkg.com "
+    "https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "worker-src 'self' blob:; "
+    "child-src blob:; "
+    "connect-src 'self' wss://uconsole.local "
+    "https://*.tile.openstreetmap.org "
+    "https://*.basemaps.cartocdn.com "
+    "https://basemaps.cartocdn.com; "
+    "img-src 'self' data: blob: "
+    "https://*.tile.openstreetmap.org "
+    "https://*.basemaps.cartocdn.com "
+    "https://basemaps.cartocdn.com "
+    "https://unpkg.com "
+    "https://cdn.jsdelivr.net; "
+    "font-src 'self' https://fonts.gstatic.com"
+)
+
+_DEFAULT_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "connect-src 'self' wss://uconsole.local; "
+    "img-src 'self' data:; "
+    "font-src 'self'"
+)
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'same-origin'
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "connect-src 'self' wss://uconsole.local; "
-        "img-src 'self' data:; "
-        "font-src 'self'"
-    )
+    # Relax CSP for the wardrive map page to allow Leaflet + OSM tiles.
+    if request.path == '/wardrive':
+        response.headers['Content-Security-Policy'] = _WARDRIVE_CSP
+    else:
+        response.headers['Content-Security-Policy'] = _DEFAULT_CSP
     return response
 
 
@@ -1546,6 +1589,621 @@ def api_lora():
     age = round(time.time() - _lora_last_seen) if _lora_last_seen else -1
     return jsonify({**_lora_data, 'age': age, 'online': 0 < age < 60})
 
+
+# ── War Drive (WIP / opt-in) ─────────────────────────────────────────
+# Disabled by default — the UX is still in flux. Enable with either:
+#   sudo touch /etc/uconsole/wardrive-enabled
+# or set UCONSOLE_WARDRIVE_ENABLED=1 in the webdash service env.
+# When disabled, both /wardrive and /api/wardrive/* return 404 so the
+# feature is invisible to users who haven't opted in.
+
+_WARDRIVE_DIR = os.path.expanduser('~/esp32/marauder-logs')
+_WARDRIVE_NAME_RE = re.compile(r'^wardrive-(?:DEMO-)?\d{8}T\d{6}\.csv$')
+_WARDRIVE_FLAG_FILE = '/etc/uconsole/wardrive-enabled'
+_WARDRIVE_LABELS_FILE = os.path.join(_WARDRIVE_DIR, 'labels.json')
+_WARDRIVE_TRASH_DIR = os.path.join(_WARDRIVE_DIR, '.trash')
+_WARDRIVE_ALL = '__all__'
+
+
+def _wardrive_enabled():
+    if os.environ.get('UCONSOLE_WARDRIVE_ENABLED') in ('1', 'true', 'yes'):
+        return True
+    try:
+        return os.path.exists(_WARDRIVE_FLAG_FILE)
+    except OSError:
+        return False
+
+
+def _wardrive_gate():
+    """Return a 404 response if the feature is disabled; else None."""
+    if _wardrive_enabled():
+        return None
+    return ('War Drive is disabled. To enable:\n'
+            '  sudo touch /etc/uconsole/wardrive-enabled\n'
+            '  sudo systemctl restart uconsole-webdash'), 404
+
+
+def _wardrive_load_labels():
+    try:
+        with open(_WARDRIVE_LABELS_FILE, 'r') as f:
+            data = _json_mod.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, ValueError, OSError):
+        return {}
+
+
+def _wardrive_save_labels(labels):
+    tmp = _WARDRIVE_LABELS_FILE + '.tmp'
+    with open(tmp, 'w') as f:
+        _json_mod.dump(labels, f, indent=2, sort_keys=True)
+    os.replace(tmp, _WARDRIVE_LABELS_FILE)
+
+
+def _wardrive_row_count(path):
+    """Count data rows in a CSV (excluding header). Empty-file → 0."""
+    try:
+        with open(path, 'rb') as f:
+            n = sum(1 for _ in f)
+        return max(0, n - 1)
+    except OSError:
+        return 0
+
+
+def _wardrive_list_files():
+    """Return list of session dicts (newest first) with label + row_count."""
+    labels = _wardrive_load_labels()
+    out = []
+    try:
+        for n in os.listdir(_WARDRIVE_DIR):
+            if not _WARDRIVE_NAME_RE.match(n):
+                continue
+            p = os.path.join(_WARDRIVE_DIR, n)
+            try:
+                st = os.stat(p)
+                out.append({
+                    'name': n,
+                    'size': st.st_size,
+                    'mtime': st.st_mtime,
+                    'label': labels.get(n, ''),
+                    'row_count': _wardrive_row_count(p),
+                })
+            except OSError:
+                continue
+    except FileNotFoundError:
+        pass
+    out.sort(key=lambda f: f['mtime'], reverse=True)
+    return out
+
+
+def _wardrive_parse(path, since_row=0):
+    """Parse CSV rows past `since_row` index. Returns (rows, total_rows)."""
+    import csv as _csv
+    rows = []
+    total = 0
+    try:
+        with open(path, 'r') as f:
+            reader = _csv.DictReader(f)
+            for i, r in enumerate(reader):
+                total = i + 1
+                if i < since_row:
+                    continue
+                try:
+                    lat = float(r['lat']) if r.get('lat') else None
+                    lon = float(r['lon']) if r.get('lon') else None
+                except ValueError:
+                    lat = lon = None
+                try:
+                    rssi = int(r['rssi'])
+                except (ValueError, KeyError):
+                    rssi = -100
+                try:
+                    ch = int(r['channel'])
+                except (ValueError, KeyError):
+                    ch = 0
+                rows.append({
+                    'idx': i,
+                    'ts': r.get('timestamp_iso', ''),
+                    'bssid': r.get('bssid', ''),
+                    'essid': r.get('essid', ''),
+                    'channel': ch,
+                    'rssi': rssi,
+                    'lat': lat,
+                    'lon': lon,
+                    'first_seen': r.get('first_seen', '0') == '1',
+                })
+    except FileNotFoundError:
+        pass
+    return rows, total
+
+
+@app.route('/wardrive')
+def wardrive_page():
+    g = _wardrive_gate()
+    if g: return g
+    """Live map of war-drive sessions.
+
+    Default view uses MapLibre GL + deck.gl for a 3D cyberpunk
+    visualization. ?basic=1 falls back to the Leaflet version for
+    browsers without WebGL2.
+    """
+    now = time.time()
+    sessions = []
+    for f in _wardrive_list_files():
+        ts_fallback = f['name'].replace('wardrive-', '').replace('.csv', '')
+        sessions.append({
+            'name': f['name'],
+            'size': f['size'],
+            'mtime': f['mtime'],
+            'live': (now - f['mtime']) < 300,
+            'label': f['label'] or ts_fallback,
+            'row_count': f['row_count'],
+        })
+    template = ('wardrive_basic.html' if request.args.get('basic') == '1'
+                else 'wardrive.html')
+    return render_template(template, initial_sessions=sessions,
+                           log_dir=_WARDRIVE_DIR)
+
+
+@app.route('/api/wardrive/sessions')
+def api_wardrive_sessions():
+    """List available war-drive CSV sessions, newest first."""
+    g = _wardrive_gate()
+    if g: return g
+    files = _wardrive_list_files()
+    # Also report whether this is the live/in-progress session (newest,
+    # modified in last 5 minutes)
+    now = time.time()
+    for f in files:
+        f['live'] = (now - f['mtime']) < 300
+    return jsonify({'sessions': files})
+
+
+@app.route('/api/wardrive/data/<name>')
+def api_wardrive_data(name):
+    """Return parsed rows from a war-drive CSV. Supports ?since=<idx>.
+
+    Special name '__all__' returns merged rows from every session with each
+    row tagged with its source session (for per-session track splitting).
+    """
+    g = _wardrive_gate()
+    if g: return g
+
+    if name == _WARDRIVE_ALL:
+        sessions = _wardrive_list_files()
+        merged = []
+        total = 0
+        size_sum = 0
+        mtime_max = 0
+        for s in sessions:
+            p = os.path.join(_WARDRIVE_DIR, s['name'])
+            rows, n = _wardrive_parse(p, 0)
+            for r in rows:
+                r['session'] = s['name']
+                merged.append(r)
+            total += n
+            size_sum += s['size']
+            if s['mtime'] > mtime_max:
+                mtime_max = s['mtime']
+        return jsonify({
+            'name': _WARDRIVE_ALL,
+            'total_rows': total,
+            'returned': len(merged),
+            'since': 0,
+            'size': size_sum,
+            'mtime': mtime_max,
+            'sessions': len(sessions),
+            'rows': merged,
+        })
+
+    if not _WARDRIVE_NAME_RE.match(name):
+        return jsonify({'error': 'invalid name'}), 400
+    path = os.path.join(_WARDRIVE_DIR, name)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'not found'}), 404
+    try:
+        since = int(request.args.get('since', 0))
+    except ValueError:
+        since = 0
+    rows, total = _wardrive_parse(path, since)
+    try:
+        mtime = os.path.getmtime(path)
+        size = os.path.getsize(path)
+    except OSError:
+        mtime = 0
+        size = 0
+    return jsonify({
+        'name': name,
+        'total_rows': total,
+        'returned': len(rows),
+        'since': since,
+        'size': size,
+        'mtime': mtime,
+        'rows': rows,
+    })
+
+
+@app.route('/api/wardrive/rename', methods=['POST'])
+def api_wardrive_rename():
+    g = _wardrive_gate()
+    if g: return g
+    data = request.get_json(silent=True) or {}
+    name = data.get('name', '')
+    label = (data.get('label') or '').strip()[:80]
+    if not _WARDRIVE_NAME_RE.match(name):
+        return jsonify({'error': 'invalid name'}), 400
+    if not os.path.isfile(os.path.join(_WARDRIVE_DIR, name)):
+        return jsonify({'error': 'not found'}), 404
+    labels = _wardrive_load_labels()
+    if label:
+        labels[name] = label
+    else:
+        labels.pop(name, None)
+    try:
+        _wardrive_save_labels(labels)
+    except OSError as e:
+        return jsonify({'error': f'write failed: {e}'}), 500
+    return jsonify({'ok': True, 'name': name, 'label': label})
+
+
+def _wardrive_trash(name):
+    """Move a session CSV to the trash dir. Returns (ok, error_msg)."""
+    src = os.path.join(_WARDRIVE_DIR, name)
+    if not os.path.isfile(src):
+        return False, 'not found'
+    try:
+        os.makedirs(_WARDRIVE_TRASH_DIR, exist_ok=True)
+    except OSError as e:
+        return False, f'trash mkdir failed: {e}'
+    # If a same-named file already exists in trash, suffix with epoch ms
+    dst = os.path.join(_WARDRIVE_TRASH_DIR, name)
+    if os.path.exists(dst):
+        dst = f'{dst}.{int(time.time() * 1000)}'
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        return False, f'move failed: {e}'
+    # Remove label entry, if any
+    labels = _wardrive_load_labels()
+    if labels.pop(name, None) is not None:
+        try:
+            _wardrive_save_labels(labels)
+        except OSError:
+            pass
+    return True, None
+
+
+@app.route('/api/wardrive/delete', methods=['POST'])
+def api_wardrive_delete():
+    g = _wardrive_gate()
+    if g: return g
+    data = request.get_json(silent=True) or {}
+    name = data.get('name', '')
+    if not _WARDRIVE_NAME_RE.match(name):
+        return jsonify({'error': 'invalid name'}), 400
+    ok, err = _wardrive_trash(name)
+    if not ok:
+        return jsonify({'error': err}), 404 if err == 'not found' else 500
+    return jsonify({'ok': True, 'name': name})
+
+
+@app.route('/api/wardrive/delete-empty', methods=['POST'])
+def api_wardrive_delete_empty():
+    g = _wardrive_gate()
+    if g: return g
+    deleted = []
+    for s in _wardrive_list_files():
+        if s['row_count'] <= 1:
+            ok, _err = _wardrive_trash(s['name'])
+            if ok:
+                deleted.append(s['name'])
+    return jsonify({'ok': True, 'deleted': deleted, 'count': len(deleted)})
+
+
+# --- WiGLE enrichment ---
+# Queries WiGLE's global WiFi DB for each scanned BSSID to fill in the
+# encryption/auth info Marauder doesn't capture. Results are cached locally
+# forever — WiGLE's data for a given BSSID rarely changes meaningfully.
+# Free accounts have tight daily rate limits; on 429 we back off for 24h.
+
+_WIGLE_ENV_FILE = os.path.expanduser('~/.config/uconsole/wigle.env')
+_WIGLE_CACHE_FILE = os.path.join(_WARDRIVE_DIR, 'wigle-cache.sqlite')
+_WIGLE_API = 'https://api.wigle.net/api/v2/network/search'
+
+
+def _wigle_load_cfg():
+    if not os.path.isfile(_WIGLE_ENV_FILE):
+        return {}
+    cfg = {}
+    try:
+        with open(_WIGLE_ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                k, v = line.split('=', 1)
+                cfg[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return cfg
+
+
+def _wigle_auth_header():
+    """Return ('Authorization', 'Basic <b64>') or None if not configured."""
+    import base64
+    cfg = _wigle_load_cfg()
+    user = cfg.get('WIGLE_USER')
+    passwd = cfg.get('WIGLE_PASS')
+    token = cfg.get('WIGLE_TOKEN')
+    if user and passwd:
+        return base64.b64encode(f'{user}:{passwd}'.encode()).decode()
+    if token:
+        # Heuristic: if it already looks encoded (no colon), use as-is.
+        if ':' in token:
+            return base64.b64encode(token.encode()).decode()
+        return token
+    return None
+
+
+def _wigle_db():
+    import sqlite3
+    conn = sqlite3.connect(_WIGLE_CACHE_FILE)
+    conn.execute('''CREATE TABLE IF NOT EXISTS wigle_cache (
+        bssid TEXT PRIMARY KEY,
+        ssid TEXT,
+        encryption TEXT,
+        first_seen TEXT,
+        last_seen TEXT,
+        trilat REAL,
+        trilon REAL,
+        qos INTEGER,
+        country TEXT,
+        city TEXT,
+        checked_at INTEGER,
+        status TEXT
+    )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS wigle_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )''')
+    conn.commit()
+    return conn
+
+
+def _wigle_meta_get(conn, key):
+    row = conn.execute('SELECT value FROM wigle_meta WHERE key=?', (key,)).fetchone()
+    return row[0] if row else None
+
+
+def _wigle_meta_set(conn, key, value):
+    conn.execute('INSERT OR REPLACE INTO wigle_meta(key, value) VALUES(?, ?)',
+                 (key, str(value)))
+    conn.commit()
+
+
+def _wigle_normalize_encryption(e):
+    """Map WiGLE's encryption string to a coarse bucket."""
+    if not e:
+        return 'unknown'
+    s = str(e).lower()
+    if s in ('none', 'unknown'):
+        return s
+    if 'wpa3' in s: return 'wpa3'
+    if 'wpa2' in s: return 'wpa2'
+    if 'wpa' in s:  return 'wpa'
+    if 'wep' in s:  return 'wep'
+    if 'open' in s: return 'none'
+    return 'unknown'
+
+
+def _wigle_query_one(bssid, auth):
+    """Hit WiGLE for a single BSSID. Returns (status, payload).
+    status in: 'ok', 'not_found', 'rate_limit', 'error'."""
+    import urllib.request, urllib.parse, urllib.error, json as _json
+    url = f'{_WIGLE_API}?' + urllib.parse.urlencode({'netid': bssid})
+    req = urllib.request.Request(url, headers={
+        'Authorization': f'Basic {auth}',
+        'Accept': 'application/json',
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            return 'rate_limit', None
+        if e.code == 401:
+            return 'auth_error', None
+        if e.code == 412:
+            return 'email_unverified', None
+        return 'error', None
+    except Exception:
+        return 'error', None
+    try:
+        data = _json.loads(body)
+    except ValueError:
+        return 'error', None
+    results = data.get('results') or []
+    if not results:
+        return 'not_found', None
+    r0 = results[0]
+    return 'ok', {
+        'ssid': r0.get('ssid') or '',
+        'encryption': _wigle_normalize_encryption(r0.get('encryption')),
+        'first_seen': r0.get('firsttime') or '',
+        'last_seen': r0.get('lasttime') or '',
+        'trilat': r0.get('trilat'),
+        'trilon': r0.get('trilong'),
+        'qos': r0.get('qos') or 0,
+        'country': r0.get('country') or '',
+        'city': r0.get('city') or '',
+    }
+
+
+def _wigle_status_payload():
+    configured = bool(_wigle_auth_header())
+    conn = _wigle_db()
+    try:
+        (cache_n,) = conn.execute('SELECT COUNT(*) FROM wigle_cache').fetchone()
+        last_429 = _wigle_meta_get(conn, 'last_429_at')
+        queries_date = _wigle_meta_get(conn, 'queries_today_date') or ''
+        queries_today = _wigle_meta_get(conn, 'queries_today') or '0'
+    finally:
+        conn.close()
+    today = time.strftime('%Y-%m-%d')
+    if queries_date != today:
+        queries_today = '0'
+    return {
+        'configured': configured,
+        'cache_count': cache_n,
+        'queries_today': int(queries_today),
+        'last_429_at': int(last_429) if last_429 and last_429.isdigit() else 0,
+        'rate_limited': bool(last_429) and (time.time() - int(last_429)) < 82800,
+    }
+
+
+@app.route('/api/wigle/status')
+def api_wigle_status():
+    g = _wardrive_gate()
+    if g: return g
+    return jsonify(_wigle_status_payload())
+
+
+@app.route('/api/wigle/cached')
+def api_wigle_cached():
+    """Return the full cached enrichment map: {bssid: {encryption, ssid, ...}}."""
+    g = _wardrive_gate()
+    if g: return g
+    conn = _wigle_db()
+    try:
+        rows = conn.execute('''SELECT bssid, ssid, encryption, first_seen,
+            last_seen, trilat, trilon, qos, country, city, status
+            FROM wigle_cache''').fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for (bssid, ssid, enc, fs, ls, lat, lon, qos, country, city, status) in rows:
+        out[bssid] = {
+            'ssid': ssid, 'encryption': enc, 'first_seen': fs, 'last_seen': ls,
+            'trilat': lat, 'trilon': lon, 'qos': qos,
+            'country': country, 'city': city, 'status': status,
+        }
+    return jsonify({'cache': out})
+
+
+_WIGLE_BSSID_RE = re.compile(r'^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$')
+
+
+@app.route('/api/wigle/enrich', methods=['POST'])
+def api_wigle_enrich():
+    """Look up BSSIDs in WiGLE. Body: {bssids: [...], max: 25}.
+    Only queries BSSIDs not already in cache. Stops on 429."""
+    g = _wardrive_gate()
+    if g: return g
+    auth = _wigle_auth_header()
+    if not auth:
+        return jsonify({'error': 'WiGLE not configured'}), 400
+
+    data = request.get_json(silent=True) or {}
+    bssids = data.get('bssids') or []
+    try:
+        cap = max(1, min(200, int(data.get('max', 25))))
+    except (TypeError, ValueError):
+        cap = 25
+
+    # Validate + dedupe
+    seen = set()
+    clean = []
+    for b in bssids:
+        if not isinstance(b, str): continue
+        nb = b.lower().strip()
+        if not _WIGLE_BSSID_RE.match(nb): continue
+        if nb in seen: continue
+        seen.add(nb)
+        clean.append(nb)
+
+    conn = _wigle_db()
+    try:
+        # Back off if we hit 429 recently (within 23h).
+        last_429 = _wigle_meta_get(conn, 'last_429_at')
+        if last_429 and last_429.isdigit():
+            if time.time() - int(last_429) < 82800:
+                return jsonify({
+                    'checked': 0, 'ok': 0, 'not_found': 0, 'error': 0,
+                    'rate_limited': True, 'queue': len(clean),
+                    'message': 'WiGLE rate limit — try again in ~24h',
+                })
+
+        # Skip already-cached BSSIDs.
+        to_query = []
+        for b in clean:
+            row = conn.execute('SELECT 1 FROM wigle_cache WHERE bssid=?',
+                               (b,)).fetchone()
+            if not row:
+                to_query.append(b)
+
+        to_query = to_query[:cap]
+        ok = not_found = error = 0
+        queries_today_n = int(_wigle_meta_get(conn, 'queries_today') or '0')
+        queries_date = _wigle_meta_get(conn, 'queries_today_date') or ''
+        today = time.strftime('%Y-%m-%d')
+        if queries_date != today:
+            queries_today_n = 0
+
+        rate_limited = False
+        auth_err = False
+        email_unverified = False
+        for bssid in to_query:
+            status, payload = _wigle_query_one(bssid, auth)
+            queries_today_n += 1
+            if status == 'rate_limit':
+                _wigle_meta_set(conn, 'last_429_at', str(int(time.time())))
+                rate_limited = True
+                break
+            if status == 'auth_error':
+                auth_err = True
+                break
+            if status == 'email_unverified':
+                email_unverified = True
+                break
+            now_epoch = int(time.time())
+            if status == 'ok':
+                p = payload
+                conn.execute('''INSERT OR REPLACE INTO wigle_cache
+                    (bssid, ssid, encryption, first_seen, last_seen,
+                     trilat, trilon, qos, country, city, checked_at, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (bssid, p['ssid'], p['encryption'], p['first_seen'],
+                     p['last_seen'], p['trilat'], p['trilon'], p['qos'],
+                     p['country'], p['city'], now_epoch, 'ok'))
+                ok += 1
+            elif status == 'not_found':
+                conn.execute('''INSERT OR REPLACE INTO wigle_cache
+                    (bssid, checked_at, status)
+                    VALUES (?, ?, ?)''', (bssid, now_epoch, 'not_found'))
+                not_found += 1
+            else:
+                error += 1
+
+        _wigle_meta_set(conn, 'queries_today_date', today)
+        _wigle_meta_set(conn, 'queries_today', str(queries_today_n))
+        conn.commit()
+    finally:
+        conn.close()
+
+    if auth_err:
+        return jsonify({'error': 'WiGLE auth failed (401) — check token'}), 401
+    if email_unverified:
+        return jsonify({
+            'error': 'WiGLE account email not verified. Visit https://wigle.net/account and click "Send verification email".',
+        }), 403
+
+    remaining = max(0, len(clean) - ok - not_found - error)
+    return jsonify({
+        'checked': ok + not_found + error,
+        'ok': ok, 'not_found': not_found, 'error': error,
+        'rate_limited': rate_limited,
+        'queue': remaining,
+        'queries_today': queries_today_n,
+    })
 
 
 def _watch_and_reload():

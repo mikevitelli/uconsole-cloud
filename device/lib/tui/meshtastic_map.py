@@ -109,6 +109,11 @@ def run_meshtastic_map(scr):
     show_labels = bool(_cfg.get("mesh_labels", True))
     show_overlay = bool(_cfg.get("mesh_overlay", True))
 
+    # Pan offsets relative to home — arrow keys move the view without
+    # touching the persisted home location.
+    pan_lat = 0.0
+    pan_lon = 0.0
+
     nodes, err = [], None
     last_fetch = 0.0
     selected = 0
@@ -159,27 +164,34 @@ def run_meshtastic_map(scr):
         map_w = w
         map_h = max(5, h - 3)
 
+        # Effective view center = home + pan offset (arrow keys adjust pan).
+        # Clamp lat to [-85, 85] (avoid pole singularity in cos scale) and
+        # wrap lon to [-180, 180].
+        view_lat = max(-85.0, min(85.0, home_lat + pan_lat))
+        view_lon = ((home_lon + pan_lon + 180.0) % 360.0) - 180.0
+
         canvas = tui.BrailleCanvas(map_w, map_h)
         active_layers = DEFAULT_LAYERS if show_overlay else 0
         if active_layers:
-            _draw_basemap_canvas(canvas, home_lat, home_lon, range_nm, active_layers)
+            _draw_basemap_canvas(canvas, view_lat, view_lon, range_nm, active_layers)
             _draw_range_rings(canvas, range_nm, 2)
 
         # Project & plot each node
         visible = []
         for n in nodes:
-            px, py, dx, dy = _project(n["lat"], n["lon"], home_lat, home_lon, range_nm, canvas.pw, canvas.ph)
+            px, py, dx, dy = _project(n["lat"], n["lon"], view_lat, view_lon, range_nm, canvas.pw, canvas.ph)
             if not (0 <= px < canvas.pw and 0 <= py < canvas.ph):
                 continue
             # 3x3 filled square so nodes stand out
             for oy in (-1, 0, 1):
                 for ox in (-1, 0, 1):
-                    canvas.pixel(px + ox, py + oy)
-            dist = _distance_nm(home_lat, home_lon, n["lat"], n["lon"])
+                    canvas.set(px + ox, py + oy)
+            dist = _distance_nm(view_lat, view_lon, n["lat"], n["lon"])
             visible.append((dist, px, py, n))
         visible.sort(key=lambda t: t[0])
 
-        canvas.blit(scr, map_y, map_x, map_attr)
+        for i, row in enumerate(canvas.render()):
+            tui.put(scr, map_y + i, map_x, row, map_w, map_attr)
         _draw_cardinals(scr, map_y, map_x, map_w, map_h, dim)
 
         # Node labels (short names next to dots)
@@ -207,21 +219,42 @@ def run_meshtastic_map(scr):
         else:
             tui.put(scr, h - 2, 1, "no nodes with position yet — waiting for NodeInfo packets…", w - 2, dim)
 
-        hints = "+/- zoom   j/k select   l labels   b basemap   h set home   r refresh   q quit"
+        # Pan offset indicator if map is not centered on home
+        if pan_lat or pan_lon:
+            pan_s = f"pan: {view_lat:+.2f},{view_lon:+.2f}  (c=center)"
+            tui.put(scr, 0, max(1, (w - len(pan_s)) // 2), pan_s, len(pan_s), dim)
+
+        hints = "arrows pan   +/- zoom   j/k select   c center   l labels   b basemap   h set home   r refresh   q quit"
         tui.put(scr, h - 1, 1, hints, w - 2, dim)
         scr.refresh()
+
+        # Pan step: 40% of the current view half-range, in degrees
+        pan_step_nm = range_nm * 0.4
+        pan_step_lat = pan_step_nm / 60.0
+        pan_step_lon = pan_step_nm / (60.0 * max(0.01, math.cos(math.radians(view_lat))))
 
         key, gp = _tui_input_loop(scr, js)
         if key in (ord("q"), ord("Q")) or gp == "back":
             break
-        elif key in (ord("+"), ord("="), curses.KEY_UP) or gp == "up":
+        elif key in (ord("+"), ord("=")):
             zoom_idx = max(0, zoom_idx - 1)
-        elif key in (ord("-"), ord("_"), curses.KEY_DOWN) or gp == "down":
+        elif key in (ord("-"), ord("_")):
             zoom_idx = min(len(ZOOM_LEVELS) - 1, zoom_idx + 1)
-        elif key in (ord("j"), curses.KEY_RIGHT) or gp == "right":
+        elif key == curses.KEY_UP or gp == "up":
+            pan_lat += pan_step_lat
+        elif key == curses.KEY_DOWN or gp == "down":
+            pan_lat -= pan_step_lat
+        elif key == curses.KEY_LEFT or gp == "left":
+            pan_lon -= pan_step_lon
+        elif key == curses.KEY_RIGHT or gp == "right":
+            pan_lon += pan_step_lon
+        elif key in (ord("c"), ord("C")):
+            pan_lat = 0.0
+            pan_lon = 0.0
+        elif key in (ord("j"), ord("J")):
             if visible:
                 selected = (selected + 1) % len(visible)
-        elif key in (ord("k"), curses.KEY_LEFT) or gp == "left":
+        elif key in (ord("k"), ord("K")):
             if visible:
                 selected = (selected - 1) % len(visible)
         elif key in (ord("l"), ord("L")):

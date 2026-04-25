@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}War Drive — uConsole{% endblock %}
+
+{% block extra_head %}
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+{% endblock %}
+
+{% block inline_style %}
+  html, body { height: 100%; margin: 0; padding: 0; background: #0a0a0a;
+    color: #e0e0e0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+  header { padding: 8px 12px; background: #111; border-bottom: 1px solid #222;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    font-size: 13px; }
+  header .title { font-weight: 700; color: #8ae234; letter-spacing: 0.5px; }
+  header .pill { background: #1a1a1a; padding: 3px 8px; border-radius: 10px;
+    border: 1px solid #333; color: #ccc; }
+  header .pill.live { color: #8ae234; border-color: #2d5016;
+    animation: pulse 1.8s ease-in-out infinite; }
+  header .pill.stale { color: #888; }
+  header select, header button { background: #1a1a1a; color: #e0e0e0;
+    border: 1px solid #333; padding: 4px 10px; border-radius: 4px;
+    font-family: inherit; font-size: 13px; cursor: pointer; }
+  header button:hover { background: #252525; border-color: #555; }
+  header a { color: #8ae234; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  #map { flex: 1; background: #1a1a1a; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+  .leaflet-tooltip.wd-tip { background: rgba(17,17,17,0.95); color: #e0e0e0;
+    border: 1px solid #333; font-family: ui-monospace, monospace; font-size: 12px; }
+  .leaflet-popup-content-wrapper { background: #111; color: #e0e0e0; border-radius: 6px; }
+  .leaflet-popup-tip { background: #111; }
+  .wd-popup { font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; }
+  .wd-popup .k { color: #888; }
+  .wd-popup .v { color: #e0e0e0; }
+  .wd-popup .essid { color: #8ae234; font-weight: 700; font-size: 13px; }
+  .legend { position: absolute; bottom: 16px; left: 16px; z-index: 500;
+    background: rgba(17,17,17,0.92); padding: 8px 12px; border-radius: 6px;
+    border: 1px solid #333; font-size: 11px; line-height: 1.8; }
+  .legend .row { display: flex; align-items: center; gap: 8px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+{% endblock %}
+
+{% block body %}
+<body>
+<div id="app">
+  <header>
+    <span class="title">◉ WAR DRIVE</span>
+    <select id="session-select" title="Session">
+      {% if initial_sessions %}
+        {% for s in initial_sessions %}
+          <option value="{{ s.name }}">{{ s.label }} · {{ '%.1f'|format(s.size / 1024) }} KB{% if s.live %} · LIVE{% endif %}</option>
+        {% endfor %}
+      {% else %}
+        <option disabled>No sessions found in {{ log_dir }}</option>
+      {% endif %}
+    </select>
+    <span class="pill" id="status">—</span>
+    <span class="pill" id="ap-count">0 APs</span>
+    <span class="pill" id="size-pill">0 KB</span>
+    <button id="toggle-heat">Heatmap</button>
+    <button id="toggle-track">Path</button>
+    <button id="fit">Fit</button>
+    <button id="follow">Follow</button>
+    <span style="flex: 1"></span>
+    <a href="/">← Dashboard</a>
+  </header>
+  <div id="map"></div>
+  <div class="legend">
+    <div class="row"><span class="dot" style="background:#44cc44"></span>RSSI &gt; −50 dBm</div>
+    <div class="row"><span class="dot" style="background:#e6c200"></span>−50 to −70 dBm</div>
+    <div class="row"><span class="dot" style="background:#e55a5a"></span>&lt; −70 dBm</div>
+    <div class="row"><span class="dot" style="background:#4cb8ff;border:2px solid #fff"></span>You</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView([40.7128, -74.0060], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  const clusters = L.markerClusterGroup({
+    maxClusterRadius: 40, spiderfyOnMaxZoom: true, showCoverageOnHover: false,
+  }).addTo(map);
+
+  let heat = null;
+  let showHeat = false;
+  const trackLine = L.polyline([], { color: '#4cb8ff', weight: 3, opacity: 0.8 });
+  let showTrack = true;
+  trackLine.addTo(map);
+
+  let youMarker = null;
+  let follow = true;
+
+  const byBssid = new Map();   // bssid -> {lat, lon, best_rssi, essid, ch}
+  const trackPts = [];
+  let currentSession = null;
+  let since = 0;
+  let totalRows = 0;
+  let fileSize = 0;
+  let fileMtime = 0;
+  let firstLoad = true;
+
+  const rssiColor = (r) => r > -50 ? '#44cc44' : r > -70 ? '#e6c200' : '#e55a5a';
+  const rssiRadius = (r) => Math.max(4, 10 + Math.max(-90, Math.min(-30, r)) / 6);
+
+  function fmtSize(b) {
+    if (b >= 1024 * 1024) return (b / 1048576).toFixed(2) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+  function fmtAge(sec) {
+    if (sec < 60) return Math.round(sec) + 's ago';
+    if (sec < 3600) return Math.round(sec / 60) + 'm ago';
+    if (sec < 86400) return Math.round(sec / 3600) + 'h ago';
+    return Math.round(sec / 86400) + 'd ago';
+  }
+
+  function makeMarker(ap) {
+    const m = L.circleMarker([ap.lat, ap.lon], {
+      radius: rssiRadius(ap.best_rssi),
+      color: rssiColor(ap.best_rssi),
+      fillColor: rssiColor(ap.best_rssi),
+      fillOpacity: 0.7, weight: 1.5,
+    });
+    const essid = (ap.essid || '(hidden)').replace(/</g, '&lt;');
+    m.bindPopup(`<div class="wd-popup">
+      <div class="essid">${essid}</div>
+      <div><span class="k">BSSID:</span> <span class="v">${ap.bssid}</span></div>
+      <div><span class="k">Ch:</span> <span class="v">${ap.channel}</span>
+      <span class="k">· Best RSSI:</span> <span class="v">${ap.best_rssi} dBm</span></div>
+      <div><span class="k">Seen:</span> <span class="v">${ap.sightings}×</span></div>
+    </div>`);
+    m.bindTooltip(essid, { className: 'wd-tip', direction: 'top', offset: [0, -4] });
+    return m;
+  }
+
+  function refitAll() {
+    const pts = [];
+    byBssid.forEach(a => pts.push([a.lat, a.lon]));
+    trackPts.forEach(p => pts.push([p[0], p[1]]));
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      map.setView(pts[0], 17);
+    } else {
+      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 18 });
+    }
+  }
+
+  function rebuildHeat() {
+    if (heat) { map.removeLayer(heat); heat = null; }
+    if (!showHeat) return;
+    const pts = [];
+    byBssid.forEach(a => pts.push([a.lat, a.lon,
+      Math.max(0.2, (a.best_rssi + 90) / 60)]));
+    heat = L.heatLayer(pts, { radius: 25, blur: 18, maxZoom: 18 }).addTo(map);
+  }
+
+  function updateTrackDisplay() {
+    trackLine.setLatLngs(showTrack ? trackPts : []);
+  }
+
+  function setYouPosition(lat, lon) {
+    if (!youMarker) {
+      youMarker = L.circleMarker([lat, lon], {
+        radius: 8, color: '#fff', weight: 3,
+        fillColor: '#4cb8ff', fillOpacity: 0.9,
+      }).addTo(map);
+      youMarker.bindTooltip('You', { permanent: false, direction: 'top' });
+    } else {
+      youMarker.setLatLng([lat, lon]);
+    }
+    if (follow) {
+      map.panTo([lat, lon], { animate: true, duration: 0.8 });
+    }
+  }
+
+  function setStatusPill(text, cls) {
+    const el = document.getElementById('status');
+    el.textContent = text;
+    el.className = 'pill' + (cls ? ' ' + cls : '');
+  }
+
+  async function loadSessions() {
+    const sel = document.getElementById('session-select');
+    let r, j;
+    try {
+      r = await fetch('/api/wardrive/sessions', { credentials: 'same-origin' });
+    } catch (e) {
+      console.error('sessions fetch failed:', e);
+      sel.innerHTML = '<option disabled>Network error</option>';
+      setStatusPill('network error', 'stale');
+      return;
+    }
+    if (r.redirected || r.url.includes('/login')) {
+      sel.innerHTML = '<option disabled>Session expired — reload</option>';
+      setStatusPill('login required', 'stale');
+      return;
+    }
+    if (!r.ok) {
+      console.error('sessions HTTP', r.status);
+      sel.innerHTML = `<option disabled>HTTP ${r.status}</option>`;
+      setStatusPill('server error', 'stale');
+      return;
+    }
+    try {
+      j = await r.json();
+    } catch (e) {
+      console.error('sessions JSON parse failed:', e);
+      sel.innerHTML = '<option disabled>Bad response</option>';
+      setStatusPill('parse error', 'stale');
+      return;
+    }
+    console.log('sessions:', j);
+    sel.innerHTML = '';
+    if (!j.sessions || j.sessions.length === 0) {
+      const opt = document.createElement('option');
+      opt.textContent = 'No sessions yet — run wardrive-demo.py or start a session';
+      opt.disabled = true;
+      sel.appendChild(opt);
+      setStatusPill('no data', 'stale');
+      return;
+    }
+    j.sessions.forEach((s, i) => {
+      const opt = document.createElement('option');
+      const label = s.name.replace('wardrive-', '').replace('.csv', '') +
+        ' · ' + fmtSize(s.size) + (s.live ? ' · LIVE' : '');
+      opt.value = s.name;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
+    if (!currentSession) currentSession = j.sessions[0].name;
+    sel.value = currentSession;
+  }
+
+  async function pollData() {
+    if (!currentSession) {
+      await loadSessions();
+      if (!currentSession) return;
+    }
+    let r;
+    try {
+      r = await fetch(`/api/wardrive/data/${currentSession}?since=${since}`,
+                      { credentials: 'same-origin' });
+    } catch (e) {
+      console.error('data fetch failed:', e);
+      setStatusPill('network error', 'stale');
+      return;
+    }
+    if (!r.ok) { setStatusPill(`HTTP ${r.status}`, 'stale'); return; }
+    const j = await r.json();
+    totalRows = j.total_rows;
+    fileSize = j.size;
+    fileMtime = j.mtime;
+
+    let newCount = 0;
+    let lastTrack = trackPts.length ? trackPts[trackPts.length - 1] : null;
+
+    for (const row of j.rows) {
+      since = row.idx + 1;
+      if (!row.bssid || row.lat === null || row.lon === null) continue;
+
+      // Track: include every position in chronological order if distinct
+      if (!lastTrack || Math.abs(lastTrack[0] - row.lat) > 1e-6
+          || Math.abs(lastTrack[1] - row.lon) > 1e-6) {
+        trackPts.push([row.lat, row.lon]);
+        lastTrack = [row.lat, row.lon];
+      }
+
+      const existing = byBssid.get(row.bssid);
+      if (!existing) {
+        const ap = {
+          bssid: row.bssid, essid: row.essid, channel: row.channel,
+          lat: row.lat, lon: row.lon,
+          best_rssi: row.rssi, sightings: 1,
+          marker: null,
+        };
+        ap.marker = makeMarker(ap);
+        clusters.addLayer(ap.marker);
+        byBssid.set(row.bssid, ap);
+        newCount++;
+      } else {
+        existing.sightings++;
+        if (row.rssi > existing.best_rssi) {
+          existing.best_rssi = row.rssi;
+          existing.lat = row.lat;
+          existing.lon = row.lon;
+          clusters.removeLayer(existing.marker);
+          existing.marker = makeMarker(existing);
+          clusters.addLayer(existing.marker);
+        }
+      }
+    }
+
+    if (newCount > 0) {
+      updateTrackDisplay();
+      if (showHeat) rebuildHeat();
+    }
+
+    // Update header
+    const ageSec = Date.now() / 1000 - fileMtime;
+    const isLive = ageSec < 10;
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = isLive ? '● LIVE' : ('last write ' + fmtAge(ageSec));
+    statusEl.className = 'pill ' + (isLive ? 'live' : 'stale');
+    document.getElementById('ap-count').textContent =
+      byBssid.size + ' APs · ' + totalRows + ' rows';
+    document.getElementById('size-pill').textContent = fmtSize(fileSize);
+
+    // Update "you" marker from the most recent GPS point
+    if (trackPts.length) {
+      const last = trackPts[trackPts.length - 1];
+      setYouPosition(last[0], last[1]);
+    }
+
+    // Auto-fit on first non-empty load
+    if (firstLoad && byBssid.size > 0) {
+      refitAll();
+      firstLoad = false;
+    }
+  }
+
+  // Controls
+  document.getElementById('session-select').addEventListener('change', (e) => {
+    currentSession = e.target.value;
+    since = 0;
+    totalRows = 0;
+    byBssid.forEach(a => clusters.removeLayer(a.marker));
+    byBssid.clear();
+    trackPts.length = 0;
+    updateTrackDisplay();
+    if (heat) { map.removeLayer(heat); heat = null; }
+    if (youMarker) { map.removeLayer(youMarker); youMarker = null; }
+    firstLoad = true;
+    pollData();
+  });
+  document.getElementById('toggle-heat').addEventListener('click', (e) => {
+    showHeat = !showHeat;
+    e.target.style.background = showHeat ? '#2d5016' : '#1a1a1a';
+    rebuildHeat();
+  });
+  document.getElementById('toggle-track').addEventListener('click', (e) => {
+    showTrack = !showTrack;
+    e.target.style.background = showTrack ? '#2d5016' : '#1a1a1a';
+    updateTrackDisplay();
+  });
+  document.getElementById('fit').addEventListener('click', refitAll);
+  document.getElementById('follow').addEventListener('click', (e) => {
+    follow = !follow;
+    e.target.style.background = follow ? '#2d5016' : '#1a1a1a';
+  });
+  document.getElementById('toggle-track').style.background = '#2d5016';
+  document.getElementById('follow').style.background = '#2d5016';
+
+  // Seed currentSession from the server-rendered dropdown.
+  (() => {
+    const sel = document.getElementById('session-select');
+    if (sel.options.length && sel.options[0].value) {
+      currentSession = sel.options[0].value;
+      sel.value = currentSession;
+    }
+  })();
+
+  // Kick off
+  (async () => {
+    if (currentSession) {
+      pollData();
+    } else {
+      await loadSessions();
+      pollData();
+    }
+    setInterval(pollData, 3000);
+    setInterval(loadSessions, 15000);  // pick up new sessions
+  })();
+})();
+</script>
+</body>
+{% endblock %}
