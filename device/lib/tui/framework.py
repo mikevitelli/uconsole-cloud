@@ -1544,15 +1544,15 @@ TILE_W_MIN = 22
 TILE_H = 5
 
 CAT_ICONS = {
-    "SYSTEM": "\u2699",
-    "MONITOR": "\u25c9",
-    "FILES": "\u25a4",
-    "POWER": "\u26a1",
-    "NETWORK": "\u25ce",
-    "HARDWARE": "\u2301",
-    "TOOLS": "\u2605",
-    "GAMES": "\u265f",
-    "CONFIG": "\u2630",
+    "SYSTEM":   "\U0001F9F0",  # \ud83e\uddf0  toolbox \u2014 updates, backups, webdash, cron
+    "MONITOR":  "\U0001F4CA",  # \ud83d\udcca  bar chart \u2014 live monitor, processes, logs
+    "FILES":    "\U0001F4C1",  # \ud83d\udcc1  folder \u2014 file browser, audit, disk usage
+    "POWER":    "\U0001F50B",  # \ud83d\udd0b  battery \u2014 battery, cell health, power ctl
+    "NETWORK":  "\U0001F4F6",  # \ud83d\udcf6  signal bars \u2014 wifi, hotspot, BT, SSH
+    "HARDWARE": "\U0001F4E1",  # \ud83d\udce1  satellite dish \u2014 GPS, SDR, ADS-B, LoRa, ESP32
+    "TOOLS":    "\U0001F6E0",  # \ud83d\udee0   hammer + wrench \u2014 calc, notes, weather, telegram
+    "GAMES":    "\U0001F3AE",  # \ud83c\udfae  game pad \u2014 Watch Dogs, Tetris, ROM launcher
+    "CONFIG":   "\U0001F39B",  # \ud83c\udf9b   control knobs \u2014 theme, viewmode, keybinds
 }
 
 CAT_DESCS = {
