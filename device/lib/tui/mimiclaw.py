@@ -58,25 +58,18 @@ def _save_ip(ip, ssid=None):
         pass
 
 
-def _probe_ip_via_serial(port="/dev/ttyACM0", timeout=2.0):
+def _probe_ip_via_serial(port=None, timeout=2.0):
     """Ask MimiClaw for its current IP over serial. Returns IP string or None.
 
-    Matches the `_query_mimiclaw_status` pattern below — short-lived serial,
-    no persistent connection, surface-level parsing. Does not raise.
+    Uses esp32_detect.open_ready so we don't fight the open-time chip
+    reset on ESP32-S3 USB-Serial/JTAG.
     """
-    try:
-        import serial as pyserial
-    except ImportError:
-        return None
-    try:
-        ser = pyserial.Serial(port, 115200, timeout=timeout)
-    except Exception:
+    from tui import esp32_detect
+    ser, _fw = esp32_detect.open_ready(port=port, open_timeout=timeout)
+    if ser is None:
         return None
     try:
         ser.reset_input_buffer()
-        ser.write(b"\r\n")
-        time.sleep(0.2)
-        ser.read(ser.in_waiting or 1024)
         ser.write(b"wifi_status\r\n")
         time.sleep(1.0)
         buf = b""
@@ -93,10 +86,7 @@ def _probe_ip_via_serial(port="/dev/ttyACM0", timeout=2.0):
         ip = m.group(1)
         return ip if ip != "0.0.0.0" else None
     finally:
-        try:
-            ser.close()
-        except Exception:
-            pass
+        esp32_detect._close_fast(ser)
 
 
 def _resolve_ip(prefer_fresh=False):
@@ -208,19 +198,12 @@ def _get_uconsole_wifi():
 
 def _serial_write_and_read(cmd, wait_secs=1.0, timeout=2.0):
     """One-shot serial write → read. Returns decoded response, or None on port error."""
-    try:
-        import serial as pyserial
-    except ImportError:
-        return None
-    try:
-        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=timeout)
-    except Exception:
+    from tui import esp32_detect
+    ser, _fw = esp32_detect.open_ready(open_timeout=timeout)
+    if ser is None:
         return None
     try:
         ser.reset_input_buffer()
-        ser.write(b"\r\n")
-        time.sleep(0.2)
-        ser.read(ser.in_waiting or 1024)
         ser.write(cmd)
         time.sleep(wait_secs)
         buf = b""
@@ -232,10 +215,7 @@ def _serial_write_and_read(cmd, wait_secs=1.0, timeout=2.0):
                 break
         return buf.decode("utf-8", errors="replace")
     finally:
-        try:
-            ser.close()
-        except Exception:
-            pass
+        esp32_detect._close_fast(ser)
 
 
 def _apply_wifi_creds(scr, ssid, password):
@@ -245,16 +225,14 @@ def _apply_wifi_creds(scr, ssid, password):
     except ValueError as e:
         return False, str(e)
 
-    import serial as pyserial
-    try:
-        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=2)
-    except Exception as e:
-        return False, f"Serial port busy: {e}. Close Serial Monitor and retry."
+    from tui import esp32_detect
+    ser, _fw = esp32_detect.open_ready(open_timeout=2)
+    if ser is None:
+        return False, "Serial port busy or chip silent. Close Serial Monitor and retry."
 
     try:
         # Step 1: set_wifi + wait for confirmation
         ser.reset_input_buffer()
-        ser.write(b"\r\n"); time.sleep(0.2); ser.read(ser.in_waiting or 1024)
         ser.write(payload)
         deadline = time.time() + 3.0
         saved_buf = ""
@@ -270,10 +248,7 @@ def _apply_wifi_creds(scr, ssid, password):
         # Step 2: restart
         ser.write(b"restart\r\n"); time.sleep(0.2)
     finally:
-        try:
-            ser.close()
-        except Exception:
-            pass
+        esp32_detect._close_fast(ser)
 
     # Step 3: progress screen while device reboots (~10s boot + connect time)
     h, w = scr.getmaxyx()
@@ -841,21 +816,22 @@ def run_mimiclaw_chat(scr):
 
 
 def run_mimiclaw_serial(scr):
-    """Raw serial monitor for MimiClaw on /dev/ttyACM0."""
-    import serial as pyserial
+    """Raw serial monitor for MimiClaw on /dev/esp32."""
+    from tui import esp32_detect
 
     js = open_gamepad()
     scr.timeout(50)
     lines = []
 
-    try:
-        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=0.05)
-    except Exception as e:
+    ser, _fw = esp32_detect.open_ready(open_timeout=0.05, ready_timeout=7.0)
+    if ser is None:
         scr.erase()
-        scr.addnstr(1, 1, f"Cannot open /dev/ttyACM0: {e}", 60, curses.color_pair(C_STATUS))
+        scr.addnstr(1, 1, "Cannot open ESP32 serial port", 60, curses.color_pair(C_STATUS))
         scr.refresh()
         time.sleep(2)
         return
+    # readline() needs a short blocking timeout for the polling loop
+    ser.timeout = 0.05
 
     while True:
         h, w = scr.getmaxyx()
@@ -897,7 +873,7 @@ def run_mimiclaw_serial(scr):
         if key == ord("q") or key == ord("Q") or gp == "back":
             break
 
-    ser.close()
+    esp32_detect._close_fast(ser)
     if js:
         js.close()
 
@@ -916,29 +892,19 @@ def _query_mimiclaw_status():
     `config_show` + `wifi_status` + `heap_info` to cover the menu's
     "agent status and WiFi info" intent.
     """
-    try:
-        import serial as pyserial
-    except ImportError as e:
-        return [f"Error: {e}"]
-    try:
-        ser = pyserial.Serial("/dev/ttyACM0", 115200, timeout=2)
-    except Exception as e:
-        return [f"Error: {e}"]
+    from tui import esp32_detect
+    ser, _fw = esp32_detect.open_ready(open_timeout=2)
+    if ser is None:
+        return ["Error: cannot open ESP32 serial port"]
 
     out = []
     try:
-        # Wake prompt + drain any pending output
         ser.reset_input_buffer()
-        ser.write(b"\r\n")
-        time.sleep(0.2)
-        ser.read(ser.in_waiting or 1024)
-
         for cmd, header in _STATUS_PROBES:
             out.append(header)
             ser.write(cmd)
             time.sleep(1.0)
             buf = b""
-            # Drain until quiet for one poll cycle
             for _ in range(20):
                 if ser.in_waiting:
                     buf += ser.read(ser.in_waiting)
@@ -947,13 +913,12 @@ def _query_mimiclaw_status():
                     break
             for ln in buf.decode("utf-8", errors="replace").splitlines():
                 ln = ln.rstrip()
-                # Skip echoed command, empty lines, and the bare prompt
                 if not ln or ln == cmd.decode().strip() or ln.strip() == "mimi>":
                     continue
                 out.append(ln)
             out.append("")
     finally:
-        ser.close()
+        esp32_detect._close_fast(ser)
     return out
 
 

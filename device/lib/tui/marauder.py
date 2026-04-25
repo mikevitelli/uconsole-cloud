@@ -86,30 +86,36 @@ class _Conn:
         self.ok = False
 
     def connect(self):
-        try:
-            import serial as _pyserial
-        except ImportError:
-            return False
+        """Open the serial port and wait for Marauder to be responsive.
+
+        Uses esp32_detect.open_ready so we don't fight the open-time
+        chip reset on ESP32-S3 USB-Serial/JTAG (S3 silicon has no
+        firmware-side disable for host-driven reset).
+        """
+        from tui import esp32_detect
         for dev in self.PORTS:
+            ser, fw = esp32_detect.open_ready(
+                port=dev, ready_timeout=4.0, open_timeout=0.1,
+            )
+            if ser is None:
+                continue
+            self.port = ser
+            self.dev_path = dev
+            self._stop.clear()
+            self._ready.clear()
+            self._thread = threading.Thread(target=self._reader, daemon=True)
+            self._thread.start()
+            self._ready.wait(timeout=1)  # block until reader is running
+            self.ok = True
+            # Reset Marauder state: stop any pending scan, drain
             try:
-                self.port = _pyserial.Serial(dev, self.BAUD, timeout=0.1)
-                self.dev_path = dev
-                self._stop.clear()
-                self._ready.clear()
-                self._thread = threading.Thread(target=self._reader, daemon=True)
-                self._thread.start()
-                self._ready.wait(timeout=1)  # block until reader is running
-                self.ok = True
-                # Reset Marauder state: stop any pending scan, wake, drain
-                self.port.write(b"\r\n")
-                time.sleep(0.2)
                 self.port.write(b"stopscan\r\n")
                 time.sleep(0.5)
                 self.port.reset_input_buffer()
-                self.clear()
-                return True
             except Exception:
-                continue
+                pass
+            self.clear()
+            return True
         return False
 
     def close(self):
@@ -121,10 +127,8 @@ class _Conn:
         if self._thread:
             self._thread.join(timeout=1)
         if self.port:
-            try:
-                self.port.close()
-            except Exception:
-                pass
+            from tui import esp32_detect
+            esp32_detect._close_fast(self.port)
         self.port = None
         self.ok = False
 
