@@ -183,6 +183,7 @@ SUBMENUS = {
         ("NMEA Stream",      "radio/gps.sh nmea",         "raw NMEA sentence output",               "fullscreen"),
         ("Time Compare",     "radio/gps.sh time",         "GPS vs system vs RTC time",              "panel"),
         ("Log Position",     "radio/gps.sh log",          "append fix to gps.log",                  "action"),
+        ("PyGPSClient (GUI)","_gui:pygpsclient",          "NMEA/UBX decoder with charts",           "action"),
     ],
     "sub:sdr": [
         ("Status",           "radio/sdr.sh status",       "RTL2838 device check",                   "panel"),
@@ -194,6 +195,10 @@ SUBMENUS = {
         ("IoT Scanner",      "radio/sdr.sh 433",          "rtl_433 device decoder",                 "fullscreen"),
         ("Pager Decode",     "radio/sdr.sh decode",       "POCSAG/pager decoding",                  "fullscreen"),
         ("Record IQ",        "radio/sdr.sh record",       "capture raw IQ samples",                 "stream"),
+        ("SDR++ (GUI)",      "_gui:sdrpp",                "SDR++ Brown — full-band GUI receiver",   "action"),
+        ("SatDump (GUI)",    "_gui:satdump",              "decode NOAA / Meteor / GOES imagery",    "action"),
+        ("SDRTrunk (GUI)",   "_gui:sdrtrunk",             "P25/DMR/trunked voice decoder",          "action"),
+        ("WSJT-X (GUI)",     "_gui:wsjtx",                "FT8 / JT65 weak-signal digital modes",   "action"),
     ],
     "sub:adsb": [
         ("Live Map",          "_adsb_map",          "real-time aircraft map with headings",    "action"),
@@ -204,10 +209,12 @@ SUBMENUS = {
         ("Fetch Hi-Res",      "_adsb_fetch_hires",  "download 1:10m basemap for your region",  "action"),
         ("Basemap Info",      "_adsb_basemap_info", "loaded files, feature counts, cache",     "action"),
         ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch dump1090 interactive",             "fullscreen"),
+        ("Web Map (tar1090)", "_url:https://uconsole.local/tar1090", "browser map via nginx",  "action"),
     ],
     "sub:lora_mesh": [
         ("Map",              "_mesh_map",                           "live mesh nodes on a world map",         "action"),
         ("Chat (Web UI)",    "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel"),
+        ("GUI (mesh-ui)",    "_gui:meshtastic-ui",                  "desktop Meshtastic GUI",                 "action"),
         ("Broadcast",        "radio/meshtastic.sh send",            "text to primary channel",                "fullscreen"),
         ("Direct Message",   "radio/meshtastic.sh send-dm",         "DM a specific !nodeid (prompts)",        "fullscreen"),
         ("Broadcast + ACK",  "radio/meshtastic.sh send-ack",        "broadcast with --ack request",           "fullscreen"),
@@ -1168,6 +1175,47 @@ def run_action(scr, script_name, title):
     time.sleep(1.5)
 
 
+def run_gui_launch(scr, binary, title):
+    """Spawn a detached GUI app and flash status in the TUI."""
+    import shutil
+    from tui.launcher import launch_gui
+    h, w = scr.getmaxyx()
+    argv = binary.split()
+    path = shutil.which(argv[0])
+    if not path:
+        draw_status_bar(scr, h, w, f"  ✗ {argv[0]} not found in PATH",
+                        curses.color_pair(C_HEADER) | curses.A_BOLD)
+        scr.refresh()
+        time.sleep(1.5)
+        return
+    try:
+        launch_gui([path] + argv[1:])
+        msg = f"  ▶ Launched {title}"
+        attr = curses.color_pair(C_STATUS) | curses.A_BOLD
+    except Exception as e:
+        msg = f"  ✗ {title} — {e}"
+        attr = curses.color_pair(C_HEADER) | curses.A_BOLD
+    draw_status_bar(scr, h, w, msg, attr)
+    scr.refresh()
+    time.sleep(1.0)
+
+
+def run_url_open(scr, url, title):
+    """Open a URL via xdg-open, detached."""
+    from tui.launcher import launch_gui
+    h, w = scr.getmaxyx()
+    try:
+        launch_gui(["xdg-open", url])
+        msg = f"  ▶ Opening {title}"
+        attr = curses.color_pair(C_STATUS) | curses.A_BOLD
+    except Exception as e:
+        msg = f"  ✗ {title} — {e}"
+        attr = curses.color_pair(C_HEADER) | curses.A_BOLD
+    draw_status_bar(scr, h, w, msg, attr)
+    scr.refresh()
+    time.sleep(1.0)
+
+
 def run_fullscreen(scr, script_name):
     """Drop to terminal for interactive scripts."""
     path, cmd = _resolve_cmd(script_name)
@@ -1908,6 +1956,8 @@ _ESP32_MICROPYTHON_ITEMS = [
 
 _ESP32_MARAUDER_ITEMS = [
     ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
+    ("War Drive",        "_wardrive",                      "GPS-tagged AP sweep \u2192 CSV",        "action",     "◉"),
+    ("Replay Session",   "_wardrive_replay",               "browse + replay past war-drive CSVs",   "action",     "\u23f5"),
     ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
     ("Status",           "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "📡"),
     ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
@@ -1926,6 +1976,13 @@ _ESP32_MIMICLAW_ITEMS = [
     ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
     ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
     ("Settings",         "sub:mimiclaw:settings","WiFi, tokens, model provider",          "submenu",    "⚙"),
+]
+
+
+_ESP32_MIMICLAW_ITEMS = [
+    ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
+    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
+    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
 ]
 
 
@@ -2554,7 +2611,7 @@ def _get_native_tools():
     from tui import adsb_hires as _adsb_hires_mod
     from tui import adsb as _adsb_mod
     from tui.meshtastic_map import run_meshtastic_map
-    from tui.marauder import run_marauder
+    from tui.marauder import run_marauder, run_wardrive, run_wardrive_replay
     from tui.telegram import run_telegram
     # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
     # launcher.py on a deployed device) can't brick the entire native-tools
@@ -2628,6 +2685,8 @@ def _get_native_tools():
         "_mimiclaw_status": lambda scr: _run_mimiclaw("run_mimiclaw_status", scr),
         "_mimiclaw_wifi":   lambda scr: _run_mimiclaw("run_mimiclaw_wifi", scr),
         "_marauder":      lambda scr: run_marauder(scr),
+        "_wardrive":      lambda scr: run_wardrive(scr),
+        "_wardrive_replay": lambda scr: run_wardrive_replay(scr),
         "_gps_globe":     lambda scr: run_gps_globe(scr),
         "_fm_radio":      lambda scr: run_fm_radio(scr),
         "_adsb_map":          lambda scr: run_adsb_map(scr),
@@ -2694,9 +2753,11 @@ def _adsb_fetch_hires_entry(scr, hires_mod, adsb_mod):
             return
 
 
+
 def _run_mimiclaw(fn_name, scr):
     import tui.mimiclaw as _mc
     return getattr(_mc, fn_name)(scr)
+
 
 
 NATIVE_TOOLS = None
@@ -2709,6 +2770,12 @@ def run_script(scr, script_name, title, mode):
         NATIVE_TOOLS = _get_native_tools()
     if mode == "submenu":
         return run_submenu(scr, script_name, title)
+    if script_name.startswith("_gui:"):
+        run_gui_launch(scr, script_name[5:], title)
+        return None
+    if script_name.startswith("_url:"):
+        run_url_open(scr, script_name[5:], title)
+        return None
     if script_name in NATIVE_TOOLS:
         result = NATIVE_TOOLS[script_name](scr)
         if script_name == "_viewmode":

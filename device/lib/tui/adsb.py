@@ -122,27 +122,48 @@ def _load_global_basemap():
 
 
 def _load_hires_basemap(home_lat, home_lon):
+    """Load the hires bundle for the current home. If no bundle exists for
+    this key, keep whatever was previously loaded so panning away from home
+    doesn't wipe out hires detail (global-lite still fills in beyond its
+    bbox via _iter_layer combining sources)."""
     key = _hires_key(home_lat, home_lon)
     if _BASEMAP["hires_key"] == key:
         return _BASEMAP["hires"]
-    _BASEMAP["hires_key"] = key
     path = _hires_path_for(key)
     try:
         with open(path) as f:
             _BASEMAP["hires"] = json.load(f)
+            _BASEMAP["hires_key"] = key
     except Exception:
-        _BASEMAP["hires"] = None
+        # No bundle for this key — keep prior cache. The panned viewport's
+        # bbox cull will hide hires features outside their region.
+        pass
     return _BASEMAP["hires"]
 
 
-def _iter_layer(layer_name, home_lat, home_lon):
-    """Yield items from the named layer, hires preferred over global."""
-    hires = _load_hires_basemap(home_lat, home_lon)
+def _iter_layer(layer_name, view_lat, view_lon):
+    """Pick hires when view is inside the loaded hires bundle's coverage,
+    else fall back to global-lite. This avoids stacking the coarse 1:110m
+    global over hires's 1:10m data — overlap looked like random extra
+    lines cutting through features (e.g. a state border sliced through
+    Staten Island at 1:110m resolution)."""
+    hires = _load_hires_basemap(view_lat, view_lon)
     if hires:
-        items = hires.get("layers", {}).get(layer_name)
-        if items:
-            yield from items
-            return
+        # Is the current view inside the hires bundle's coverage area?
+        # hires_key is "{home_lat}_{home_lon}" (rounded ints); coverage
+        # is ±5° lat, ±7° lon (matches adsb_hires.BBOX_PAD).
+        key = _BASEMAP.get("hires_key")
+        if key:
+            try:
+                hlat_str, hlon_str = key.split("_")
+                hlat, hlon = int(hlat_str), int(hlon_str)
+                if abs(view_lat - hlat) <= 6 and abs(view_lon - hlon) <= 8:
+                    items = hires.get("layers", {}).get(layer_name)
+                    if items:
+                        yield from items
+                        return
+            except (ValueError, AttributeError):
+                pass
     g = _load_global_basemap()
     items = g.get("layers", {}).get(layer_name) or []
     yield from items
@@ -405,6 +426,11 @@ def run_adsb_map(scr):
     show_overlay = bool(_cfg.get("adsb_overlay", True))
     layers = int(_cfg.get("adsb_layers", DEFAULT_LAYERS))
 
+    # Pan offset (arrow keys) — view center = home + pan. Persists for session,
+    # cleared on 'c' (center). Not saved to config.
+    pan_lat = 0.0
+    pan_lon = 0.0
+
     # Session-local fetch state (set by adsb_hires.fetch_in_background)
     fetch_state = {"status": "idle", "msg": "", "banner_dismissed": False}
 
@@ -444,6 +470,10 @@ def run_adsb_map(scr):
 
         aircraft, err = _load_aircraft()
 
+        # View center = home + pan (arrows adjust). Clamp lat, wrap lon.
+        view_lat = max(-85.0, min(85.0, home_lat + pan_lat))
+        view_lon = ((home_lon + pan_lon + 180.0) % 360.0) - 180.0
+
         # Full-screen map: occupy entire terminal minus 1-row header and 1-row footer
         map_x = 0
         map_y = 1
@@ -453,7 +483,7 @@ def run_adsb_map(scr):
         canvas = tui.BrailleCanvas(map_w, map_h)
         active_layers = layers if show_overlay else 0
         if active_layers:
-            _draw_basemap_canvas(canvas, home_lat, home_lon, range_nm, active_layers)
+            _draw_basemap_canvas(canvas, view_lat, view_lon, range_nm, active_layers)
         if show_overlay and (active_layers & LAYER_RINGS):
             _draw_range_rings(canvas, range_nm, ring_count)
 
@@ -467,7 +497,7 @@ def run_adsb_map(scr):
             lon = ac.get("lon")
             if lat is None or lon is None:
                 continue
-            px, py, dx, dy = _project(lat, lon, home_lat, home_lon, range_nm, canvas.pw, canvas.ph)
+            px, py, dx, dy = _project(lat, lon, view_lat, view_lon, range_nm, canvas.pw, canvas.ph)
             dist = math.sqrt(dx * dx + dy * dy)
             if not (0 <= px < canvas.pw and 0 <= py < canvas.ph):
                 continue
@@ -495,7 +525,7 @@ def run_adsb_map(scr):
             tui.put(scr, map_y + i, map_x, row, map_w, map_attr)
 
         if show_overlay and (active_layers & LAYER_AIRPORTS):
-            _draw_airport_labels(scr, map_y, map_x, home_lat, home_lon, range_nm,
+            _draw_airport_labels(scr, map_y, map_x, view_lat, view_lon, range_nm,
                                  canvas.pw, canvas.ph,
                                  curses.color_pair(tui.C_WARN) | curses.A_BOLD)
         if show_overlay and (active_layers & LAYER_CARDINALS):
@@ -553,18 +583,39 @@ def run_adsb_map(scr):
             tui.put(scr, h - 2, 1, "✓ hi-res basemap ready  (x dismiss)", w - 2,
                     curses.color_pair(tui.C_OK) | curses.A_BOLD)
 
-        foot = "↑↓ sel  +/- zoom  l layers  r rings  o overlay  f hi-res  h home  q back"
+        # Pan indicator if off-home
+        if pan_lat or pan_lon:
+            pan_s = f"pan: {view_lat:+.2f},{view_lon:+.2f}  (c=center)"
+            tui.put(scr, 0, max(1, (w - len(pan_s)) // 2), pan_s, len(pan_s), dim)
+
+        foot = "arrows pan  +/- zoom  j/k sel  c center  l layers  r rings  o overlay  f hi-res  h home  q back"
         tui.put(scr, h - 1, 1, foot, w - 2, dim)
+
+        # Pan step: 40% of current view half-range
+        pan_step_nm = range_nm * 0.4
+        pan_step_lat = pan_step_nm / 60.0
+        pan_step_lon = pan_step_nm / (60.0 * max(0.01, math.cos(math.radians(view_lat))))
 
         scr.refresh()
         key, gp = _tui_input_loop(scr, js)
         if key in (ord("q"), ord("Q")) or gp == "back":
             break
         elif key == curses.KEY_UP or gp == "up":
-            selected = max(0, selected - 1)
+            pan_lat += pan_step_lat
         elif key == curses.KEY_DOWN or gp == "down":
+            pan_lat -= pan_step_lat
+        elif key == curses.KEY_LEFT or gp == "left":
+            pan_lon -= pan_step_lon
+        elif key == curses.KEY_RIGHT or gp == "right":
+            pan_lon += pan_step_lon
+        elif key in (ord("c"), ord("C")):
+            pan_lat = 0.0
+            pan_lon = 0.0
+        elif key in (ord("j"), ord("J")):
             if visible:
                 selected = min(len(visible) - 1, selected + 1)
+        elif key in (ord("k"), ord("K")):
+            selected = max(0, selected - 1)
         elif key in (ord("+"), ord("=")):
             zoom_idx = max(0, zoom_idx - 1)
             save_config("adsb_zoom_idx", zoom_idx)
