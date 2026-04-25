@@ -183,25 +183,88 @@ def _disable_hupcl(port):
         pass
 
 
-# ── Passive identification ──────────────────────────────────────────
+# ── Firmware signatures ─────────────────────────────────────────────
 #
-# A chip that just reset is loudly self-identifying — ESP-IDF prints
-# "boot:" lines, the application prints its banner, MicroPython prints
-# ">>> ", etc.  Match against the first ~2s of unsolicited output
-# before we send any bytes.  This is the typical-case fast path AND
-# the safety net for chips that aren't ready to accept writes yet.
+# Single source of truth for per-firmware regex.  Each row carries:
+#   - identify: matched against any boot output to fingerprint the
+#     firmware running on the chip.  Permissive (anywhere in stream).
+#   - ready:    matched to confirm the firmware is listening for
+#     commands.  Typically the prompt or an explicit "ready" line.
 #
-# Order matters: more specific patterns first so e.g. a MimiClaw boot
-# log that mentions "Marauder" inside a wifi scan result still matches
-# MIMICLAW.
+# Order matters for identify: more specific patterns first so e.g. a
+# MimiClaw boot log that mentions "Marauder" inside a wifi scan
+# result still matches MIMICLAW.  Captured 2026-04-25 from a freshly
+# flashed AIO ESP32-S3:
+#   I (5752) mimi: MimiClaw ready. Type 'help' for CLI commands.
+#   I (5752) main_task: Returned from app_main()
+#   mimi>
 
-_BOOT_PATTERNS = (
-    (re.compile(rb"mimi>"),                    Firmware.MIMICLAW),
-    (re.compile(rb"MicroPython"),              Firmware.MICROPYTHON),
-    (re.compile(rb">>> "),                     Firmware.MICROPYTHON),
-    (re.compile(rb"Marauder", re.IGNORECASE),  Firmware.MARAUDER),
-    (re.compile(rb"Bruce",    re.IGNORECASE),  Firmware.BRUCE),
+_FIRMWARE_SIGS = (
+    (Firmware.MIMICLAW,
+        re.compile(rb"mimi>"),
+        re.compile(rb"MimiClaw ready|mimi> ")),
+    (Firmware.MICROPYTHON,
+        re.compile(rb"MicroPython|>>> "),
+        re.compile(rb">>> ")),
+    (Firmware.MARAUDER,
+        re.compile(rb"Marauder", re.IGNORECASE),
+        # Marauder's prompt is `> ` at the start of a line; the banner
+        # text "ESP32 Marauder vX.Y.Z" arrives within ~1s of boot.
+        re.compile(rb"^> |ESP32 Marauder", re.MULTILINE | re.IGNORECASE)),
+    (Firmware.BRUCE,
+        re.compile(rb"Bruce", re.IGNORECASE),
+        re.compile(rb"bruce>", re.IGNORECASE)),
 )
+
+
+def _identify_patterns():
+    """Iterate (identify_regex, Firmware) in priority order."""
+    return [(ident, fw) for fw, ident, _ready in _FIRMWARE_SIGS]
+
+
+def _ready_pattern(fw):
+    """Return the ready-marker regex for *fw*, or None for UNKNOWN."""
+    for f, _ident, ready in _FIRMWARE_SIGS:
+        if f == fw:
+            return ready
+    return None
+
+
+def _wait_for_ready(ser, fw, timeout=7.0):
+    """Block until *fw*'s ready marker shows up in *ser*'s stream.
+
+    Parameters
+    ----------
+    ser : Serial
+        Already-open serial port.  Reads non-destructively.
+    fw : Firmware
+        Detected firmware.  UNKNOWN returns True immediately (caller
+        already knows commands won't work, no point waiting).
+    timeout : float
+        Hard wall-clock cap in seconds.
+
+    Returns
+    -------
+    bool
+        True if the marker appeared within budget, False on timeout.
+    """
+    if fw == Firmware.UNKNOWN:
+        return True
+    pattern = _ready_pattern(fw)
+    if pattern is None:
+        return True
+
+    deadline = time.monotonic() + timeout
+    buf = bytearray()
+    while time.monotonic() < deadline:
+        n = ser.in_waiting
+        if n:
+            buf += ser.read(n)
+            if pattern.search(buf):
+                return True
+        else:
+            time.sleep(0.05)
+    return False
 
 
 def _passive_identify(ser, max_total=2.0, silence=0.30):
@@ -225,7 +288,7 @@ def _passive_identify(ser, max_total=2.0, silence=0.30):
         if n:
             buf += ser.read(n)
             last_recv = now
-            for pattern, fw in _BOOT_PATTERNS:
+            for pattern, fw in _identify_patterns():
                 if pattern.search(buf):
                     return fw
         elif now - last_recv >= silence:
@@ -327,6 +390,81 @@ def detect(port=None, timeout=2.0, force=None):
         return Firmware.UNKNOWN
     finally:
         _close_fast(ser)
+
+
+def _identify_or_ready(ser, timeout):
+    """Single-pass identify + wait-for-ready.
+
+    Watches the boot stream until any firmware's ready marker shows
+    up.  Returns the matched Firmware, or UNKNOWN on timeout.
+    Faster and more accurate than running passive_identify and
+    wait_for_ready in sequence — the marker that confirms the
+    firmware also confirms the chip is ready for commands.
+    """
+    deadline = time.monotonic() + timeout
+    buf = bytearray()
+    while time.monotonic() < deadline:
+        n = ser.in_waiting
+        if n:
+            buf += ser.read(n)
+            for fw, _ident, ready in _FIRMWARE_SIGS:
+                if ready.search(buf):
+                    return fw
+        else:
+            time.sleep(0.05)
+    return Firmware.UNKNOWN
+
+
+def open_ready(port=None, ready_timeout=7.0, open_timeout=2.0):
+    """Open the ESP32 serial port and wait for the chip to be ready.
+
+    Combines _open_quiet + passive identify + _wait_for_ready.  Use
+    this from anywhere that needs to send a command to the chip — it
+    accounts for the open-time reset (ESP32-S3 USB-Serial/JTAG quirk
+    that has no firmware-side disable on this silicon).
+
+    Parameters
+    ----------
+    port : str or None
+        Serial device path.  Auto-detected if None.
+    ready_timeout : float
+        Seconds to wait for the firmware's ready marker.  Default 7s
+        — enough for MimiClaw's ~5.7s boot to WiFi-scan-ready.
+    open_timeout : float
+        Per-read timeout on the underlying serial handle.
+
+    Returns
+    -------
+    (Serial, Firmware) or (None, Firmware.UNKNOWN)
+        Caller is responsible for closing the returned Serial.  None
+        is returned when the port doesn't exist or open/identify fail
+        outright; in that case the second element is UNKNOWN.
+    """
+    port = port or get_port()
+    if port is None:
+        return None, Firmware.UNKNOWN
+
+    try:
+        pyserial = _serial_module()
+    except ImportError:
+        return None, Firmware.UNKNOWN
+
+    _disable_hupcl(port)
+
+    try:
+        ser = _open_quiet(port, timeout=open_timeout)
+    except pyserial.SerialException:
+        if not release_gpsd(port):
+            return None, Firmware.UNKNOWN
+        try:
+            ser = _open_quiet(port, timeout=open_timeout)
+        except pyserial.SerialException:
+            return None, Firmware.UNKNOWN
+
+    # Single-pass identify + ready wait: the marker that confirms
+    # the firmware also confirms the chip is listening for commands.
+    fw = _identify_or_ready(ser, timeout=ready_timeout)
+    return ser, fw
 
 
 def _active_probe(ser, deadline):

@@ -572,3 +572,194 @@ class TestCloseFast:
 
         # Must not raise
         esp32_detect._close_fast(ser)
+
+
+# ── _wait_for_ready ──────────────────────────────────────────────────
+
+
+# Real boot output captured 2026-04-25 from the just-flashed mimi chip
+# (post-flash session).  Includes the full path from ROM bootloader
+# through ESP-IDF init to the application's "ready" line.
+MIMI_FULL_BOOT = (
+    b"ESP-ROM:esp32s3-20210327\r\n"
+    b"Build:Mar 27 2021\r\n"
+    b"rst:0x15 (USB_UART_CHIP_RESET),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
+    b"...\r\n"
+    b"I (5750) wifi: Scanning nearby APs...\r\n"
+    b"I (5752) mimi: All services started!\r\n"
+    b"I (5752) mimi: MimiClaw ready. Type 'help' for CLI commands.\r\n"
+    b"I (5752) main_task: Returned from app_main()\r\n"
+    b"\r\nmimi> "
+)
+
+
+class TestWaitForReady:
+    """`_wait_for_ready(ser, fw, timeout)` reads the boot stream and
+    returns True once the firmware-specific ready marker shows up,
+    or False if *timeout* elapses first."""
+
+    def test_mimiclaw_ready_marker_matches(self):
+        ser = FakeSerial(rx_chunks=[MIMI_FULL_BOOT])
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MIMICLAW, timeout=3.0)
+        assert ok is True
+
+    def test_mimiclaw_prompt_alone_matches(self):
+        # Sometimes we miss the banner but catch the prompt alone
+        ser = FakeSerial(rx_chunks=[b"\r\nmimi> "])
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MIMICLAW, timeout=3.0)
+        assert ok is True
+
+    def test_micropython_prompt_matches(self):
+        ser = FakeSerial(rx_chunks=[b"MicroPython 1.22\r\n>>> "])
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MICROPYTHON, timeout=3.0)
+        assert ok is True
+
+    def test_marauder_banner_matches(self):
+        # Marauder's banner contains the literal "ESP32 Marauder" string
+        ser = FakeSerial(rx_chunks=[
+            b"\r\nESP32 Marauder v1.11.0\r\nHardware: uConsole AIO ESP32-S3\r\n"
+        ])
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MARAUDER, timeout=3.0)
+        assert ok is True
+
+    def test_marauder_prompt_matches(self):
+        # `> ` at the start of a line is the prompt; should match too
+        ser = FakeSerial(rx_chunks=[b"some boot output\r\n> "])
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MARAUDER, timeout=3.0)
+        assert ok is True
+
+    def test_returns_false_when_no_marker_in_budget(self):
+        # Boot log without a ready marker — never reaches the prompt
+        ser = FakeSerial(rx_chunks=[
+            b"ESP-ROM bootloader output but never finishes\r\n" * 20
+        ])
+        t0 = time.monotonic()
+        ok = esp32_detect._wait_for_ready(ser, Firmware.MIMICLAW, timeout=0.5)
+        elapsed = time.monotonic() - t0
+        assert ok is False
+        assert elapsed < 1.0, f"timeout not enforced: {elapsed:.2f}s"
+
+    def test_unknown_firmware_returns_true_immediately(self):
+        # No marker known for UNKNOWN — caller already knows it can't
+        # run commands, so just succeed without waiting.  Returning
+        # False would be misleading; True with no wait keeps callers
+        # uniform.
+        ser = FakeSerial(rx_chunks=[])
+        t0 = time.monotonic()
+        ok = esp32_detect._wait_for_ready(ser, Firmware.UNKNOWN, timeout=3.0)
+        elapsed = time.monotonic() - t0
+        assert ok is True
+        assert elapsed < 0.1
+
+    def test_returns_quickly_when_marker_already_in_buffer(self):
+        # If the ready marker is in the very first chunk, we should
+        # return immediately, not wait for the full timeout
+        ser = FakeSerial(rx_chunks=[MIMI_FULL_BOOT])
+        t0 = time.monotonic()
+        esp32_detect._wait_for_ready(ser, Firmware.MIMICLAW, timeout=10.0)
+        elapsed = time.monotonic() - t0
+        assert elapsed < 0.5, f"slow even with marker present: {elapsed:.2f}s"
+
+
+class TestIdentifyOrReady:
+    """`_identify_or_ready(ser, timeout)` — single-pass watch for any
+    firmware's ready marker.  Returns matched Firmware or UNKNOWN."""
+
+    def test_matches_mimiclaw(self):
+        ser = FakeSerial(rx_chunks=[MIMI_FULL_BOOT])
+        assert esp32_detect._identify_or_ready(ser, timeout=2.0) == Firmware.MIMICLAW
+
+    def test_matches_micropython(self):
+        ser = FakeSerial(rx_chunks=[b"junk\r\n>>> "])
+        assert esp32_detect._identify_or_ready(ser, timeout=2.0) == Firmware.MICROPYTHON
+
+    def test_returns_unknown_on_timeout(self):
+        ser = FakeSerial(rx_chunks=[b"unrelated noise\r\n"])
+        t0 = time.monotonic()
+        result = esp32_detect._identify_or_ready(ser, timeout=0.4)
+        elapsed = time.monotonic() - t0
+        assert result == Firmware.UNKNOWN
+        assert elapsed < 1.0
+
+    def test_returns_unknown_on_silence(self):
+        ser = FakeSerial(rx_chunks=[])
+        t0 = time.monotonic()
+        result = esp32_detect._identify_or_ready(ser, timeout=0.3)
+        elapsed = time.monotonic() - t0
+        assert result == Firmware.UNKNOWN
+        assert elapsed < 0.5
+
+
+# ── open_ready ───────────────────────────────────────────────────────
+
+
+class TestOpenReady:
+    """`open_ready(port=, ready_timeout=)` returns (Serial, Firmware) for
+    a fully-booted chip ready to accept commands, or (None, UNKNOWN)
+    on failure.  Convenience wrapper combining _open_quiet + identify
+    + _wait_for_ready.
+    """
+
+    def _patch_pyserial(self, monkeypatch, fake):
+        mod = types.SimpleNamespace(
+            Serial=lambda: fake,
+            SerialException=Exception,
+            SerialTimeoutException=Exception,
+        )
+        monkeypatch.setattr(esp32_detect, "_pyserial", mod, raising=False)
+
+    def _patch_port(self, monkeypatch, port="/dev/esp32"):
+        monkeypatch.setattr(esp32_detect.os.path, "exists", lambda p: p == port)
+
+    def _patch_stty(self, monkeypatch):
+        monkeypatch.setattr(
+            esp32_detect.subprocess, "run",
+            lambda *a, **kw: MagicMock(returncode=0, stdout="", stderr=""),
+        )
+
+    def test_returns_serial_and_fw_when_ready(self, monkeypatch):
+        self._patch_port(monkeypatch)
+        self._patch_stty(monkeypatch)
+        fake = FakeSerial(rx_chunks=[MIMI_FULL_BOOT])
+        self._patch_pyserial(monkeypatch, fake)
+
+        ser, fw = esp32_detect.open_ready(ready_timeout=2.0)
+
+        assert fw == Firmware.MIMICLAW
+        assert ser is fake
+        assert ser.is_open is True
+        # Caller is responsible for closing
+        ser.close()
+
+    def test_returns_none_unknown_when_no_port(self, monkeypatch):
+        monkeypatch.setattr(esp32_detect.os.path, "exists", lambda p: False)
+        ser, fw = esp32_detect.open_ready()
+        assert ser is None
+        assert fw == Firmware.UNKNOWN
+
+    def test_returns_serial_unknown_when_chip_silent(self, monkeypatch):
+        """Silent chip → identify returns UNKNOWN, ser is still returned
+        in case caller wants the raw handle (e.g. for esptool reflash).
+        """
+        self._patch_port(monkeypatch)
+        self._patch_stty(monkeypatch)
+        fake = FakeSerial(rx_chunks=[])
+        self._patch_pyserial(monkeypatch, fake)
+
+        ser, fw = esp32_detect.open_ready(ready_timeout=0.3)
+        assert fw == Firmware.UNKNOWN
+        assert ser is fake  # caller decides what to do
+        ser.close()
+
+    def test_open_ready_full_mimi_boot(self, monkeypatch):
+        """End-to-end: full mimi boot stream → identifies MIMICLAW."""
+        self._patch_port(monkeypatch)
+        self._patch_stty(monkeypatch)
+        fake = FakeSerial(rx_chunks=[MIMI_FULL_BOOT])
+        self._patch_pyserial(monkeypatch, fake)
+
+        ser, fw = esp32_detect.open_ready(ready_timeout=2.0)
+
+        assert fw == Firmware.MIMICLAW
+        assert ser is fake
+        ser.close()
