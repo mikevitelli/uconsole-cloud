@@ -8,8 +8,31 @@ Results are cached for 30 seconds to avoid repeated handshakes.
 
 import enum
 import os
+import re
 import subprocess
 import time
+
+# ── Pyserial loader ─────────────────────────────────────────────────
+#
+# Module-level slot rather than a per-call import so tests can swap in
+# a fake via monkeypatch.setattr.  The first real call hits
+# _serial_module() which imports lazily — keeps the module loadable
+# on hosts without pyserial installed (e.g. CI matrix workers).
+
+_pyserial = None
+
+
+def _serial_module():
+    """Return the pyserial module, importing on first use.
+
+    Raises ImportError to the caller if pyserial isn't available.
+    """
+    global _pyserial
+    if _pyserial is None:
+        import serial as _mod
+        _pyserial = _mod
+    return _pyserial
+
 
 # ── Firmware enum ───────────────────────────────────────────────────
 
@@ -86,7 +109,145 @@ def release_gpsd(port_path):
     return True
 
 
+# ── Quiet open ──────────────────────────────────────────────────────
+#
+# Default Serial(...) constructor opens with DTR=True, RTS=True, which
+# the ESP32-S3 USB-Serial/JTAG peripheral interprets as a reset.  S3
+# silicon has no firmware-side disable for this (CHIP_RST_DIS only
+# exists on C6/H2).  Workaround: construct empty, set dtr/rts False as
+# properties, then open().  See pyserial issue #124.
+
+
+def _open_quiet(port, timeout):
+    """Open *port* at 115200 8N1 without pulsing DTR/RTS.
+
+    Returns the open Serial object.  Caller owns close() — prefer
+    _close_fast() over a bare close() when the device might be hung.
+    """
+    pyserial = _serial_module()
+    ser = pyserial.Serial()
+    ser.port = port
+    ser.baudrate = 115200
+    ser.timeout = timeout
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
+
+
+def _close_fast(ser):
+    """Close *ser* without waiting for kernel TX buffer to drain.
+
+    pyserial's Serial.close() calls tcdrain() to wait for outgoing
+    bytes to flush to the device.  When the device is hung (e.g.
+    ESP32 in a boot loop), tcdrain blocks forever.  This helper
+    discards both kernel buffers first via tcflush(), then closes.
+    Falls back to a raw fd close if pyserial's close still blocks.
+    """
+    if ser is None:
+        return
+    try:
+        ser.reset_output_buffer()
+    except Exception:
+        pass
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        pass
+    try:
+        ser.close()
+    except Exception:
+        # Last resort: bypass pyserial entirely
+        try:
+            import os as _os
+            fd = ser.fd if hasattr(ser, "fd") else ser.fileno()
+            _os.close(fd)
+        except Exception:
+            pass
+
+
+def _disable_hupcl(port):
+    """Run `stty -F <port> -hupcl` to suppress close-time DTR drop.
+
+    Without this, every Serial.close() drops DTR which on next open
+    re-arms the chip reset, undoing _open_quiet().  Best-effort: any
+    failure (missing stty, permissions, timeout) is swallowed because
+    Layer A still helps without -hupcl.
+    """
+    try:
+        subprocess.run(
+            ["stty", "-F", port, "-hupcl"],
+            capture_output=True, timeout=2,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+
+# ── Passive identification ──────────────────────────────────────────
+#
+# A chip that just reset is loudly self-identifying — ESP-IDF prints
+# "boot:" lines, the application prints its banner, MicroPython prints
+# ">>> ", etc.  Match against the first ~2s of unsolicited output
+# before we send any bytes.  This is the typical-case fast path AND
+# the safety net for chips that aren't ready to accept writes yet.
+#
+# Order matters: more specific patterns first so e.g. a MimiClaw boot
+# log that mentions "Marauder" inside a wifi scan result still matches
+# MIMICLAW.
+
+_BOOT_PATTERNS = (
+    (re.compile(rb"mimi>"),                    Firmware.MIMICLAW),
+    (re.compile(rb"MicroPython"),              Firmware.MICROPYTHON),
+    (re.compile(rb">>> "),                     Firmware.MICROPYTHON),
+    (re.compile(rb"Marauder", re.IGNORECASE),  Firmware.MARAUDER),
+    (re.compile(rb"Bruce",    re.IGNORECASE),  Firmware.BRUCE),
+)
+
+
+def _passive_identify(ser, max_total=2.0, silence=0.30):
+    """Read up to *max_total* seconds and return matched Firmware or None.
+
+    Returns the first matching pattern from the boot-log buffer, or
+    None if either (a) *silence* seconds pass with no new bytes, or
+    (b) *max_total* seconds elapse.  Polls in_waiting every 20 ms so a
+    fast match returns quickly.
+
+    Does not write anything to *ser*.  Caller owns ser.close().
+    """
+    deadline = time.monotonic() + max_total
+    last_recv = time.monotonic()
+    buf = bytearray()
+    while True:
+        now = time.monotonic()
+        if now >= deadline:
+            return None
+        n = ser.in_waiting
+        if n:
+            buf += ser.read(n)
+            last_recv = now
+            for pattern, fw in _BOOT_PATTERNS:
+                if pattern.search(buf):
+                    return fw
+        elif now - last_recv >= silence:
+            return None
+        else:
+            time.sleep(0.02)
+
+
 # ── Detection ───────────────────────────────────────────────────────
+#
+# Flow:
+#   1. Resolve port; honor cache for hits.
+#   2. stty -hupcl on the port so subsequent close()/open() cycles
+#      don't re-arm the chip reset.
+#   3. Open with _open_quiet (DTR/RTS False before open()).
+#   4. Passive probe — read the boot log, match identifiers without
+#      writing.  Typical case returns here in <1.5s.
+#   5. If passive yields nothing, run a bounded active probe with a
+#      hard wall-clock deadline.  Per-call write_timeout protects us
+#      from a hung TX endpoint.
+#   6. UNKNOWN results are NOT cached, so a transient failure doesn't
+#      pin a 30s window of misery.
 
 def detect(port=None, timeout=2.0, force=None):
     """Detect which firmware the ESP32 is running.
@@ -96,7 +257,8 @@ def detect(port=None, timeout=2.0, force=None):
     port : str or None
         Serial device path.  Defaults to the first available port.
     timeout : float
-        Serial read timeout in seconds.
+        Per-phase read timeout in seconds.  The overall wall-clock
+        deadline is ``max(5.0, timeout * 2.5)``.
     force : Firmware or None
         If set, skip probing and return this value immediately.
 
@@ -112,7 +274,6 @@ def detect(port=None, timeout=2.0, force=None):
     if port is None:
         return Firmware.UNKNOWN
 
-    # Return cached result if fresh and same port
     now = time.time()
     if (_cache["firmware"] is not None
             and _cache["port"] == port
@@ -120,72 +281,116 @@ def detect(port=None, timeout=2.0, force=None):
         return _cache["firmware"]
 
     try:
-        import serial as _pyserial
+        pyserial = _serial_module()
     except ImportError:
         return Firmware.UNKNOWN
+
+    overall_deadline = time.monotonic() + max(5.0, timeout * 2.5)
+
+    _disable_hupcl(port)
 
     ser = None
     try:
         try:
-            ser = _pyserial.Serial(port, 115200, timeout=timeout)
-        except _pyserial.SerialException:
-            # Port may be held by gpsd — try to release
-            if release_gpsd(port):
-                ser = _pyserial.Serial(port, 115200, timeout=timeout)
+            ser = _open_quiet(port, timeout=timeout)
+        except pyserial.SerialException:
+            if release_gpsd(port) and time.monotonic() < overall_deadline:
+                try:
+                    ser = _open_quiet(port, timeout=timeout)
+                except pyserial.SerialException:
+                    return Firmware.UNKNOWN
             else:
                 return Firmware.UNKNOWN
 
-        # Phase 1: MicroPython probe — Ctrl-C×2 interrupts running code
+        # Layer C: passive ID from boot log.
+        passive_budget = max(0.1, min(2.0, overall_deadline - time.monotonic()))
+        fw = _passive_identify(ser, max_total=passive_budget, silence=0.30)
+        if fw is not None:
+            _update_cache(fw, port)
+            return fw
+
+        # Layer D: bounded active probe.  Defends against per-call hangs
+        # via a short write_timeout and the overall deadline.
+        try:
+            ser.write_timeout = 0.5
+        except Exception:
+            pass
+
+        fw = _active_probe(ser, overall_deadline)
+        if fw != Firmware.UNKNOWN:
+            _update_cache(fw, port)
+        return fw
+
+    except pyserial.SerialException:
+        return Firmware.UNKNOWN
+    except getattr(pyserial, "SerialTimeoutException", Exception):
+        return Firmware.UNKNOWN
+    finally:
+        _close_fast(ser)
+
+
+def _active_probe(ser, deadline):
+    """Send wake + info; return Firmware or UNKNOWN, never raising past
+    *deadline*.
+
+    Each write/read pair is short and bounded; we re-check the deadline
+    between phases so a slow chip can't push us past the budget.
+    """
+    pyserial = _serial_module()
+    SerialTimeoutException = getattr(
+        pyserial, "SerialTimeoutException", Exception,
+    )
+
+    def time_left():
+        return deadline - time.monotonic()
+
+    try:
+        if time_left() <= 0:
+            return Firmware.UNKNOWN
+
+        # Phase 1: MicroPython interrupt + Marauder wake
         ser.reset_input_buffer()
-        ser.write(b"\x03\x03\r\n")
-        time.sleep(0.5)
+        try:
+            ser.write(b"\x03\x03\r\n")
+        except SerialTimeoutException:
+            return Firmware.UNKNOWN
+        time.sleep(min(0.4, max(0.1, time_left())))
         raw = ser.read(ser.in_waiting or 1024)
         resp = raw.decode("utf-8", errors="replace")
-
-        # Phase 2: MicroPython check
         if ">>>" in resp or "MicroPython" in resp:
-            fw = Firmware.MICROPYTHON
-            _update_cache(fw, port)
-            return fw
-
-        # Phase 2.5: MimiClaw — the ESP-IDF console auto-prints a "mimi>"
-        # prompt after any newline, so the Phase 1 probe's response
-        # already contains the marker. No extra round-trip needed.
+            return Firmware.MICROPYTHON
         if "mimi>" in resp:
-            fw = Firmware.MIMICLAW
-            _update_cache(fw, port)
-            return fw
+            return Firmware.MIMICLAW
+        if "Marauder" in resp:
+            return Firmware.MARAUDER
 
-        # Phase 3: Marauder probe — wake + info command
-        # Marauder needs a newline wake-up, drain, then actual command
+        if time_left() <= 0:
+            return Firmware.UNKNOWN
+
+        # Phase 2: Marauder `info` query
         ser.reset_input_buffer()
-        ser.write(b"\r\n")
-        time.sleep(0.3)
-        ser.read(ser.in_waiting or 1024)  # drain wake response
-        ser.write(b"info\r\n")
-        time.sleep(1.5)
+        try:
+            ser.write(b"\r\n")
+        except SerialTimeoutException:
+            return Firmware.UNKNOWN
+        time.sleep(min(0.2, max(0.05, time_left())))
+        ser.read(ser.in_waiting or 1024)
+        try:
+            ser.write(b"info\r\n")
+        except SerialTimeoutException:
+            return Firmware.UNKNOWN
+        time.sleep(min(1.0, max(0.1, time_left())))
         raw2 = ser.read(ser.in_waiting or 4096)
         resp2 = raw2.decode("utf-8", errors="replace")
 
-        # Phase 4: Marauder info response
         if "Marauder" in resp2 or "Firmware" in resp2:
-            fw = Firmware.MARAUDER
-            _update_cache(fw, port)
-            return fw
+            return Firmware.MARAUDER
+        if "mimi>" in resp2:
+            return Firmware.MIMICLAW
 
-        # Phase 5: no match
-        fw = Firmware.UNKNOWN
-        _update_cache(fw, port)
-        return fw
-
-    except _pyserial.SerialException:
         return Firmware.UNKNOWN
-    finally:
-        if ser is not None:
-            try:
-                ser.close()
-            except Exception:
-                pass
+    except pyserial.SerialException:
+        return Firmware.UNKNOWN
 
 
 def _update_cache(fw, port):
@@ -262,26 +467,33 @@ def detect_board_variant(port=None, timeout=2.0):
 def _read_hardware_name(port, timeout):
     """Return the HARDWARE_NAME line from an `info` response, if any."""
     try:
-        import serial as _pyserial
+        pyserial = _serial_module()
     except ImportError:
         return None
     try:
-        ser = _pyserial.Serial(port, 115200, timeout=timeout)
-    except _pyserial.SerialException:
+        ser = _open_quiet(port, timeout=timeout)
+    except pyserial.SerialException:
         return None
     try:
+        try:
+            ser.write_timeout = 0.5
+        except Exception:
+            pass
         ser.reset_input_buffer()
-        ser.write(b"\r\n")
+        try:
+            ser.write(b"\r\n")
+        except getattr(pyserial, "SerialTimeoutException", Exception):
+            return None
         time.sleep(0.2)
         ser.read(ser.in_waiting or 1024)  # drain
-        ser.write(b"info\r\n")
+        try:
+            ser.write(b"info\r\n")
+        except getattr(pyserial, "SerialTimeoutException", Exception):
+            return None
         time.sleep(1.2)
         raw = ser.read(ser.in_waiting or 4096)
     finally:
-        try:
-            ser.close()
-        except Exception:
-            pass
+        _close_fast(ser)
     text = raw.decode("utf-8", errors="replace")
     for line in text.splitlines():
         # Marauder prints `Hardware: uConsole AIO ESP32-S3`
