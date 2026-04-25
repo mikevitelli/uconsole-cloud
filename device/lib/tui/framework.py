@@ -1979,13 +1979,6 @@ _ESP32_MIMICLAW_ITEMS = [
 ]
 
 
-_ESP32_MIMICLAW_ITEMS = [
-    ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
-    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
-    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
-]
-
-
 def _esp32_menu_for(firmware):
     """Return submenu items for the detected firmware mode."""
     from tui.esp32_detect import Firmware
