@@ -1,6 +1,7 @@
 # TUI Framework Refactor — Design
 
 **Date:** 2026-04-25
+**Status:** Shipped — duplicate-items fix in `011cac6`, plugin handler registry + ~750 lines extracted in `46e85cf`, broken-feature menu hide in `0be1234`. Plus `8f722b5` (launcher auto-detects source tree). Tests in `tests/test_handler_registry.py`.
 **Branch:** `dev`
 **Scope:** `device/lib/tui/framework.py`
 

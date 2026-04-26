@@ -49,6 +49,7 @@ CLAUDE.md
 *.tsbuildinfo
 next-env.d.ts
 __pycache__/
+.pytest_cache/
 
 # user TUI preferences (theme, view mode)
 device/scripts/.console-config.json

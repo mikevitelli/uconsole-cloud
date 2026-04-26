@@ -42,7 +42,7 @@ Only `state` and `pm_freeze_timeout` exist — kernel has no suspend states comp
 ## File Structure
 
 **Created:**
-- `docs/superpowers/plans/2026-04-21-uconsole-suspend-to-ram.md` — this plan
+- `docs/plans/2026-04-21-uconsole-suspend-to-ram.md` — this plan
 - `device/scripts/power/idle-profile.sh` — Phase 1 measurement harness
 - `device/scripts/power/suspend-probe.sh` — Phase 2 kernel probe
 - `device/scripts/power/peripheral-audit.sh` — Phase 4 wake-source audit
@@ -290,7 +290,7 @@ Expected findings to record in the memo:
 
 - [ ] **Step 3: Write the memo**
 
-Create `docs/superpowers/plans/memos/2026-04-21-kernel-rebuild-feasibility.md` summarizing findings. Maximum one page. Must answer:
+Create `docs/plans/memos/2026-04-21-kernel-rebuild-feasibility.md` summarizing findings. Maximum one page. Must answer:
 
 1. Is rebuilding the kernel with CONFIG_SUSPEND=y realistic for a solo dev? (Ballpark hours + risk of bricked boot)
 2. Is CM5 swap imminent enough (per `project_cm5_upgrade.md`) that this is wasted effort?
@@ -299,7 +299,7 @@ Create `docs/superpowers/plans/memos/2026-04-21-kernel-rebuild-feasibility.md` s
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/superpowers/plans/memos/2026-04-21-kernel-rebuild-feasibility.md
+git add docs/plans/memos/2026-04-21-kernel-rebuild-feasibility.md
 git commit -m "memo: kernel rebuild feasibility for suspend-to-RAM"
 ```
 
@@ -345,7 +345,7 @@ cd rpi-linux
 
 ```bash
 cd ~/uconsole-cloud
-git add docs/superpowers/plans/memos/kernel-source-pin.md  # create this with the exact SHA used
+git add docs/plans/memos/kernel-source-pin.md  # create this with the exact SHA used
 git commit -m "pin: kernel source SHA for suspend rebuild"
 ```
 
@@ -393,7 +393,7 @@ Expected: `state = [freeze mem]` or at minimum `state = [freeze]`.
 ```bash
 # keep Image.gz and module tree in a release-assets repo, not uconsole-cloud
 # (too big for a code repo). Just commit the build notes:
-git add docs/superpowers/plans/memos/kernel-build-notes.md
+git add docs/plans/memos/kernel-build-notes.md
 git commit -m "build: suspend-enabled kernel notes + staged as kernel8-suspend.img"
 ```
 
@@ -507,12 +507,12 @@ Produce a ranked list: peripherals that MUST be stopped for freeze to succeed vs
 
 - [ ] **Step 2: Record in design doc**
 
-Create `docs/superpowers/plans/memos/2026-04-21-suspend-peripheral-matrix.md` with the table. This matrix drives Task 5.1's script contents.
+Create `docs/plans/memos/2026-04-21-suspend-peripheral-matrix.md` with the table. This matrix drives Task 5.1's script contents.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/superpowers/plans/memos/2026-04-21-suspend-peripheral-matrix.md
+git add docs/plans/memos/2026-04-21-suspend-peripheral-matrix.md
 git commit -m "memo: peripheral suspend matrix from audit results"
 ```
 
