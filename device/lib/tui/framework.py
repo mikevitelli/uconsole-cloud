@@ -1925,11 +1925,34 @@ def _load_handlers():
     return handlers
 
 
+def _filter_menus(handlers):
+    """Drop menu items whose _foo target has no registered handler.
+
+    Mutates SUBMENUS and CATEGORIES in place. Items with shell-script targets,
+    sub:foo drilldowns, or _gui:/_url: prefixes are kept untouched. The point
+    is to hide menu items belonging to feature modules that failed to import,
+    so the user sees a clean menu without dead entries.
+    """
+    def keep(target):
+        if not isinstance(target, str):
+            return True
+        if target.startswith(("_gui:", "_url:")) or not target.startswith("_"):
+            return True
+        return target in handlers
+
+    for key, items in list(SUBMENUS.items()):
+        SUBMENUS[key] = [item for item in items if keep(item[1])]
+
+    for cat in CATEGORIES:
+        cat["items"] = [item for item in cat["items"] if keep(item[1])]
+
+
 def _get_handlers():
-    """Return cached merged handlers dict, loading on first call."""
+    """Return cached merged handlers dict, loading + filtering menus on first call."""
     global _HANDLERS_CACHE
     if _HANDLERS_CACHE is None:
         _HANDLERS_CACHE = _load_handlers()
+        _filter_menus(_HANDLERS_CACHE)
     return _HANDLERS_CACHE
 
 
