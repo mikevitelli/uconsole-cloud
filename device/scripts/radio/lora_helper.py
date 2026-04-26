@@ -60,6 +60,11 @@ CMD_SET_BUFFER_BASE_ADDRESS = 0x8F
 CMD_GET_STATUS = 0xC0
 CMD_SET_PA_CONFIG = 0x95
 CMD_SET_TX_PARAMS = 0x8E
+CMD_SET_DIO3_AS_TCXO_CTRL = 0x97
+CMD_CALIBRATE = 0x89
+CMD_SET_REGULATOR_MODE = 0x96
+CMD_CALIBRATE_IMAGE = 0x98
+CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D
 
 
 class SX1262:
@@ -99,6 +104,22 @@ class SX1262:
         self._cmd(CMD_SET_STANDBY, [0x00])  # STDBY_RC
         self._wait_busy()
 
+        # AIO board's SX1262 module clocks off a TCXO powered through DIO3.
+        # Without this, the synthesizer never locks and SetRx/SetTx silently
+        # fail with command-error status. 1.8V, 5ms warmup (320 * 15.625us).
+        self._cmd(CMD_SET_DIO3_AS_TCXO_CTRL, [0x02, 0x00, 0x01, 0x40])
+        self._wait_busy()
+
+        # Recalibrate all blocks against TCXO clock
+        self._cmd(CMD_CALIBRATE, [0x7F])
+        self._wait_busy()
+        time.sleep(0.005)
+        self._cmd(CMD_SET_STANDBY, [0x00])
+        self._wait_busy()
+
+        self._cmd(CMD_SET_REGULATOR_MODE, [0x01])  # DC-DC
+        self._wait_busy()
+
         # Set packet type to LoRa
         self._cmd(CMD_SET_PACKET_TYPE, [0x01])
         self._wait_busy()
@@ -111,6 +132,27 @@ class SX1262:
             (freq_reg >> 8) & 0xFF,
             freq_reg & 0xFF,
         ])
+        self._wait_busy()
+
+        # Image-rejection calibration per AN1200.42
+        img_cal = None
+        if 902 <= self.freq_mhz <= 928:
+            img_cal = [0xE1, 0xE9]
+        elif 863 <= self.freq_mhz <= 870:
+            img_cal = [0xD7, 0xDB]
+        elif 779 <= self.freq_mhz <= 787:
+            img_cal = [0xC1, 0xC5]
+        elif 470 <= self.freq_mhz <= 510:
+            img_cal = [0x75, 0x81]
+        elif 430 <= self.freq_mhz <= 440:
+            img_cal = [0x6B, 0x6F]
+        if img_cal:
+            self._cmd(CMD_CALIBRATE_IMAGE, img_cal)
+            self._wait_busy()
+
+        # AIO V1 wires the antenna T/R switch to DIO2 — without this the chip
+        # has no path to/from the SMA.
+        self._cmd(CMD_SET_DIO2_AS_RF_SWITCH_CTRL, [0x01])
         self._wait_busy()
 
         # PA config for SX1262 (up to +22 dBm)

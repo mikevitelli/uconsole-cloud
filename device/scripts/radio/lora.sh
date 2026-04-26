@@ -9,6 +9,8 @@ SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPI_DEV="/dev/spidev1.0"
 LORA_CONF="$HOME/.config/uconsole/lora.conf"
 WEBDASH_API="http://localhost:8080/api/lora"
+# python3-spidev is system-only; user shells may sit in venvs that lack it
+PYTHON3="${PYTHON3:-/usr/bin/python3}"
 
 usage() {
     cat <<EOF
@@ -70,7 +72,7 @@ EOF
 }
 
 lora_py() {
-    python3 "$SCRIPTS_DIR/lora_helper.py" "$@"
+    "$PYTHON3" "$SCRIPTS_DIR/lora_helper.py" "$@"
 }
 
 cmd_status() {
@@ -92,9 +94,9 @@ cmd_status() {
     printf "  Config file:     %s\n" "$LORA_CONF"
 
     # Try to read SX1262 chip version
-    if [ -e "$SPI_DEV" ] && command -v python3 &>/dev/null; then
+    if [ -e "$SPI_DEV" ] && [ -x "$PYTHON3" ]; then
         printf "\nHardware check:\n"
-        python3 -c "
+        "$PYTHON3" -c "
 import spidev, subprocess, time
 def gpioset(pin, val):
     subprocess.run(['gpioset','-m','exit','gpiochip0',f'{pin}={val}'],capture_output=True)
