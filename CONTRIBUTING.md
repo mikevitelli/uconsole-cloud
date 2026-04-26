@@ -60,22 +60,23 @@ If you have a uConsole (or any arm64 Debian device):
 # Edit source in device/
 vim device/lib/tui/framework.py
 
-# Deploy to device for testing (requires sudo)
-make install          # rsyncs device/ → /opt/uconsole/
-                      # maintainers also mirror to a local backup repo
+# Just launch — no install step. The default `console` auto-detects
+# ~/uconsole-cloud/device/lib/ and uses it when present.
+console
 ```
 
-Three TUI launchers, each for a different stage of the loop:
+`make install` exists for packaging a `.deb` for end users — it's not
+part of the day-to-day edit loop on a developer's box.
+
+Three TUI launchers:
 
 | Launcher | Keybind (labwc) | Reads from | Use when |
 |----------|-----------------|------------|----------|
-| `console-dev` | Ctrl+\` | `~/uconsole-cloud/device/lib` | live dev loop — no `make install` needed |
-| `console-pkg` | Ctrl+Shift+P | `/opt/uconsole/lib` | verify the installed version matches your edits |
-| `console` | — | `/opt/uconsole/lib` | end-user launcher (what the `.deb` installs) |
+| `console` | — | `~/uconsole-cloud/device/lib` if present, else `/opt/uconsole/lib` | default — works for both devs and end users |
+| `console-pkg` | Ctrl+Shift+P | `/opt/uconsole/lib` (forced) | verify what end users would see |
+| `console-dev` | Ctrl+\` | `~/uconsole-cloud/device/lib` (forced) | redundant with the new default — kept for the keybind |
 
-Typical TUI iteration: edit → Ctrl+\` to see it → commit. Only run `make
-install` when you want to verify the installed path too. To override for
-ad-hoc testing: `UCONSOLE_DEV_LIB=/some/path console`.
+To point at any arbitrary tree: `UCONSOLE_DEV_LIB=/some/path console`.
 
 Toggle webdash between dev and installed:
 
@@ -175,11 +176,12 @@ npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts  # one
 
 You don't need to manually bump versions during development.
 
-- **Installed package** (`console-pkg`, Ctrl+Shift+P): reads `VERSION`
-  directly — shows the released version, e.g. `0.2.1`.
-- **Dev tree** (`console-dev`, Ctrl+\`): reads `VERSION`, patch-bumps
-  it, and appends `-dev` — so `0.2.1` becomes `0.2.2-dev`, indicating
-  "working toward the next release".
+- **Installed package** (`console-pkg`, or `console` on a machine
+  without a source tree): reads `VERSION` directly — shows the
+  released version, e.g. `0.2.1`.
+- **Dev tree** (plain `console` on a developer's box, or `console-dev`):
+  reads `VERSION`, patch-bumps it, and appends `-dev` — so `0.2.1`
+  becomes `0.2.2-dev`, indicating "working toward the next release".
 - **Releases**: maintainers run `/publish`, which bumps `VERSION`,
   merges `dev` → `main`, builds the `.deb`, signs the APT repo,
   commits, and tags.
