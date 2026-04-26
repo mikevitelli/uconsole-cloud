@@ -61,7 +61,7 @@ done
 ask() {
     local prompt="$1" default="$2" var="$3"
     if [ "$UNATTENDED" = true ]; then
-        eval "$var=\"$default\""
+        printf -v "$var" '%s' "$default"
         return
     fi
     local input
@@ -70,7 +70,7 @@ ask() {
     else
         read -rp "  $prompt: " input
     fi
-    eval "$var=\"${input:-$default}\""
+    printf -v "$var" '%s' "${input:-$default}"
 }
 
 ask_yn() {
