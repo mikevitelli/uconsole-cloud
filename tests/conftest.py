@@ -102,3 +102,31 @@ def make_key_sequence(*keys):
         stdscr.getch.side_effect = make_key_sequence(KEY_DOWN, KEY_DOWN, KEY_ENTER, KEY_Q)
     """
     return list(keys)
+
+
+# ── Framework reload + handler-registry fixtures ───────────────────────────
+
+
+@pytest.fixture
+def fresh_framework():
+    """Reload tui.framework + every tui.* module so each test starts clean.
+
+    Mutates module-level state (SUBMENUS, CATEGORIES, _HANDLERS_CACHE), so we
+    throw the framework away and re-import for tests that exercise the
+    registry/menu-filter side effects.
+    """
+    import importlib
+    drop = [name for name in sys.modules if name == "tui.framework" or name.startswith("tui.")]
+    for name in drop:
+        del sys.modules[name]
+    return importlib.import_module("tui.framework")
+
+
+@pytest.fixture(scope="module")
+def framework_handlers():
+    """Cached merged handlers dict from a single _load_handlers() call.
+
+    Module-scoped so AST/registry tests within the same file share one parse.
+    """
+    from tui.framework import _load_handlers
+    return _load_handlers()

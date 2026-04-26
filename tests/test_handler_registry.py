@@ -1,34 +1,9 @@
-"""Tests for the framework.py feature handler registry — load + filter."""
+"""Tests for the framework.py feature handler registry — load + filter.
 
-import importlib
-import os
-import sys
+The `fresh_framework` fixture used here lives in conftest.py.
+"""
 
 import pytest
-
-
-# Make the device's tui package importable
-DEVICE_LIB = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "device", "lib",
-)
-if DEVICE_LIB not in sys.path:
-    sys.path.insert(0, DEVICE_LIB)
-
-
-@pytest.fixture
-def fresh_framework(monkeypatch):
-    """Reload framework + every feature module so each test starts clean.
-
-    Mutates module-level state (SUBMENUS, CATEGORIES, _HANDLERS_CACHE), so
-    we throw the framework away and re-import for each test.
-    """
-    # Drop tui.framework + every tui.* module that may have been imported
-    drop = [name for name in sys.modules if name == "tui.framework" or name.startswith("tui.")]
-    for name in drop:
-        del sys.modules[name]
-    fw = importlib.import_module("tui.framework")
-    return fw
 
 
 def test_load_handlers_returns_non_empty_dict(fresh_framework):
