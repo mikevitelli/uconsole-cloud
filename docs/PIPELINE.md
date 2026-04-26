@@ -15,10 +15,12 @@ the subset that applies to PRs.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 2. PREVIEW (Ctrl+`)                                                 │
-│    console-dev reads ~/uconsole-cloud/device/lib directly           │
-│    → changes visible immediately, no deploy needed                  │
-│    Webdash: not auto-reloaded (use `make dev-mode` if touching it)  │
+│ 2. PREVIEW                                                          │
+│    Just run `console` — the launcher auto-detects                   │
+│    ~/uconsole-cloud/device/lib and uses it when present.            │
+│    → changes visible immediately, no deploy needed.                 │
+│    Webdash: not auto-reloaded (use `make dev-mode` if touching it). │
+│    Need the installed copy for comparison? `console-pkg`.           │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -37,13 +39,15 @@ the subset that applies to PRs.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 4. DEPLOY LOCALLY (optional, for verifying the installed flow)      │
+│ 4. DEPLOY LOCALLY (optional — packaging step, not edit-loop step)   │
 │    make install                                                     │
 │      ├── rsync device/ → /opt/uconsole/    (--delete, with sudo)    │
 │      ├── rsync device/ → ~/pkg/             (no --delete, backup)   │
 │      └── systemctl restart uconsole-webdash (if running)            │
 │                                                                     │
-│    console-pkg (Ctrl+Shift+P) now runs your edits.                  │
+│    Only needed when packaging a .deb or verifying the end-user      │
+│    install path. Plain `console` already runs your edits live.      │
+│    After install, console-pkg also reflects them.                   │
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -111,7 +115,7 @@ the subset that applies to PRs.
 Nothing above fires without a human pushing, running `make`, or invoking `/publish`. Decisions the pipeline **will not make for you:**
 
 - When to commit (CI doesn't run until you push)
-- When to `make install` (Ctrl+\` is enough for TUI-only edits)
+- When to `make install` (plain `console` already auto-detects source — install is a packaging step, not an edit-loop step)
 - When to `/publish` (no calendar — whenever `dev` is ready)
 - Patch vs minor vs major bump (`make bump-patch` is the `/publish` default; use `bump-minor` / `bump-major` when scope warrants)
 - Merging feature branches into `dev`
