@@ -1,9 +1,8 @@
 # Wardrive × WiGLE Explorer — Design
 
 **Date:** 2026-04-19
-**Status:** Draft
+**Status:** Shipped — wardrive functionality merged in `51b4945` (wip/wardrive-map → dev, 2026-04-25). WiGLE enrichment lives in `device/lib/tui/marauder.py`; HTML viewer in `device/webdash/templates/wardrive.html`.
 **Author:** mikevitelli (via session with Claude)
-**Reviewer:** —
 
 ## Why this doc exists
 

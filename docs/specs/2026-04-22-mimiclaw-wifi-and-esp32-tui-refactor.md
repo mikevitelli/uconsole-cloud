@@ -1,9 +1,8 @@
 # MimiClaw WiFi Config + ESP32 TUI Refactor — Design
 
 **Date:** 2026-04-22
-**Status:** Draft
+**Status:** Shipped — MimiClaw IP auto-discovery via serial (`cba697e`), WiFi config panel (`f9a8c47`), markdown chat UI (`e437564`); ESP32 submenu distillation (`cfe1a12`, `6587e62`). Duplicate `_ESP32_MIMICLAW_ITEMS` regression fixed in `011cac6`.
 **Author:** mikevitelli (via session with Claude)
-**Reviewer:** —
 
 ## Why this doc exists
 

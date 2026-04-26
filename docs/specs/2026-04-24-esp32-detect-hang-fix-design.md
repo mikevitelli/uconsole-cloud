@@ -1,6 +1,6 @@
 # ESP32 firmware detection: fix indefinite hang on TUI connect
 
-**Status:** Draft
+**Status:** Shipped — quiet open + bounded layered probe in `fd038b8`, follow-up open-ready wiring + post-reset wait in `525d1ba`. 26 unit tests live in `tests/test_esp32_detect.py`.
 **Author:** mike
 **Date:** 2026-04-24
 **Branch:** `dev`

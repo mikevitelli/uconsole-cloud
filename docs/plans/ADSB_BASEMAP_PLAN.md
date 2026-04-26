@@ -1,6 +1,7 @@
 # ADS-B Global Basemap — Implementation Plan
 
-**Branch:** `feature/adsb-global-basemap`
+**Status:** Shipped — global low-res basemap at `device/lib/tui/adsb_basemap_global.json`, hi-res fetcher at `device/lib/tui/adsb_hires.py`, layer picker at `device/lib/tui/adsb_layer_picker.py`, basemap info panel at `device/lib/tui/adsb_basemap_info.py`. Home picker at `device/lib/tui/adsb_home_picker.py`. Menu wiring lives in `device/lib/tui/adsb_menu.py` after the 2026-04-25 framework refactor.
+**Branch:** `feature/adsb-global-basemap` (merged)
 **Scope:** Replace the NYC-only static basemap with a global, layered, dynamically-fetchable basemap. User can relocate anywhere on Earth and have a recognizable map automatically.
 **Approach chosen:** Option 3 (hybrid) — bundled global low-res + on-demand hi-res fetch around home.
 
