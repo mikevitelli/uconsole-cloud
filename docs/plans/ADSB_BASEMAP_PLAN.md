@@ -178,7 +178,7 @@ Existing `o` (master overlay toggle) stays.
     ("Layer Config",     "_adsb_layers",      "pick overlay layers",                "action"),   # NEW
     ("Fetch Hi-Res",     "_adsb_fetch_hires", "download 1:10m data for your region","action"),   # NEW
     ("Basemap Info",     "_adsb_basemap_info","which files loaded, coverage",       "action"),   # NEW
-    ("Receiver (raw)",   "radio/sdr.sh adsb", "launch dump1090 interactive",        "fullscreen"),
+    ("Receiver (raw)",   "radio/sdr.sh adsb", "viewadsb against running readsb",    "fullscreen"),
 ],
 ```
 
