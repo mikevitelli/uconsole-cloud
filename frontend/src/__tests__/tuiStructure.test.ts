@@ -15,6 +15,13 @@ const FRAMEWORK = fs.readFileSync(path.join(TUI_DIR, "framework.py"), "utf-8");
 const NETWORK = fs.readFileSync(path.join(TUI_DIR, "network.py"), "utf-8");
 const SERVICES = fs.readFileSync(path.join(TUI_DIR, "services.py"), "utf-8");
 
+// Scripts referenced by menus but intentionally NOT in the public tree —
+// users provide them via private repos. Mirrors KNOWN_PRIVATE_SCRIPTS in
+// devicePaths.test.ts and tests/test_tui_integrity.py.
+const KNOWN_PRIVATE_SCRIPTS = new Set<string>([
+  "system/backup.sh",
+]);
+
 // All .sh files in device/scripts/ (relative paths)
 function getScriptFiles(): Set<string> {
   const files = new Set<string>();
@@ -54,7 +61,7 @@ function parseSubmenuEntries(): Array<{
     const block = match[2];
     // Parse entries within the block
     const entryPattern =
-      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"(?:,\s+"[^"]+")?\)/g;
+      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"[^)]*\)/g;
     let entry;
     while ((entry = entryPattern.exec(block)) !== null) {
       entries.push({
@@ -89,7 +96,7 @@ function parseCategoryEntries(): Array<{
     const catName = match[1];
     const block = match[2];
     const entryPattern =
-      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"(?:,\s+"[^"]+")?\)/g;
+      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"[^)]*\)/g;
     let entry;
     while ((entry = entryPattern.exec(block)) !== null) {
       entries.push({
@@ -192,6 +199,7 @@ describe("TUI script references resolve to real files", () => {
     const missing: string[] = [];
     for (const entry of scriptEntries) {
       const scriptFile = entry.script.split(/\s+/)[0]; // strip args
+      if (KNOWN_PRIVATE_SCRIPTS.has(scriptFile)) continue;
       if (!existingScripts.has(scriptFile)) {
         missing.push(`${entry.label}: ${scriptFile}`);
       }
