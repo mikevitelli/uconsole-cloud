@@ -134,14 +134,31 @@ def _collect_native_refs(node, refs):
 
 
 def extract_submenu_refs(source):
-    """Extract all sub:xxx references from CATEGORIES."""
+    """Extract all sub:xxx references from CATEGORIES + SUBMENUS in framework.py
+    *plus* every _ESP32_*_ITEMS list in esp32_hub.py.
+
+    Reachability is transitive: if sub:foo only appears as a drilldown from
+    sub:bar, that's still a real reference. Limiting to CATEGORIES would
+    flag legitimately nested submenus (lora_mesh → lora_config) as orphans.
+    """
     refs = set()
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == 'CATEGORIES':
+                if isinstance(target, ast.Name) and target.id in ('CATEGORIES', 'SUBMENUS'):
                     _collect_submenu_refs(node.value, refs)
+
+    # Also scan esp32_hub.py — its _ESP32_*_ITEMS lists feed runtime SUBMENUS
+    esp32_hub_path = os.path.join(TUI_DIR, 'esp32_hub.py')
+    if os.path.isfile(esp32_hub_path):
+        with open(esp32_hub_path) as f:
+            hub_tree = ast.parse(f.read())
+        for node in ast.iter_child_nodes(hub_tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id.startswith('_ESP32_'):
+                        _collect_submenu_refs(node.value, refs)
     return refs
 
 
@@ -329,6 +346,17 @@ class TestSubmenuIntegrity:
 
 # ── Test: all script paths resolve to real files ───────────────────────────
 
+# Scripts that the menu references but that are intentionally NOT shipped
+# in the public tree. They live in private repos (e.g. ~/pkg) and land in
+# /opt/uconsole/scripts/ at install time, so the menu reference is correct
+# from a runtime perspective. The test must skip them so CI doesn't false-
+# fail on the absence.
+KNOWN_PRIVATE_SCRIPTS = {
+    "system/backup.sh",   # removed from public tree in d2f3783 for security;
+                          # users get it via their own backup repos
+}
+
+
 class TestScriptPaths:
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -340,9 +368,14 @@ class TestScriptPaths:
         assert len(self.script_refs) > 0
 
     def test_each_script_exists(self):
-        """Every script path referenced in menus must exist in device/scripts/."""
+        """Every script path referenced in menus must exist in device/scripts/.
+
+        Skips KNOWN_PRIVATE_SCRIPTS — see above.
+        """
         missing = []
         for script_path in self.script_refs:
+            if script_path in KNOWN_PRIVATE_SCRIPTS:
+                continue
             full_path = os.path.join(SCRIPTS_DIR, script_path)
             if not os.path.isfile(full_path):
                 missing.append(script_path)

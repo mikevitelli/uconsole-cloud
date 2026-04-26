@@ -37,8 +37,15 @@ def _resolve_cmd_standalone(script_name, script_dir):
     return None, None
 
 
+# Scripts the menu references but that aren't shipped in the public tree
+# (private repos provide them at install time — see test_tui_integrity.py).
+KNOWN_PRIVATE_SCRIPTS = {
+    "system/backup.sh",   # removed from public tree in d2f3783 for security
+}
+
+
 def _extract_all_script_names():
-    """Extract every script reference from framework.py menus."""
+    """Extract every (non-private) script reference from framework.py menus."""
     import ast
     fw_path = os.path.join(LIB_DIR, 'tui', 'framework.py')
     with open(fw_path) as f:
@@ -53,12 +60,15 @@ def _extract_all_script_names():
         elif isinstance(node, ast.List):
             for elt in node.elts:
                 walk_tuples(elt)
-        elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+        elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
             script_node = node.elts[1]
             if isinstance(script_node, ast.Constant) and isinstance(script_node.value, str):
                 val = script_node.value
-                if not val.startswith('_') and not val.startswith('sub:'):
-                    scripts.append(val)
+                if val.startswith('_') or val.startswith('sub:'):
+                    return
+                if val.split()[0] in KNOWN_PRIVATE_SCRIPTS:
+                    return
+                scripts.append(val)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):

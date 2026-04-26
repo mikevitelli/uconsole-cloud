@@ -33,7 +33,7 @@ jobs:
 
       - name: Device tests (pytest)
         run: |
-          pip install pytest
+          pip install pytest pyflakes
           python -m pytest tests/ -v
 
       - name: Shell script checks

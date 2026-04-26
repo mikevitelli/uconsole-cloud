@@ -148,15 +148,35 @@ class TestSubmenuStructure:
         for label, script, desc, mode in SUBMENUS[key]:
             assert mode in valid_modes, f"Invalid mode '{mode}' for {label} in {key}"
 
-    def test_no_recursive_submenus(self):
-        """Submenus should not reference other submenus (only 1 level deep)."""
-        for key, items in SUBMENUS.items():
-            for label, script, desc, mode in items:
-                if mode == 'submenu':
-                    pytest.fail(
-                        f"Submenu '{key}' item '{label}' references another "
-                        f"submenu '{script}'. Only 1 level of nesting supported."
-                    )
+    def test_no_submenu_cycles(self):
+        """Submenus may nest, but must not form a cycle (would infinite-loop run_submenu)."""
+        graph = {
+            key: [s for (_, s, _, m) in items if m == 'submenu' and s in SUBMENUS]
+            for key, items in SUBMENUS.items()
+        }
+
+        # DFS with a recursion stack — flag any back-edge.
+        def has_cycle(node, visited, stack):
+            if node in stack:
+                return [node]
+            if node in visited:
+                return None
+            visited.add(node)
+            stack.add(node)
+            for nxt in graph.get(node, []):
+                cycle = has_cycle(nxt, visited, stack)
+                if cycle is not None:
+                    return [node] + cycle
+            stack.remove(node)
+            return None
+
+        visited = set()
+        for start in graph:
+            if start in visited:
+                continue
+            cycle = has_cycle(start, visited, set())
+            if cycle is not None:
+                pytest.fail(f"Submenu cycle detected: {' → '.join(cycle)}")
 
 
 class TestNavigationBounds:
