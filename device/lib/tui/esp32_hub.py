@@ -16,36 +16,36 @@ from tui.framework import (
 # ── ESP32 dynamic submenu items ──────────────────────────────────────────
 
 _ESP32_MICROPYTHON_ITEMS = [
-    ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📊"),
-    ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "⌨"),
-    ("Status",           "radio/esp32.sh status",     "latest sensor reading + chip info",      "panel",      "📡"),
-    ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "⟩⟩"),
-    ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⇪"),
-    ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "✎"),
+    ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📈"),
+    ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "🔌"),
+    ("Status",           "radio/esp32.sh status",     "latest sensor reading + chip info",      "panel",      "🩺"),
+    ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "🐚"),
+    ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⚡"),
+    ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "📝"),
 ]
 
 _ESP32_MARAUDER_ITEMS = [
-    ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
-    ("War Drive",        "_wardrive",                      "GPS-tagged AP sweep → CSV",        "action",     "◉"),
-    ("Replay Session",   "_wardrive_replay",               "browse + replay past war-drive CSVs",   "action",     "⏵"),
-    ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
-    ("Status",           "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "📡"),
-    ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
+    ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "💀"),
+    ("War Drive",        "_wardrive",                      "GPS-tagged AP sweep → CSV",              "action",     "🚗"),
+    ("Replay Session",   "_wardrive_replay",               "browse + replay past war-drive CSVs",    "action",     "🎞️"),
+    ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "🔌"),
+    ("Status",           "radio/esp32-marauder.sh info",   "firmware, MAC, hardware",                "panel",      "🩺"),
+    ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "🛠️"),
 ]
 
 _ESP32_COMMON_ITEMS = [
-    ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
-    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
-    ("Reflash",          "_esp32_flash",              "pick firmware: MicroPython, Marauder, Bruce, MimiClaw", "action", "⇄"),
+    ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",            "action",     "🔌"),
+    ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",                "action",     "🔁"),
+    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action",     "💾"),
+    ("Reflash",          "_esp32_flash",              "pick firmware: MicroPython, Marauder, Bruce, MimiClaw", "action", "⚡"),
 ]
 
 
 _ESP32_MIMICLAW_ITEMS = [
     ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
-    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
-    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
-    ("Settings",         "sub:mimiclaw:settings","WiFi, tokens, model provider",          "submenu",    "⚙"),
+    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "🔌"),
+    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "🩺"),
+    ("Settings",         "sub:mimiclaw:settings","WiFi, tokens, model provider",          "submenu",    "🛠️"),
 ]
 
 
