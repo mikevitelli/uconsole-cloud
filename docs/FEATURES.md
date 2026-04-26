@@ -1,153 +1,117 @@
-# Feature Map — uconsole ecosystem
+# Feature map
 
-## Legend
-- [x] Done
-- [ ] TODO
-- [~] In progress (uncommitted)
-- [D] Deferred (needs decision or device testing)
+Current state of the uconsole-cloud platform as of v0.2.1. For the full release log, see [CHANGELOG.md](../CHANGELOG.md). For active design work, see `docs/plans/` and `docs/specs/`.
 
----
+## Shipped
 
-## Phase 1: MVP Polish ✅
+### Cloud dashboard (uconsole.cloud)
 
-### Cloud Dashboard (uconsole-cloud)
-- [x] Device code auth flow (code generation, polling, confirmation)
-- [x] Install script endpoint (`/install`)
-- [x] CLI served via `/api/scripts/uconsole`
-- [x] Landing page redesign (GIF hero, install command, sign in)
-- [x] Auto-create backup repo from web UI
-- [x] PWA manifest + Safari meta tags (standalone, dark, icons)
-- [x] Rate limiting on /api/device/code (5/min/IP, Redis-based)
-- [x] Webdash detection in telemetry (webdash.running, webdash.port)
-- [x] Local Shell Hub link on dashboard (https://uconsole.local, IP fallback)
-- [x] Calendar grid data fix (was showing only 30 days, now full year)
-- [x] GitHub-style hover tooltips on calendar grid
-- [x] GIF animation speed (8s → 1.2s per rotation)
-- [x] Token file permissions (chmod 600 in CLI)
-- [x] Documentation page at /docs (install, CLI, architecture, troubleshooting)
-- [x] GitHub Actions release workflow (automated .deb builds + APT publishing)
+- GitHub OAuth login (NextAuth v5, JWT)
+- Device code linking flow (code → confirm → token, rate-limited)
+- Live device telemetry from Upstash Redis (battery, CPU, memory, disk, WiFi, AIO board, hardware)
+- Backup repo coverage across 9 categories (sparklines, calendar grid)
+- Local Shell Hub link when webdash is detected on the device
+- PWA manifest + Safari standalone meta tags
+- GPG-signed APT repo at `/apt/` (served via Vercel CDN)
+- `/install` bootstrap endpoint
+- Documentation page at `/docs` (install, CLI, architecture, troubleshooting)
+- GitHub Actions release workflow (.deb build + APT publish on tag)
 
-### Device Scripts (uconsole backup repo)
-- [x] push-status.sh: webdash detection added to telemetry payload
-- [x] CLAUDE.md: comprehensive rewrite (Bookworm, security notes, architecture)
+### Device CLI (`uconsole`)
 
----
+- `setup` — interactive wizard (hardware detect, passwords, SSL, cloud link)
+- `link` — code-auth flow with QR display
+- `push` — manual telemetry push
+- `status` — config + timer state + last push
+- `doctor` — service / SSL / nginx / connectivity / cron-vs-timer-conflict diagnosis
+- `restore` — runs `restore.sh --yes` from backup repo
+- `unlink` — removes cloud config, stops timer
+- `update` — `apt upgrade` wrapper
+- `logs [svc]` — tail journal for a service
+- `version`, `help`
 
-## Phase 2: Local Network & Discovery
+### Device TUI (`console`)
 
-### Cloud Dashboard
-- [ ] WiFi fallback state in telemetry (`wifiFallback.enabled`, `wifiFallback.apName`)
-- [ ] Smart offline messaging (infer AP mode when fallback enabled + gone silent)
-- [ ] AP gateway IP in Local Shell Hub link (10.42.0.1 when in AP mode)
-- [ ] Connection timeline (Redis sorted set of online/offline transitions)
+9 categories, 64 native handlers, plus direct-run shell scripts. Each feature module owns its handlers via a `HANDLERS = {"_foo": fn}` dict; framework.py walks `FEATURE_MODULES` and merges them.
 
-### Device Scripts
-- [x] avahi-daemon config in packaging (mDNS for uconsole.local)
-- [x] `/etc/avahi/services/webdash.service` for service advertisement
-- [ ] Push on reconnect (immediate push when wifi-fallback tears down AP)
-- [x] `uconsole doctor` command (check timer, webdash, push, connectivity)
-- [x] CLI: switch cron → systemd timer in setup
-- [x] `uconsole restore` command (detect ~/uconsole, run restore.sh --yes)
-- [ ] restore.sh step [10/10]: cloud connection guidance
-- [x] Add avahi-daemon to package recommends
-- [x] Webdash migrated to systemd service (from manual start)
-- [x] Shared utility libraries (lib.sh, tui_lib.py)
-- [x] Forum browser (ClockworkPi forum access from TUI)
-- [x] Battery discharge test with configurable profiles
-- [x] Marauder TUI integration (ESP32 serial interface)
-- [x] Games category in TUI
-- [x] Trackball scroll support in TUI
+- **SYSTEM** — Updates, Backups, Webdash control, Cron/Timer viewer
+- **MONITOR** — 1-second live gauges, process manager, system logs, crash log
+- **FILES** — file browser, audit (junk/untracked/categories), disk usage, storage
+- **POWER** — battery status, cell health, battery test, power control, hardware config
+- **NETWORK** — iPhone hotspot connect, WiFi switcher, diagnostics, Bluetooth, SSH bookmarks
+- **HARDWARE** — AIO board check, GPS receiver (with globe), SDR radio, ADS-B map (global low-res basemap + on-demand hi-res fetch + layer picker), LoRa Mesh / Meshtastic mesh map, ESP32 hub (firmware detect, MicroPython/Marauder/MimiClaw/Bruce flashing, wardrive, MimiClaw chat)
+- **TOOLS** — git panel, notes, calculator, stopwatch, pomodoro, weather, Hacker News, uConsole forum, Telegram client (tg + tdlib), markdown viewer, screenshot
+- **GAMES** — Watch Dogs Go (auto-installs from GitHub on first run), minesweeper, snake, tetris, 2048, ROM launcher (Game Boy / N64)
+- **CONFIG** — TUI theme (30+), view mode, keybinds, battery gauge, trackball scroll, push interval, Watch Dogs config
 
-### UX Design Needed
-- [ ] Offline/AP mode dashboard UX (what does the user see when device is in AP mode?)
-- [ ] Local Shell Hub card design (prominence, positioning, information density)
-- [ ] PWA behavior when switching between cloud and local (app-feel vs browser handoff)
+External GUI programs (emulators, Watch Dogs Go) launch through `tui.launcher` with `start_new_session=True` + `DEVNULL` stdio so child crashes can't disturb the curses parent.
 
----
+### Webdash (local)
 
-## Phase 3: Terminal-Only Auth (Unified Setup)
+- Flask app at `/opt/uconsole/webdash/app.py`, behind nginx HTTPS on `:443`
+- Mounted at `https://uconsole.local` via avahi/mDNS
+- Bcrypt password hashing, cryptographic session tokens, 30-day server-side session store
+- 60+ scripts runnable from the panel
+- Live monitor via SSE (1s push while panel open)
+- Documentation wiki served at `/docs` (these very pages)
+- Crash log viewer, timer scheduling, config management
 
-### Cloud Dashboard
-- [ ] API: accept GitHub Device Flow token registration
-- [ ] API: return linked repo info on device registration
+### Packaging
 
-### Device Scripts
-- [ ] `uconsole setup --github` (GitHub OAuth Device Flow, no second device needed)
-- [ ] Direct GitHub auth → gets git access + registers with uconsole.cloud
-- [ ] Detect backup repo from cloud settings
-- [ ] Offer clone + restore in one flow
-- [ ] Fallback: current device code flow via uconsole.cloud/link
+- `.deb` for arm64 (Debian Bookworm)
+- GPG-signed APT repo, key distributed via HTTPS
+- `curl -s https://uconsole.cloud/install | sudo bash` bootstrap
+- postinst handles SSL cert generation, user detection, nginx config, systemd unit setup
+- prerm/postrm clean up cleanly on uninstall/purge
+- Docker arm64 install test in CI (verifies install, upgrade, uninstall, purge, reinstall)
+- `uconsole update` uses APT
+- `make build-deb`, `make publish-apt`, `make release`, `/publish` slash command
 
-### UX Design Needed
-- [ ] Terminal setup flow (code display, waiting animation, success/failure states)
-- [ ] Unified restore prompts (detect repo → offer restore → confirm)
-- [ ] First-run experience (what happens after setup completes?)
+### Network resilience
 
----
+- WiFi fallback dispatcher — auto-creates uConsole AP when no known WiFi available, tears it down when one returns
+- mDNS service advertisement (`/etc/avahi/services/webdash.service`)
+- nginx error pages for webdash-down states (502/503/504)
 
-## Phase 4: System Packaging (.deb) ✅
+## Active design
 
-- [x] .deb package structure (packaging/, postinst, prerm, postrm)
-- [x] Installs: uconsole CLI, push-status.sh, systemd services, avahi config
-- [x] Post-install: config setup (services not auto-started, setup wizard handles that)
-- [x] Host APT repo (GPG-signed, served from Vercel CDN at uconsole.cloud/apt/)
-- [x] `uconsole update` uses apt
-- [x] Package signing (GPG-signed Release files, key distributed via HTTPS)
-- [x] `curl -s https://uconsole.cloud/install | sudo bash` bootstrap story
-- [x] GitHub Actions release workflow (build .deb, publish to APT repo)
-- [x] Makefile targets: build-deb, publish-apt, release, version bumps
-- [x] device/ is the canonical source for self-contained builds
+| Area | Status | Reference |
+|------|--------|-----------|
+| Suspend-to-RAM | Plan written, blocked on kernel rebuild (CONFIG_SUSPEND=n in stock CM4 kernel) | [`docs/plans/2026-04-21-uconsole-suspend-to-ram.md`](plans/2026-04-21-uconsole-suspend-to-ram.md) |
 
----
+## Open issues
 
-## Phase 5: Polish & Hardening
+Tracked on [GitHub Issues](https://github.com/mikevitelli/uconsole-cloud/issues). Notable open security and robustness items from the 2026-04-09 audit:
 
-### Cloud Dashboard
-- [ ] Client-side polling for live updates (useEffect + /api/device/status every 30-60s)
-- [ ] Battery/temp alert thresholds (stored in Redis, shown on dashboard)
-- [ ] Device history (last 24h of readings in Redis sorted set)
-- [ ] Historical charts (battery over time, CPU temp trends)
+- [#45](https://github.com/mikevitelli/uconsole-cloud/issues/45) — Replace `eval`-based variable assignment in `uconsole-setup` with `printf -v`
+- [#46](https://github.com/mikevitelli/uconsole-cloud/issues/46) — `uconsole` CLI `eval`s env file content; parse explicitly
+- [#47](https://github.com/mikevitelli/uconsole-cloud/issues/47) — `push-status.sh` sources env file every 5 min; parse explicitly
+- [#48](https://github.com/mikevitelli/uconsole-cloud/issues/48) — Add `timeout=` to `systemctl` calls in `config_ui.py` to prevent TUI freeze
+- [#49](https://github.com/mikevitelli/uconsole-cloud/issues/49) — Roll out `set -euo pipefail` to remaining 32 of 47 bash scripts
 
-### Device Scripts
-- [ ] HMAC request signing on push payloads
-- [ ] Token rotation (shorter TTL, auto-refresh on push)
-- [x] webdash: password hashing (bcrypt, replaces plaintext comparison)
-- [x] webdash: cryptographic session tokens (secrets.token_hex, replaces deterministic)
-- [x] webdash: server-side session store with 30-day TTL
-- [ ] console.py: confirmation before process kill
-- [ ] Optional: Tailscale integration for HTTPS + remote webdash
-- [ ] Optional: webdash basic auth for shared networks
+For the full audit triage, see [`docs/audits/2026-04-09/STATUS.md`](audits/2026-04-09/STATUS.md).
 
----
+## Backlog (future considerations)
 
-## Cross-Cutting Concerns
+Cloud dashboard:
+- WiFi fallback state in telemetry (`wifiFallback.enabled`, `wifiFallback.apName`)
+- Smart offline messaging — infer AP mode when fallback enabled + device gone silent
+- AP gateway IP in Local Shell Hub (10.42.0.1) when device is in AP mode
+- Connection timeline (Redis sorted set of online/offline transitions)
+- Battery/temperature alert thresholds
+- Historical charts (battery over time, CPU temp trends)
+- Multi-device support — one user → many uConsoles, device selector
 
-### Repo Restructure (deferred)
-- [D] Move .git from ~/uconsole/ to ~/ (eliminate symlinks)
-- [D] Update restore.sh, systemd services, push-status.sh paths
-- [D] This is incompatible with current symlink strategy — needs full design
+Device:
+- HMAC request signing on push payloads
+- Device token rotation (shorter TTL, auto-refresh)
+- Optional Tailscale integration (HTTPS + remote webdash via tailnet)
+- Optional webdash basic auth for shared networks
+- `uconsole setup --github` (GitHub Device Flow → no second device for linking)
 
-### Nginx Config
-- [x] nginx config included in packaging (packaging/nginx/uconsole-webdash)
-- [x] Included in .deb install (sites-available, setup enables)
+Repo / DX:
+- E2E tests for device code flow on staging
+- Integration tests for push → Redis → dashboard read
+- Self-hosted arm64 CI runner on the device itself
 
-### Testing
-- [ ] E2E tests for device code flow on staging
-- [ ] Integration tests for push → Redis → dashboard read
-- [ ] Test wifi-fallback flow on physical device
-
----
-
-## Dependencies Between Phases
-
-```
-Phase 1 (MVP Polish) ✅ ─── shipped v0.1.0
-    ↓
-Phase 2 (Local Network) ─── device scripts mostly done, cloud UX remaining
-    ↓
-Phase 3 (Terminal Auth) ─── depends on Phase 2 mDNS (nice to have, not required)
-    ↓
-Phase 4 (.deb) ✅ ─── shipped v0.1.0, automated in v0.1.1
-    ↓
-Phase 5 (Polish) ─── security items partially done, cloud features remaining
-```
+These are ideas, not commitments. PRs welcome — see [CONTRIBUTING.md](../CONTRIBUTING.md).

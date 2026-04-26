@@ -1,6 +1,6 @@
 # Web Dashboard
 
-The uConsole web dashboard is a single-file Flask app (`scripts/webdash.py`) served behind an nginx reverse proxy with HTTPS and session-based authentication.
+The uConsole web dashboard is a Flask app (`device/webdash/app.py` in source; `/opt/uconsole/webdash/app.py` when installed) served behind an nginx reverse proxy with HTTPS and session-based authentication.
 
 ## Architecture
 
@@ -131,13 +131,17 @@ Session-based auth with HMAC tokens stored in a cookie.
 
 ### Change credentials
 
-Set environment variables before starting webdash:
+Set credentials with the CLI helper (recommended):
 
 ```bash
-WEBDASH_USER=<your-user> WEBDASH_PASS=<your-pass> python3 ~/scripts/webdash.py
+sudo uconsole-passwd      # interactive prompt, writes hashed creds
 ```
 
-Or update the defaults in `webdash.py` (lines near `AUTH_USER` / `AUTH_PASS`).
+Or via environment variables before starting webdash directly:
+
+```bash
+WEBDASH_USER=<your-user> WEBDASH_PASS=<your-pass> python3 /opt/uconsole/webdash/app.py
+```
 
 ## Security Hardening (2026-03-22)
 
@@ -151,7 +155,7 @@ All changes made in one session:
 | AppArmor | Enabled (requires reboot to activate) | `/boot/firmware/cmdline.txt` |
 | Bluetooth | Pairable disabled | `/etc/bluetooth/main.conf` |
 | epmd | Stopped, disabled, masked (port 4369) | `systemctl status epmd` |
-| webdash | Bound to localhost, behind nginx with auth | `scripts/webdash.py` |
+| webdash | Bound to localhost, behind nginx with auth | `/opt/uconsole/webdash/app.py` |
 | nginx | HTTPS reverse proxy, custom error pages | `/etc/nginx/sites-available/webdash` |
 
 ### SSH access after hardening
@@ -181,5 +185,5 @@ ssh -p 2222 user@<device-ip>
 
 **Login not working:**
 - Clear cookies and retry
-- Check credentials in `webdash.py` (`AUTH_USER` / `AUTH_PASS`)
+- Reset credentials with `sudo uconsole-passwd`
 - Visit `/logout` first to clear stale session

@@ -7,7 +7,7 @@ Thanks for your interest in uconsole-cloud! Contributions are welcome — especi
 This repo has two products in one:
 
 1. **Cloud dashboard** (`frontend/`) — Next.js app at uconsole.cloud showing device telemetry
-2. **Device package** (`device/`) — TUI, webdash, and 46 scripts installed via `.deb` on the uConsole
+2. **Device package** (`device/`) — TUI, webdash, and 47 scripts installed via `.deb` on the uConsole
 
 They share a repo because they ship together — the `.deb` is built from `device/` and hosted via the frontend's APT repo.
 

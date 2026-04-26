@@ -19,10 +19,8 @@
 | `backup.sh` | Backup manager | `all`, `git`, `gh`, `system`, `packages`, `desktop`, `browser`, `status` |
 | `update.sh` | System updates | `all`, `apt`, `flatpak`, `firmware`, `repo`, `status`, `log`, `snapshot` |
 | `crash-log.sh` | Boot and crash errors | — |
-| `console.py` | TUI command center | — (see [console-tui.md](console-tui.md)) |
-| `console.sh` | TUI launcher wrapper | — |
-| `webdash.py` | Web dashboard (Flask) | Run directly |
-| `webdash.sh` | Web dashboard launcher | *(default)* start, `stop` |
+| `console` (binary in `/opt/uconsole/bin/`) | TUI command center — see [console-tui.md](console-tui.md) | — |
+| `webdash` app at `/opt/uconsole/webdash/app.py` | Web dashboard (Flask) — see [webdash.md](webdash.md) | run via `systemctl --user start uconsole-webdash` |
 | `webdash-info.sh` | Webdash status overview | — |
 | `webdash-ctl.sh` | Webdash service control | `start`, `stop`, `restart`, `logs`, `config` |
 | `aio-check.sh` | AIO V1 board check | — |
@@ -30,11 +28,11 @@
 
 ## Console TUI
 
-The `console` command launches a full-screen TUI with 8 categories, 14 native tools, gamepad support, and color themes. See [console-tui.md](console-tui.md) for full documentation.
+The `console` command launches a full-screen TUI with 9 categories, 64 native handlers, gamepad support, and 30+ color themes. See [console-tui.md](console-tui.md) for full documentation.
 
 ## Web Dashboard
 
-The web dashboard (`webdash.py`) runs behind nginx with HTTPS and session-based auth. See [webdash.md](webdash.md) for full documentation.
+The web dashboard runs behind nginx with HTTPS and session-based auth. See [webdash.md](webdash.md) for full documentation.
 
 ### Quick Start
 

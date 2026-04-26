@@ -1,79 +1,47 @@
 # Console TUI
 
-The uConsole Command Center (`scripts/console.py`) is a full-screen terminal UI for managing the system. It runs directly on the uConsole's built-in screen and supports both keyboard and gamepad input.
+The uConsole Command Center is a full-screen terminal UI for managing the system. Launcher: `console` (resolves to `device/bin/console` in the source tree, `/opt/uconsole/bin/console` when installed via `.deb`). Calls into the modular framework at `device/lib/tui/framework.py` and 25 feature modules. Supports keyboard and gamepad input.
 
-## Quick Start
+## Quick start
 
 ```bash
-console              # launch (symlinked from ~/.local/bin)
-console.sh           # alternative via scripts/
+console              # default — auto-detects ~/uconsole-cloud/device/lib/ for devs
+console-pkg          # force the deployed copy at /opt/uconsole/lib/ (Ctrl+Shift+P)
+console-dev          # force the source tree (Ctrl+`) — redundant with default
 ```
 
 ## Views
 
-Two view modes, switchable via CONFIG > View Mode:
+Two view modes, switchable via CONFIG → View Mode:
 
 - **List view** — vertical list with category tabs across the top
-- **Tile view** — category tiles drill down into item tiles with directional navigation
+- **Tile view** — emoji-iconed category tiles, drill down into item tiles with directional navigation
 
 ## Categories
 
 | Category | Contents |
 |----------|----------|
-| **SYSTEM** | Update (all/apt/flatpak/status/log), Backup (all/git/system/packages/status) |
+| **SYSTEM** | Updates, Backups, Webdash control, Cron/Timer viewer |
 | **MONITOR** | Live system monitor, process manager, system log viewer, crash log |
 | **FILES** | File browser, audit (junk/untracked/categories), disk usage, storage |
-| **POWER** | Battery status, cell health (quick/full/log), charge rate, PMU, CPU freq cap, power control |
-| **NETWORK** | WiFi switcher, hotspot config, WiFi fallback, network info, Bluetooth, SSH bookmarks |
-| **RADIO** | FM radio, GPS globe, **ADS-B map** (global layered basemap, hi-res fetch, layer picker), ESP32 Marauder hub |
-| **SERVICES** | Webdash (status/config/start/stop/restart/logs), cron/timers, AIO board check |
-| **TOOLS** | Git panel, quick notes, calculator, stopwatch, screenshot, **Telegram** (terminal chat via tg + tdlib), weather, Hacker News, uConsole forum |
-| **GAMES** | **Watch Dogs Go** (wardriving hacking sim with auto-install), minesweeper, snake, tetris, 2048, ROM Launcher (Game Boy / N64) |
-| **CONFIG** | Color theme (6 themes), view mode (list/tiles), Watch Dogs config, keybind reference |
+| **POWER** | Battery status, cell health, battery test, power control, hardware config |
+| **NETWORK** | iPhone hotspot connect, WiFi, diagnostics, Bluetooth, SSH bookmarks |
+| **HARDWARE** | AIO board check, GPS receiver, SDR radio, **ADS-B map** (global basemap, hi-res fetch, layer picker), LoRa Mesh (Meshtastic), **ESP32 hub** (firmware detect, MicroPython/Marauder/MimiClaw/Bruce flashing, war drive, mimiclaw chat) |
+| **TOOLS** | Git panel, quick notes, calculator, stopwatch, pomodoro, weather, Hacker News, uConsole forum, **Telegram** (terminal chat via tg + tdlib), markdown viewer, screenshot |
+| **GAMES** | **Watch Dogs Go** (auto-installs from GitHub on first run), minesweeper, snake, tetris, 2048, ROM launcher |
+| **CONFIG** | TUI theme, view mode, keybinds reference, battery gauge style, trackball scroll, push interval, Watch Dogs config |
+
+9 categories, 64 native handlers, plus shell-script targets that run via panel/stream/action/fullscreen modes.
 
 ## Live Monitor
 
-Real-time dashboard updating every second with a two-column layout:
+Real-time dashboard, 1-second tick, two-column layout.
 
-**Left column:**
-- CPU — gauge bar, sparkline history, load averages, frequency, core count, top 4 processes
-- Memory — gauge bar, sparkline, used/total, buffers/cache/swap
-- Disk — gauge bar, used/free/total
+**Left:** CPU (gauge, sparkline, load avg, freq, top 4 procs), Memory (gauge, sparkline, used/total), Disk (gauge, used/free).
 
-**Right column:**
-- Temperature — gauge bar, sparkline, governor, thermal status
-- Battery — gauge bar, sparkline, voltage/current, estimated time remaining or charge rate
-- Network — rx/tx rates, sparklines, WiFi SSID, IP, signal strength, total transferred
+**Right:** Temperature (gauge, sparkline, governor), Battery (gauge, sparkline, voltage, time-left), Network (rx/tx rates, sparklines, SSID, IP, signal).
 
 Color-coded thresholds: green (OK) → yellow (warning) → red (critical).
-
-## Native TUI Tools
-
-These run entirely within the TUI (no external scripts):
-
-| Tool | Description |
-|------|-------------|
-| Live Monitor | Real-time gauges, sparklines, and stats |
-| Process Manager | View processes, sort by CPU/MEM, kill with A |
-| File Browser | Navigate directories, view file sizes |
-| WiFi Switcher | Scan networks, connect via nmcli |
-| Bluetooth | View paired devices, connect/disconnect |
-| Git Panel | Repo status, recent commits, remote tracking |
-| System Logs | Live journalctl with error highlighting |
-| Quick Notes | Timestamped scratchpad saved to ~/notes.txt |
-| SSH Bookmarks | Parse ~/.ssh/config, one-press connect |
-| Cron Viewer | Crontab + systemd timers (system and user) |
-| Calculator | Math expression evaluator with history |
-| Stopwatch | Start/stop/reset with large centered display |
-| Screenshot | Capture screen to PNG via scrot |
-| Watch Dogs Go | Wardriving hacking sim launcher — auto-installs from GitHub on first run, spawns in a new terminal window via detached Popen so child exit cannot disturb the TUI |
-| ROM Launcher | Launches Game Boy / N64 ROMs via mgba / gearboy / mupen64plus; uses the shared detached-spawn helper so closing the emulator no longer crashes the TUI |
-| ADS-B Map | Full-screen aircraft map with global layered basemap (countries, cities, airports), hi-res fetch for zoomed regions, and layer picker |
-| Telegram | Terminal Telegram client backed by `tg` + tdlib, with validator and installer helper scripts |
-| FM Radio | RTL-SDR FM tuner with waveform display, presets, and station scanning |
-| GPS Globe | Real-time GPS position on a rotating globe using u-blox NEO-6M via gpsd |
-| Marauder Hub | ESP32 Marauder serial console for WiFi/BLE recon, attack launching, and sensor telemetry |
-| Keybind Reference | Full keyboard and gamepad mapping |
 
 ## Controls
 
@@ -98,53 +66,28 @@ These run entirely within the TUI (no external scripts):
 | Y (btn 3) | Quit |
 | D-pad | Arrow key navigation |
 
-## Color Themes
+## Themes
 
-Six built-in themes, selectable via CONFIG > TUI Theme:
+30+ built-in color themes selectable via CONFIG → TUI Theme — classic single-accent (cyan, green, amber, red, magenta, blue, white), duo combos (synthwave, hotline, ocean, forest, etc.), and a long tail of named palettes. Theme is saved to `/opt/uconsole/scripts/.console-config.json`.
 
-- **cyan** (default) — cyan headers, yellow categories
-- **green** — green headers, cyan categories
-- **amber** — yellow/amber monochrome
-- **red** — red headers and borders
-- **magenta** — magenta accents
-- **blue** — blue headers and selection
+## Script execution modes
 
-Theme is saved to `scripts/.console-config.json`.
-
-## Script Execution Modes
-
-| Mode | Icon | Behavior |
-|------|------|----------|
-| panel | ◈ | Capture output, show in scrollable viewer with colorized rendering |
-| stream | ▶ | Stream output live with spinner, auto-scroll |
-| action | ⚡ | Quick run, flash result in status bar |
-| fullscreen | ◻ | Drop to raw terminal for interactive scripts |
-
-## Panel Viewer Features
-
-- Centered output with colorized key:value lines
-- Box-drawing characters rendered in border color
-- Section headers highlighted
-- Visual scrollbar on right edge with percentage
-- X to re-run the script and refresh output
-
-## Configuration
-
-Config file: `scripts/.console-config.json`
-
-```json
-{
-  "theme": "cyan",
-  "view_mode": "list"
-}
-```
+| Mode | Behavior |
+|------|----------|
+| `panel` | Capture script output, show in scrollable viewer with colorized rendering |
+| `stream` | Stream output live with spinner, auto-scroll |
+| `action` | Quick run, flash result in status bar |
+| `fullscreen` | Drop to raw terminal for interactive scripts |
+| `submenu` | Drilldown to another menu |
 
 ## Architecture
 
-- Single-file Python TUI: `scripts/console.py` (~2800 lines)
-- Wrapper: `scripts/console.sh`
-- Symlink: `~/.local/bin/console → scripts/console.py`
-- Uses curses for rendering, supports UTF-8 box-drawing and sparkline characters
-- Gamepad input via `/dev/input/js0` (non-blocking)
-- External scripts called via subprocess with ANSI stripping
-- Native tools run as curses sub-loops within the same process
+- Modular Python package: `device/lib/tui/` — `framework.py` (drawing, runners, input, registry plumbing) plus 25 feature modules
+- Each feature module exports a `HANDLERS = {"_foo": fn}` dict at module scope; framework.py walks `FEATURE_MODULES` and merges them on first menu interaction
+- A feature module that fails to import is logged to `~/crash.log` and its menu items are hidden — the rest of the TUI keeps working
+- Curses for rendering, UTF-8 box-drawing + sparkline characters, color emoji icons in tile view
+- Gamepad via `/dev/input/js0` (non-blocking)
+- External scripts via subprocess with ANSI stripping
+- External GUI programs (emulators, Watch Dogs Go) launch through a shared `tui.launcher` helper using `start_new_session=True` + `DEVNULL` stdio, so a child crash can't disturb the curses parent
+
+For the full data flow and project layout, see [ARCHITECTURE.md in the repo](https://github.com/mikevitelli/uconsole-cloud/blob/main/docs/ARCHITECTURE.md).

@@ -59,7 +59,7 @@ flowchart LR
   Avahi --> Nginx["nginx :443<br/>TLS + reverse proxy"]
   Nginx -->|proxy_pass| Flask["Flask webdash :8080"]
   Flask -->|read on request| Sysfs["sysfs / procfs"]
-  Flask -->|run on request| Scripts["46 scripts<br/>(power, net, radio, util)"]
+  Flask -->|run on request| Scripts["47 scripts<br/>(power, net, radio, util)"]
   Flask -. "SSE push 1s<br/>while Live Monitor open" .-> Nginx
   Nginx -. "SSE push 1s" .-> Phone
 

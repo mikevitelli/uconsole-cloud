@@ -26,7 +26,7 @@
 
 A three-tier platform for managing the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) — an RPi CM4 handheld Linux terminal running Debian Bookworm.
 
-- **Device** — a `.deb` installs a curses TUI (9 categories, 53 native tools — FM radio, global ADS-B map, Marauder, Telegram, Watch Dogs Go, ROM launcher, and more), a Flask web dashboard, 46 management scripts, and systemd services.
+- **Device** — a `.deb` installs a curses TUI (9 categories, 64 native handlers — FM radio, global ADS-B map, Marauder + wardrive, MimiClaw AI agent, Meshtastic mesh map, Telegram, Watch Dogs Go, ROM launcher, and more), a Flask web dashboard, 47 management scripts, and systemd services.
 - **Local network** — the webdash serves at `https://uconsole.local` via nginx + self-signed TLS + mDNS. No known WiFi? The device spins up a fallback AP (`uConsole`) so your phone or laptop can always reach it.
 - **Cloud** — [uconsole.cloud](https://uconsole.cloud) is a Next.js app that shows live device telemetry, backup coverage, system inventory, and hardware info from anywhere. Fully optional — everything works offline.
 
@@ -102,7 +102,7 @@ The bootstrap adds the GPG-signed APT repo and installs the `uconsole-cloud` pac
 SYSTEM   MONITOR   FILES   POWER   NETWORK   HARDWARE   TOOLS   GAMES   CONFIG
 ```
 
-Curses launcher with gamepad + keyboard input, 9 categories, 50+ native tools, plus direct-run shell scripts. Highlights:
+Curses launcher with gamepad + keyboard input, 9 categories, 64 native handlers, plus direct-run shell scripts. Highlights:
 
 - **MONITOR** — 1-second live gauges for CPU, memory, disk, temperature, battery, network
 - **HARDWARE** — GPS globe, FM radio, global ADS-B map with hi-res basemap fetch, ESP32 hub (Marauder, MicroPython, MimiClaw, Bruce flashing), Meshtastic mesh map
@@ -142,7 +142,7 @@ uconsole help
 | Backup data | GitHub REST API |
 | CMS | Sanity v3 |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest 4 (frontend, 117 tests) + pytest (device, 1000+ tests) |
+| Testing | Vitest 4 (frontend, 200+ tests across 10 suites) + pytest (device, 1050+ tests) |
 | Hosting | Vercel |
 | CI/CD | GitHub Actions (.deb build, APT publish) |
 | Device | Bash + Python, Flask webdash, curses TUI, systemd |
