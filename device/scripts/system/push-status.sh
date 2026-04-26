@@ -6,12 +6,26 @@
 set -euo pipefail
 
 # ── Load config ─────────────────────────────────────────
+# Parse status.env explicitly instead of `source`-ing it. The file is
+# owned and written by uconsole-setup, but it's still rotated through
+# user-controlled flows (re-link, manual edits) so treating it as
+# executable code would let any future write-path turn it into RCE.
 ENV_FILE="${HOME}/.config/uconsole/status.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "Missing $ENV_FILE" >&2
     exit 1
 fi
-source "$ENV_FILE"
+
+env_value() {
+    local key="$1"
+    grep -E "^[[:space:]]*${key}=" "$ENV_FILE" 2>/dev/null \
+        | tail -n1 \
+        | sed -E "s/^[[:space:]]*${key}=//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/"
+}
+
+DEVICE_API_URL=$(env_value DEVICE_API_URL)
+DEVICE_TOKEN=$(env_value DEVICE_TOKEN)
+DEVICE_REPO=$(env_value DEVICE_REPO)
 
 : "${DEVICE_API_URL:?}"
 : "${DEVICE_TOKEN:?}"

@@ -52,10 +52,24 @@ load_config() {
     LORA_CR=5
     LORA_SYNC=0x12
 
-    if [ -f "$LORA_CONF" ]; then
-        # shellcheck source=/dev/null
-        source "$LORA_CONF"
-    fi
+    [ -f "$LORA_CONF" ] || return 0
+
+    # Parse known keys explicitly. The config is user-writable; sourcing it
+    # would let any future write-path (typo, bad merge, malicious diff) turn
+    # it into RCE. Each value is type-checked before it overrides a default.
+    local _v
+    _lora_read() {
+        grep -E "^[[:space:]]*$1=" "$LORA_CONF" 2>/dev/null \
+            | tail -n1 \
+            | sed -E "s/^[[:space:]]*$1=//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/"
+    }
+    _v=$(_lora_read LORA_FREQ);  [[ "$_v" =~ ^[0-9]+(\.[0-9]+)?$ ]]      && LORA_FREQ="$_v"
+    _v=$(_lora_read LORA_BW);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_BW="$_v"
+    _v=$(_lora_read LORA_SF);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_SF="$_v"
+    _v=$(_lora_read LORA_POWER); [[ "$_v" =~ ^-?[0-9]+$ ]]               && LORA_POWER="$_v"
+    _v=$(_lora_read LORA_CR);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_CR="$_v"
+    _v=$(_lora_read LORA_SYNC);  [[ "$_v" =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] && LORA_SYNC="$_v"
+    unset -f _lora_read
 }
 
 save_config() {
