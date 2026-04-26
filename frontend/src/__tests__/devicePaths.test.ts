@@ -21,6 +21,14 @@ const CLI_SCRIPT = path.join(
   "uconsole"
 );
 
+// Scripts the TUI / webdash reference but that aren't shipped in the
+// public tree — users supply them via private repos at install time
+// (e.g. system/backup.sh was removed from the public tree in d2f3783
+// for security). Mirrors KNOWN_PRIVATE_SCRIPTS in tests/test_tui_integrity.py.
+const KNOWN_PRIVATE_SCRIPTS = new Set<string>([
+  "system/backup.sh",
+]);
+
 // Collect all .sh files in device/scripts/ recursively
 function getScriptFiles(dir: string): Set<string> {
   const files = new Set<string>();
@@ -78,6 +86,7 @@ describe("webdash ALLOWED_SCRIPTS paths", () => {
     const missing: string[] = [];
     for (const { subdir, name } of referencedScripts) {
       const relPath = `${subdir}/${name}`;
+      if (KNOWN_PRIVATE_SCRIPTS.has(relPath)) continue;
       if (!existingScripts.has(relPath)) {
         missing.push(relPath);
       }
@@ -138,6 +147,7 @@ describe("TUI framework script paths", () => {
   it("all referenced scripts exist in device/scripts/", () => {
     const missing: string[] = [];
     for (const scriptPath of referencedPaths) {
+      if (KNOWN_PRIVATE_SCRIPTS.has(scriptPath)) continue;
       if (!existingScripts.has(scriptPath)) {
         missing.push(scriptPath);
       }
