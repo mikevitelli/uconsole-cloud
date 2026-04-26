@@ -588,16 +588,16 @@ def _confirm(scr, title, msg):
 # ── Main Menu ────────────────────────────────────────────────────────
 
 _MENU = [
-    ("WiFi Scan",       "Scan access points and stations",       "◎"),
-    ("WiFi Attack",     "Deauth, beacon, probe, rickroll, CSA",  "☠"),
-    ("Sniffers",        "Deauth, PMKID, beacon, probe, raw",    "◈"),
-    ("BLE Tools",       "Scan, spam, AirTag, Flipper, skimmers", "⚑"),
-    ("Signal Monitor",  "Live RSSI braille waveforms",           "⣿"),
-    ("Evil Portal",     "Captive portal credential capture",     "⚠"),
-    ("Network Recon",   "Join network, ping, ARP, port scan",   "⌗"),
-    ("War Drive",       "GPS-tagged AP sweep \u2192 CSV",        "◉"),
-    ("Device",          "Info, settings, MAC spoof, reboot",     "⚙"),
-    ("Raw Console",     "Direct serial I/O",                     "⌨"),
+    ("WiFi Scan",       "Scan access points and stations",       "📡"),
+    ("WiFi Attack",     "Deauth, beacon, probe, rickroll, CSA",  "💀"),
+    ("Sniffers",        "Deauth, PMKID, beacon, probe, raw",    "👃"),
+    ("BLE Tools",       "Scan, spam, AirTag, Flipper, skimmers", "📲"),
+    ("Signal Monitor",  "Live RSSI braille waveforms",           "📊"),
+    ("Evil Portal",     "Captive portal credential capture",     "🪤"),
+    ("Network Recon",   "Join network, ping, ARP, port scan",   "🕵️"),
+    ("War Drive",       "GPS-tagged AP sweep \u2192 CSV",        "🚗"),
+    ("Device",          "Info, settings, MAC spoof, reboot",     "🛠️"),
+    ("Raw Console",     "Direct serial I/O",                     "🔌"),
 ]
 
 
@@ -2118,8 +2118,8 @@ def _portal(scr, mrd):
     log = []
     sel = 0
     items = [
-        ("Evil Portal",  "evilportal -c start", "Default captive portal", "⚠"),
-        ("Karma Attack", "karma -p 0",          "Respond to all probes",  "◎"),
+        ("Evil Portal",  "evilportal -c start", "Default captive portal", "🪤"),
+        ("Karma Attack", "karma -p 0",          "Respond to all probes",  "🎯"),
     ]
 
     cols = 1
