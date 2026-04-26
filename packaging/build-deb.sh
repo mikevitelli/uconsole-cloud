@@ -55,6 +55,15 @@ find "${BUILD_DIR}/opt/uconsole/" -type d -name __pycache__ -exec rm -rf {} + 2>
 find "${BUILD_DIR}/opt/uconsole/" -name '.console-config.json' -delete 2>/dev/null || true
 find "${BUILD_DIR}/opt/uconsole/" -name '*.pyc' -delete 2>/dev/null || true
 
+# Scrub user-specific config snapshots that live in device/scripts/ as a
+# private backup but must NOT ship in the public .deb. The install-test
+# CI job greps /opt/uconsole/ for personal data (mikevitelli, 192.168.1.,
+# etc.) and these directories are where it leaks from.
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/ssh"            # personal SSH keys
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/system/etc"     # crontab.user, sudoers.d
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/config"         # systemd-user backups, dconf dumps
+rm -f  "${BUILD_DIR}/opt/uconsole/scripts/.console-config.json"
+
 # ── Cloud-side CLI wrapper (overrides device repo's copy if present) ──
 
 cp "${CLI_SRC}" "${BUILD_DIR}/opt/uconsole/bin/uconsole"

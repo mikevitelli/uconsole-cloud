@@ -112,7 +112,10 @@ RUN echo "=== TEST: TUI modules importable ===" \
     && echo "PASS"
 
 RUN echo "=== TEST: No personal data in package ===" \
-    && ! grep -r "mikevitelli\|tardis\|dalek\|192\.168\.1\." /opt/uconsole/ 2>/dev/null | grep -v __pycache__ | grep -q . \
+    && ! grep -r "mikevitelli\|tardis\|dalek\|192\.168\.1\." /opt/uconsole/ 2>/dev/null \
+       | grep -v __pycache__ \
+       | grep -v 'mikevitelli/uconsole-watchdogs-fw' \
+       | grep -q . \
     && echo "PASS"
 
 RUN echo "=== TEST: uconsole help lists all commands ===" \

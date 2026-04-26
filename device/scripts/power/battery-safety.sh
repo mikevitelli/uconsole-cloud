@@ -74,8 +74,7 @@ Usage: battery-safety.sh {on|off|status}
 
 UNSTABLE: default is OFF. These were previously broken by a path
 migration and are now under active iteration. Opt in at your own risk.
-See: https://github.com/mikevitelli/uconsole-cloud/blob/dev/
-     device/scripts/power/
+See the project's device/scripts/power/ directory for source.
 EOF
         exit 1
         ;;
