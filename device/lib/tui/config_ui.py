@@ -382,40 +382,56 @@ def run_trackball_scroll_toggle(scr):
     svc_src = "/opt/uconsole/share/systemd/trackball-scroll.service"
     svc_dst = os.path.expanduser("~/.config/systemd/user/trackball-scroll.service")
 
+    # systemctl can hang indefinitely if dbus or systemd-userd is wedged.
+    # 10s is a safe upper bound — these calls normally complete in <1s.
+    SYSTEMCTL_TIMEOUT = 10
+
     # Ensure service file is linked (disable removes it)
     if not os.path.exists(svc_dst) and os.path.exists(svc_src):
         os.makedirs(os.path.dirname(svc_dst), exist_ok=True)
         os.symlink(svc_src, svc_dst)
-        subprocess.run(["systemctl", "--user", "daemon-reload"],
-                       capture_output=True)
+        try:
+            subprocess.run(["systemctl", "--user", "daemon-reload"],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
 
     try:
         result = subprocess.run(
             ["systemctl", "--user", "is-enabled", svc],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=SYSTEMCTL_TIMEOUT
         )
         enabled = result.stdout.strip() == "enabled"
-    except Exception:
+    except (subprocess.TimeoutExpired, Exception):
         enabled = False
 
     h, w = scr.getmaxyx()
     if enabled:
-        subprocess.run(["systemctl", "--user", "stop", svc],
-                       capture_output=True)
-        subprocess.run(["systemctl", "--user", "disable", svc],
-                       capture_output=True)
+        try:
+            subprocess.run(["systemctl", "--user", "stop", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            subprocess.run(["systemctl", "--user", "disable", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
         draw_status_bar(scr, h, w, "  ✓ Trackball scroll: OFF",
                         curses.color_pair(C_STATUS) | curses.A_BOLD)
     else:
         # Re-link if disable removed it
         if not os.path.exists(svc_dst) and os.path.exists(svc_src):
             os.symlink(svc_src, svc_dst)
-            subprocess.run(["systemctl", "--user", "daemon-reload"],
-                           capture_output=True)
-        subprocess.run(["systemctl", "--user", "enable", svc],
-                       capture_output=True)
-        subprocess.run(["systemctl", "--user", "start", svc],
-                       capture_output=True)
+            try:
+                subprocess.run(["systemctl", "--user", "daemon-reload"],
+                               capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            subprocess.run(["systemctl", "--user", "enable", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            subprocess.run(["systemctl", "--user", "start", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
         draw_status_bar(scr, h, w, "  ✓ Trackball scroll: ON (Fn + trackball)",
                         curses.color_pair(C_STATUS) | curses.A_BOLD)
     scr.refresh()
