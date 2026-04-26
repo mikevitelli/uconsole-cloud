@@ -1,5 +1,7 @@
 # uConsole Suspend-to-RAM Investigation & Implementation Plan
 
+> **Status (2026-04-26):** Deferred to v0.3.x. The critical Phase 2 gate (CONFIG_SUSPEND=y) requires a custom kernel rebuild that hasn't been scheduled. Plan is preserved here intact — pick up where it left off when the kernel work lands.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Drop uConsole overnight idle power draw from ~4.2 W to <1 W by implementing real suspend-to-RAM (or, if the kernel can't be made to cooperate, an aggressive idle-optimization fallback that approaches 1.5 W).

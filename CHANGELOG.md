@@ -1,5 +1,88 @@
 # Changelog
 
+## v0.2.2 (unreleased)
+
+ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
+hardware fixes, TUI emoji icons, audit security closeout, and a launcher
+that picks up the dev tree without `make install`.
+
+### Added
+- **MimiClaw integration** under the ESP32 hub — firmware detection, WiFi
+  config panel with IP auto-discovery over serial, post-reset hang detection,
+  DTR/RTS quiet mode. Distilled MicroPython, Marauder, and MimiClaw submenus
+  share a common footer.
+- **Meshtastic TUI client** (`tui.meshtastic`) — full mesh map visualization,
+  packet filtering, CLI wrapper alignment. Consolidated under HARDWARE radio
+  alongside LoRa, with a shared `sub:lora_mesh` submenu.
+- **Wardrive GPS-tagged AP map** (opt-in via `UCONSOLE_WARDRIVE_ENABLED=1` or
+  `/etc/uconsole/wardrive-enabled`) — capture engine in `tui.marauder`, OSM
+  street overlay via Overpass API, MapLibre GL viewer in webdash, demo data
+  generator. Polish (signal-strength color ramp, error surfacing, config
+  tunables, Overpass mirror fallback) deferred to v0.2.3.
+- **TUI emoji icons** — per-item color emoji on every submenu and the tile
+  grid. Single-codepoint glyphs only (terminal drops ZWJ joiners).
+- **Launcher auto-detect** — `console` picks up `~/uconsole-cloud/device/lib/`
+  if present, so dev edits are live without `make install`. Escape hatches:
+  `console-pkg` / `UCONSOLE_PKG_ONLY=1` forces the deployed copy at
+  `/opt/uconsole/lib/`, and `UCONSOLE_DEV_LIB=/path` points at any tree.
+- **Documentation split** — `docs/PIPELINE.md`, `docs/ARCHITECTURE.md`,
+  `docs/API.md`, `docs/SELF-HOSTING.md` extracted from the README.
+
+### Changed
+- **ADS-B feeder migrated from dump1090-mutability to readsb + viewadsb.**
+  readsb is the actively maintained successor; viewadsb replaces dump1090's
+  interactive console. New `sync_home_to_readsb()` propagates the TUI home
+  coords into the service config so the receiver knows the antenna location.
+- **TUI framework refactor** — per-feature handler registry. Each feature
+  module owns its handlers via a `HANDLERS = {"_foo": fn}` dict; framework
+  walks `FEATURE_MODULES` and merges. Menu items conditionally hide if the
+  underlying module fails to import.
+- **Launcher version display** reads `VERSION` file directly (no `git
+  describe`); dev suffix shows the next patch version.
+
+### Fixed
+- **LoRa SX1262 silently non-functional on AIO V1.** Added the missing TCXO
+  control (`SetDIO3AsTcxoCtrl`), recalibration, regulator-mode, image-rejection
+  calibration, and DIO2-as-RF-switch commands to the init sequence. Without
+  these the synthesizer never locked and the chip had no path to the antenna,
+  so `SetRx` / `SetTx` returned command-error status with no user-visible cause.
+- **`lora.sh` failed inside venvs** that lack system `python3-spidev`. Now
+  honors a `PYTHON3` env override (default `/usr/bin/python3`).
+- **`restore.sh` left `dtoverlay=spi1-1cs` in `BOOT_EXTRAS`** persistently after
+  AIO board removal, which fought the LoRa init.
+- **`.deb` install** carried user-specific config and path leaks; CI install-test
+  now scrubs them before packaging.
+- **`crash-log` $HOME handling** — corrected for systemd unit context.
+- **Frontend vitest** failed locally on Node 18 because `std-env@4` went
+  ESM-only and vitest's CJS config bundler can't require it. Renamed
+  `vitest.config.ts` → `.mjs` so vite loads it through the ESM path.
+- **Wardrive WiGLE quota-probe cron retired** — was burning a daily 429 against
+  the WiGLE API for no actionable signal.
+
+### Security
+- **#45** — `uconsole-setup` `ask()` replaced `eval "$var=..."` with `printf -v`.
+  A default like `"; rm -rf /; #` no longer executes when re-typed by a user.
+- **#46** — `uconsole` CLI replaced `eval "$(maybe_sudo cat status.env)"` and
+  a second `source "$ENV_FILE"` in `cmd_status` with a `read_env_value()`
+  helper that grep-parses single keys.
+- **#47** — `push-status.sh` (runs every 5 min via systemd timer) replaced
+  `source "$ENV_FILE"` with explicit per-key parsing.
+- **`lora.sh`** replaced `source "$LORA_CONF"` with a type-validated parser
+  (numeric/hex regex per field) — same-pattern audit Must-Fix.
+- **#48** — `config_ui.py` trackball-scroll handler added `timeout=10` to all
+  7 systemctl calls so a wedged dbus or systemd-userd can't freeze the TUI.
+- **#49 (subset)** — `set -euo pipefail` on safety-critical PMU scripts
+  (`charge.sh`, `cpu-freq-cap.sh`, `pmu-voltage-min.sh`). Remaining ~32
+  scripts deferred to v0.2.3.
+- **Backup blob rejection** — `git_sync_guard_blob_size` refuses to commit
+  files >95MB before they hit GitHub's 100MB hard limit.
+
+### Tests
+- Frontend regex updated for 5-tuple TUI menu items and no-space emoji icons.
+- HARDWARE radio submenu assertion now expects `sub:lora_mesh`.
+- `backup.sh` exempted from `devicePaths` existence checks (system file).
+- Pytest: orphan handler wiring and private-script exemptions.
+
 ## v0.2.1
 
 Push Interval improvements.

@@ -1,6 +1,6 @@
 # Feature map
 
-Current state of the uconsole-cloud platform as of v0.2.1. For the full release log, see [CHANGELOG.md](../CHANGELOG.md). For active design work, see `docs/plans/` and `docs/specs/`.
+Current state of the uconsole-cloud platform as of v0.2.2. For the full release log, see [CHANGELOG.md](../CHANGELOG.md). For active design work, see `docs/plans/` and `docs/specs/`.
 
 ## Shipped
 
@@ -55,6 +55,10 @@ External GUI programs (emulators, Watch Dogs Go) launch through `tui.launcher` w
 - Live monitor via SSE (1s push while panel open)
 - Documentation wiki served at `/docs` (these very pages)
 - Crash log viewer, timer scheduling, config management
+- **Wardrive AP map (opt-in)** — MapLibre GL view of GPS-tagged AP captures
+  from `tui.marauder`, with session selector, density heatmap, and OSM
+  basemap. Disabled by default — enable via `UCONSOLE_WARDRIVE_ENABLED=1`
+  or `touch /etc/uconsole/wardrive-enabled`. Polish landing in v0.2.3.
 
 ### Packaging
 
@@ -77,17 +81,14 @@ External GUI programs (emulators, Watch Dogs Go) launch through `tui.launcher` w
 
 | Area | Status | Reference |
 |------|--------|-----------|
-| Suspend-to-RAM | Plan written, blocked on kernel rebuild (CONFIG_SUSPEND=n in stock CM4 kernel) | [`docs/plans/2026-04-21-uconsole-suspend-to-ram.md`](plans/2026-04-21-uconsole-suspend-to-ram.md) |
+| Suspend-to-RAM | **Deferred to v0.3.x** — requires CONFIG_SUSPEND=y kernel rebuild that hasn't been scheduled. Plan preserved intact. | [`docs/plans/2026-04-21-uconsole-suspend-to-ram.md`](plans/2026-04-21-uconsole-suspend-to-ram.md) |
+| Wardrive map polish | **Deferred to v0.2.3** — feature ships opt-in in v0.2.2; remaining work is signal-strength color ramp, error surfacing, config tunables, Overpass mirror fallback. | (no plan doc yet) |
 
 ## Open issues
 
-Tracked on [GitHub Issues](https://github.com/mikevitelli/uconsole-cloud/issues). Notable open security and robustness items from the 2026-04-09 audit:
+Tracked on [GitHub Issues](https://github.com/mikevitelli/uconsole-cloud/issues).
 
-- [#45](https://github.com/mikevitelli/uconsole-cloud/issues/45) — Replace `eval`-based variable assignment in `uconsole-setup` with `printf -v`
-- [#46](https://github.com/mikevitelli/uconsole-cloud/issues/46) — `uconsole` CLI `eval`s env file content; parse explicitly
-- [#47](https://github.com/mikevitelli/uconsole-cloud/issues/47) — `push-status.sh` sources env file every 5 min; parse explicitly
-- [#48](https://github.com/mikevitelli/uconsole-cloud/issues/48) — Add `timeout=` to `systemctl` calls in `config_ui.py` to prevent TUI freeze
-- [#49](https://github.com/mikevitelli/uconsole-cloud/issues/49) — Roll out `set -euo pipefail` to remaining 32 of 47 bash scripts
+The five 2026-04-09 audit items (#45–#49) closed in v0.2.2: eval injection in `uconsole-setup`, env-file parsing in CLI / push-status.sh / lora.sh, systemctl timeouts in `config_ui.py`, and `set -euo pipefail` on the safety-critical PMU scripts (charge, cpu-freq-cap, pmu-voltage-min). The remaining ~32 scripts in the `set -euo pipefail` rollout are tracked under #49 for v0.2.3.
 
 For the full audit triage, see [`docs/audits/2026-04-09/STATUS.md`](audits/2026-04-09/STATUS.md).
 
