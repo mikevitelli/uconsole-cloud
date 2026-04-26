@@ -1505,89 +1505,6 @@ def _tui_input_loop(scr, js, map_y_quit=False):
     return key, gp_action
 
 
-def run_process_manager(scr):
-    """Interactive process viewer with kill support."""
-    js = open_gamepad()
-    scr.timeout(2000)
-    sel = 0
-    sort_by = "cpu"  # "cpu" or "mem"
-
-    while True:
-        h, w = scr.getmaxyx()
-        scr.erase()
-
-        title = f" Process Manager (sort: {sort_by}) "
-        scr.addnstr(0, 0, title.center(w), w, curses.color_pair(C_HEADER) | curses.A_BOLD)
-
-        # Get processes
-        try:
-            sf = "--sort=-%cpu" if sort_by == "cpu" else "--sort=-rss"
-            out = subprocess.check_output(
-                ["ps", "aux", sf], timeout=3
-            ).decode()
-            lines = out.splitlines()
-            header = lines[0] if lines else ""
-            procs = lines[1:] if len(lines) > 1 else []
-        except Exception:
-            procs = []
-            header = ""
-
-        # Header
-        try:
-            scr.addnstr(1, 1, header[:w - 2], w - 2, curses.color_pair(C_CAT) | curses.A_BOLD)
-        except curses.error:
-            pass
-
-        view_h = h - 4
-        sel = min(sel, max(0, len(procs) - 1))
-
-        for i in range(view_h):
-            if i >= len(procs):
-                break
-            attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else curses.color_pair(C_ITEM)
-            marker = "▸" if i == sel else " "
-            try:
-                scr.addnstr(i + 2, 0, f" {marker} {procs[i][:w - 4]}", w, attr)
-            except curses.error:
-                pass
-
-        bar = _footer_bar(" ↑↓ Select │ A Kill │ X Sort │ B Back ", w)
-        try:
-            scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
-        except curses.error:
-            pass
-        scr.refresh()
-
-        key, gp = _tui_input_loop(scr, js)
-        if key == -1 and gp is None:
-            continue
-        if key == ord("q") or key == ord("Q") or gp == "back":
-            break
-        elif key == curses.KEY_UP or key == ord("k"):
-            sel = max(0, sel - 1)
-        elif key == curses.KEY_DOWN or key == ord("j"):
-            sel = min(len(procs) - 1, sel + 1)
-        elif gp == "refresh" or key == ord("x") or key == ord("X"):
-            sort_by = "mem" if sort_by == "cpu" else "cpu"
-        elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
-            if procs and sel < len(procs):
-                pid = procs[sel].split()[1] if len(procs[sel].split()) > 1 else None
-                if pid and pid.isdigit() and 2 <= int(pid) <= 4194304:
-                    try:
-                        os.kill(int(pid), signal.SIGTERM)
-                        draw_status_bar(scr, h, w, f"  ✓ Sent SIGTERM to PID {pid}")
-                    except ProcessLookupError:
-                        draw_status_bar(scr, h, w, f"  ✗ Process {pid} not found")
-                    except PermissionError:
-                        draw_status_bar(scr, h, w, f"  ✗ Permission denied for PID {pid}")
-                    scr.refresh()
-                    time.sleep(1)
-
-    if js:
-        close_gamepad(js)
-    scr.timeout(100)
-
-
 TILE_W_MIN = 22
 TILE_H = 5
 
@@ -1943,824 +1860,81 @@ def main_tiles(scr):
     return None
 
 
-# ── ESP32 dynamic submenu items ──────────────────────────────────────────
+# ── Feature handler registry ────────────────────────────────────────────────
+#
+# Each feature module under tui/ exports a HANDLERS = {"_foo": fn, ...} dict
+# mapping handler keys to callables that take (scr).  framework.py walks the
+# FEATURE_MODULES list below, imports each, and merges their HANDLERS.  A
+# module that fails to import is logged to ~/crash.log and skipped — its
+# menu items resolve to silent no-ops at dispatch (see run_script).
 
-_ESP32_MICROPYTHON_ITEMS = [
-    ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📊"),
-    ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "⌨"),
-    ("Status",           "radio/esp32.sh status",     "latest sensor reading + chip info",      "panel",      "📡"),
-    ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "⟩⟩"),
-    ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⇪"),
-    ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "✎"),
+FEATURE_MODULES = [
+    "tui.config_ui",
+    "tui.tools",
+    "tui.games",
+    "tui.monitor",
+    "tui.files",
+    "tui.network",
+    "tui.services",
+    "tui.radio",
+    "tui.adsb",
+    "tui.adsb_home_picker",
+    "tui.adsb_basemap_info",
+    "tui.adsb_menu",
+    "tui.meshtastic_map",
+    "tui.marauder",
+    "tui.mimiclaw",
+    "tui.telegram",
+    "tui.watchdogs",
+    "tui.processes",
+    "tui.esp32_hub",
 ]
 
-_ESP32_MARAUDER_ITEMS = [
-    ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
-    ("War Drive",        "_wardrive",                      "GPS-tagged AP sweep \u2192 CSV",        "action",     "◉"),
-    ("Replay Session",   "_wardrive_replay",               "browse + replay past war-drive CSVs",   "action",     "\u23f5"),
-    ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
-    ("Status",           "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "📡"),
-    ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
-]
-
-_ESP32_COMMON_ITEMS = [
-    ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
-    ("Backup FW",        "_esp32_backup",             "dump current flash to ~/esp32-backup-*.bin", "action", "💾"),
-    ("Reflash",          "_esp32_flash",              "pick firmware: MicroPython, Marauder, Bruce, MimiClaw", "action", "⇄"),
-]
+_HANDLERS_CACHE = None
 
 
-_ESP32_MIMICLAW_ITEMS = [
-    ("Chat",             "_mimiclaw_chat",      "talk to MimiClaw AI agent",              "action",     "💬"),
-    ("Serial Monitor",   "_mimiclaw_serial",    "raw serial output from MimiClaw",        "action",     "⌨"),
-    ("Status",           "_mimiclaw_status",    "agent status and WiFi info",             "action",     "📡"),
-    ("Settings",         "sub:mimiclaw:settings","WiFi, tokens, model provider",          "submenu",    "⚙"),
-]
-
-
-def _esp32_menu_for(firmware):
-    """Return submenu items for the detected firmware mode."""
-    from tui.esp32_detect import Firmware
-    if firmware == Firmware.MICROPYTHON:
-        items = list(_ESP32_MICROPYTHON_ITEMS)
-    elif firmware == Firmware.MARAUDER:
-        items = list(_ESP32_MARAUDER_ITEMS)
-    elif firmware == Firmware.MIMICLAW:
-        items = list(_ESP32_MIMICLAW_ITEMS)
-    else:
-        items = [
-            ("Manual: MicroPython", "_esp32_force_mp",  "assume MicroPython firmware",  "action", "🐍"),
-            ("Manual: Marauder",    "_esp32_force_mrd", "assume Marauder firmware",     "action", "☠"),
-            ("Manual: MimiClaw",    "_esp32_force_mc",  "assume MimiClaw firmware",     "action", "🐾"),
-        ]
-    items.extend(_ESP32_COMMON_ITEMS)
-    return items
-
-
-def run_esp32_hub(scr):
-    """ESP32 hub — detect firmware, show appropriate submenu."""
-    from tui.esp32_detect import Firmware, detect, invalidate_cache
-
-    # Release Marauder serial connection if held (so detect() can open the port)
+def _log_feature_failure(mod_name, exc):
+    """Append a timestamped line to ~/crash.log noting a feature import failure."""
+    import datetime
     try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
+        with open(os.path.expanduser("~/crash.log"), "a") as f:
+            f.write(
+                f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}  "
+                f"feature-import-failed  {mod_name}  "
+                f"{type(exc).__name__}: {exc}\n"
+            )
+    except OSError:
         pass
 
-    h, w = scr.getmaxyx()
-    scr.erase()
 
-    # Detection splash
-    msg = " Detecting ESP32 firmware... "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
+def _load_handlers():
+    """Import every FEATURE_MODULES entry, merge their HANDLERS dicts.
 
-    firmware = detect()
-
-    # Build dynamic submenu
-    SUBMENUS["sub:esp32"] = _esp32_menu_for(firmware)
-
-    # Show mode badge in title
-    badge = {
-        Firmware.MICROPYTHON: "MicroPython",
-        Firmware.MARAUDER: "Marauder",
-        Firmware.BRUCE: "Bruce",
-        Firmware.MIMICLAW: "MimiClaw",
-        Firmware.UNKNOWN: "Unknown",
-    }.get(firmware, "Unknown")
-
-    run_submenu(scr, "sub:esp32", f"ESP32 [{badge}]")
-
-
-def run_esp32_flash_picker(scr):
-    """Switch firmware — pick target and flash with safety gates."""
-    import threading
-    from tui.esp32_detect import Firmware, detect, invalidate_cache
-    from tui.esp32_flash import FetchCancelled, FlashError, flash
-
-    current = detect()
-
-    options = [
-        (Firmware.MICROPYTHON, "MicroPython"),
-        (Firmware.MARAUDER,    "Marauder"),
-        (Firmware.BRUCE,       "Bruce"),
-        (Firmware.MIMICLAW,    "MimiClaw"),
-    ]
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-    title = " Flash which firmware? "
-    scr.addnstr(1, max(0, (w - len(title)) // 2), title, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-
-    sel = 0
-    for i, (fw, name) in enumerate(options):
-        if fw == current:
-            sel = i  # highlight current by default (user picks another)
-    # If current is unknown, start on Marauder
-    if current == Firmware.UNKNOWN:
-        sel = 1
-
-    scr.timeout(-1)
-    while True:
-        for i, (fw, name) in enumerate(options):
-            marker = ">" if i == sel else " "
-            tag = "  (current)" if fw == current else ""
-            line = f" {marker} {i+1}. {name}{tag} "
-            attr = curses.A_BOLD | curses.color_pair(
-                C_HEADER if i == sel else C_DIM)
-            try:
-                scr.addnstr(3 + i, max(0, (w - len(line)) // 2),
-                            line, w - 1, attr)
-            except curses.error:
-                pass
-        hint = " up/down select  Enter confirm  Q cancel "
-        try:
-            scr.addnstr(h - 1, 0, hint[:w - 1].center(w - 1), w - 1,
-                        curses.color_pair(C_DIM))
-        except curses.error:
-            pass
-        scr.refresh()
-        key = scr.getch()
-        if key in (curses.KEY_UP, ord("k")):
-            sel = (sel - 1) % len(options)
-        elif key in (curses.KEY_DOWN, ord("j")):
-            sel = (sel + 1) % len(options)
-        elif ord("1") <= key < ord("1") + len(options):
-            sel = key - ord("1")
-            break
-        elif key in (10, 13, curses.KEY_ENTER):
-            break
-        elif key in (ord("q"), ord("Q"), 27):
-            scr.timeout(100)
-            return
-    scr.timeout(100)
-
-    target, target_name = options[sel]
-
-    # MimiClaw uses local ~/mimiclaw-flash/ binaries, not the Bruce fetch
-    # flow. Short-circuit to its self-contained flasher.
-    if target == Firmware.MIMICLAW:
-        from tui.mimiclaw import run_mimiclaw_flash
-        run_mimiclaw_flash(scr)
-        invalidate_cache()
-        return
-
-    if target == current:
-        scr.addnstr(h - 2, 0,
-                    f" Already running {target_name} — nothing to do. "[:w - 1],
-                    w - 1, curses.color_pair(C_STATUS) | curses.A_BOLD)
-        scr.refresh()
-        scr.timeout(-1); scr.getch(); scr.timeout(100)
-        return
-
-    variant = None
-    if target == Firmware.BRUCE:
-        from tui.esp32_flash import list_watchdogs_variants
-        from tui.esp32_detect import detect_board_variant
-        variants = list_watchdogs_variants()
-        if not variants:
-            try:
-                scr.addnstr(h - 2, 0,
-                            " No Bruce variants registered. "[:w - 1],
-                            w - 1,
-                            curses.color_pair(C_STATUS) | curses.A_BOLD)
-            except curses.error:
-                pass
-            scr.refresh()
-            scr.timeout(-1); scr.getch(); scr.timeout(100)
-            return
-        picked = _pick_watchdogs_variant(scr, variants, detect_board_variant())
-        if picked is None:
-            return
-        variant, variant_disp = picked
-        target_name = f"Bruce [{variant_disp}]"
-
-    if not _confirm_flash(scr, target_name):
-        return
-    _run_threaded_flash(scr, target, variant, target_name)
-    invalidate_cache()
-    return
-
-
-def _confirm_flash(scr, target_name):
-    """Show a Y/N confirmation for a destructive flash operation."""
-    h, w = scr.getmaxyx()
-    scr.erase()
-    msg = f" Flash {target_name}? (Y/N) "
-    try:
-        scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w - 1,
-                    curses.color_pair(C_HEADER) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-    scr.timeout(-1)
-    key = scr.getch()
-    scr.timeout(100)
-    return key in (ord("y"), ord("Y"))
-
-
-def _run_threaded_flash(scr, target, variant, target_name):
-    """Run ``flash()`` on a worker thread and drive a curses progress UI.
-
-    Handles download progress, esptool output surfacing, Q/ESC cancel
-    during the fetch phase, and final result display.  Returns when
-    the user acknowledges the result screen.
+    Modules that fail to import are logged and skipped — handler keys they
+    would have provided remain absent from the result.
     """
-    import threading
-    from tui.esp32_flash import FetchCancelled, FlashError, flash
-
-    h, w = scr.getmaxyx()
-
-    scr.erase()
-    progress_state = {"done": 0, "total": None, "msg": "Starting..."}
-    progress_lock = threading.Lock()
-    cancel_event = threading.Event()
-    result = {"error": None, "done": False}
-
-    def on_fetch_progress(done, total):
-        with progress_lock:
-            progress_state["done"] = done
-            progress_state["total"] = total
-            progress_state["msg"] = "Downloading firmware"
-
-    def on_output_cb(line):
-        with progress_lock:
-            progress_state["msg"] = line[:60]
+    import importlib
+    handlers = {}
+    for mod_name in FEATURE_MODULES:
         try:
-            scr.addnstr(h - 2, 1, line[:w - 2], w - 2,
-                        curses.color_pair(C_DIM))
-            scr.refresh()
-        except curses.error:
-            pass
-
-    def worker():
-        try:
-            flash(target, on_output=on_output_cb,
-                  variant=variant, on_fetch_progress=on_fetch_progress,
-                  cancel_event=cancel_event)
-        except BaseException as exc:
-            result["error"] = exc
-        finally:
-            result["done"] = True
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-
-    scr.timeout(100)
-    try:
-        while not result["done"]:
-            try:
-                scr.addnstr(0, 0,
-                            f" Flashing {target_name}... ".center(w - 1),
-                            w - 1,
-                            curses.color_pair(C_HEADER) | curses.A_BOLD)
-                with progress_lock:
-                    done = progress_state["done"]
-                    total = progress_state["total"]
-                    msg_line = progress_state["msg"]
-                if total:
-                    pct = int(done * 100 / total) if total else 0
-                    bar = (f" {msg_line}: {done // 1024} / "
-                           f"{total // 1024} KB ({pct}%) ")
-                elif done:
-                    bar = f" {msg_line}: {done // 1024} KB "
-                else:
-                    bar = f" {msg_line} "
-                scr.addnstr(2, 0, bar[:w - 1].center(w - 1), w - 1,
-                            curses.color_pair(C_DIM))
-                scr.addnstr(h - 1, 0,
-                            " Q/ESC to cancel (download only) "[:w - 1]
-                            .center(w - 1), w - 1,
-                            curses.color_pair(C_DIM))
-                scr.refresh()
-            except curses.error:
-                pass
-            key = scr.getch()
-            if key in (ord("q"), ord("Q"), 27):
-                cancel_event.set()
-        t.join(timeout=5)
-        err = result["error"]
-        if isinstance(err, FetchCancelled):
-            msg = " Download cancelled. "
-        elif isinstance(err, FlashError):
-            msg = f" Flash failed: {err} "
-        elif err is not None:
-            msg = f" Unexpected error: {err} "
-        else:
-            msg = f" Flash complete — {target_name} installed. Press any key. "
-    finally:
-        scr.timeout(100)
-
-    try:
-        scr.addnstr(h - 1, 0, msg[:w - 1], w - 1,
-                    curses.color_pair(C_STATUS) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
+            mod = importlib.import_module(mod_name)
+        except Exception as e:
+            _log_feature_failure(mod_name, e)
+            continue
+        handlers.update(getattr(mod, "HANDLERS", {}))
+    return handlers
 
 
-def _esp32_install_watchdogs(scr):
-    """One-tap Bruce install: detect chip → fetch → flash.
-
-    If ``detect_board_variant`` is confident, we skip the variant
-    picker and only ask for the single Y/N confirmation.  If detection
-    fails, fall back to the manual picker so the user can choose
-    explicitly.
-    """
-    from tui.esp32_detect import (
-        Firmware, detect_board_variant, invalidate_cache, _read_chip_type,
-        get_port, release_gpsd)
-    from tui.esp32_flash import list_watchdogs_variants
-
-    h, w = scr.getmaxyx()
-
-    # Close any held Marauder connection so detection has the port.
-    try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
-        pass
-
-    scr.erase()
-    splash = " Detecting ESP32 board... "
-    try:
-        scr.addnstr(h // 2, max(0, (w - len(splash)) // 2), splash, w - 1,
-                    curses.color_pair(C_HEADER) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-
-    # Detect chip family so we can scope the variant list.
-    port = get_port()
-    if port:
-        release_gpsd(port)
-    chip = _read_chip_type(port) if port else None
-    guessed = detect_board_variant(port)
-
-    # Show variants for this chip only; fall back to all if detection fails.
-    variants = list_watchdogs_variants(chip=chip) or list_watchdogs_variants()
-    variants_map = {vid: disp for vid, disp in variants}
-
-    # If we identified exactly one variant for this chip, auto-select.
-    if len(variants) == 1 and guessed is None:
-        guessed = variants[0][0]
-
-    if guessed and guessed in variants_map:
-        variant = guessed
-        variant_disp = variants_map[variant]
-        chip_label = chip or "unknown chip"
-        scr.erase()
-        lines = [
-            f" Detected: {chip_label} ",
-            f" Board: {variant_disp} ",
-            "",
-            " Install Bruce firmware? ",
-            " Y to confirm, M to pick manually, anything else to cancel ",
-        ]
-        for i, line in enumerate(lines):
-            attr = curses.color_pair(
-                C_HEADER if i in (1, 3) else C_DIM)
-            if i in (1, 3):
-                attr |= curses.A_BOLD
-            try:
-                scr.addnstr(h // 2 - 2 + i,
-                            max(0, (w - len(line)) // 2),
-                            line, w - 1, attr)
-            except curses.error:
-                pass
-        scr.refresh()
-        scr.timeout(-1)
-        key = scr.getch()
-        scr.timeout(100)
-        if key in (ord("m"), ord("M")):
-            variant = None  # fall through to manual picker below
-        elif key not in (ord("y"), ord("Y")):
-            return
-
-    else:
-        variant = None
-
-    # Manual picker fallback — either detection failed or user wanted it.
-    if variant is None:
-        if not variants:
-            scr.erase()
-            msg = " No Bruce variants registered. "
-            try:
-                scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w - 1,
-                            curses.color_pair(C_STATUS) | curses.A_BOLD)
-            except curses.error:
-                pass
-            scr.refresh()
-            scr.timeout(-1); scr.getch(); scr.timeout(100)
-            return
-        picked = _pick_watchdogs_variant(scr, variants, guessed)
-        if picked is None:
-            return
-        variant, variant_disp = picked
-        if not _confirm_flash(scr, f"Bruce [{variant_disp}]"):
-            return
-
-    _run_threaded_flash(scr, Firmware.BRUCE, variant,
-                        f"Bruce [{variant_disp}]")
-    invalidate_cache()
-
-
-def _pick_watchdogs_variant(scr, variants, guessed):
-    """Interactive variant picker.  Returns (vid, display) or None."""
-    h, w = scr.getmaxyx()
-    vsel = 0
-    if guessed:
-        for i, (vid, _disp) in enumerate(variants):
-            if vid == guessed:
-                vsel = i
-                break
-    scr.timeout(-1)
-    try:
-        while True:
-            scr.erase()
-            title = " Which board? "
-            try:
-                scr.addnstr(1, max(0, (w - len(title)) // 2), title, w - 1,
-                            curses.color_pair(C_HEADER) | curses.A_BOLD)
-            except curses.error:
-                pass
-            for i, (vid, disp) in enumerate(variants):
-                marker = ">" if i == vsel else " "
-                tag = "  (detected)" if guessed == vid else ""
-                line = f" {marker} {i+1}. {disp}{tag} "
-                attr = curses.A_BOLD | curses.color_pair(
-                    C_HEADER if i == vsel else C_DIM)
-                try:
-                    scr.addnstr(3 + i, max(0, (w - len(line)) // 2),
-                                line, w - 1, attr)
-                except curses.error:
-                    pass
-            hint = " up/down select  Enter confirm  Q cancel "
-            try:
-                scr.addnstr(h - 1, 0, hint[:w - 1].center(w - 1), w - 1,
-                            curses.color_pair(C_DIM))
-            except curses.error:
-                pass
-            scr.refresh()
-            key = scr.getch()
-            if key in (curses.KEY_UP, ord("k")):
-                vsel = (vsel - 1) % len(variants)
-            elif key in (curses.KEY_DOWN, ord("j")):
-                vsel = (vsel + 1) % len(variants)
-            elif ord("1") <= key <= ord("9") and (key - ord("1")) < len(variants):
-                vsel = key - ord("1")
-                return variants[vsel]
-            elif key in (10, 13, curses.KEY_ENTER):
-                return variants[vsel]
-            elif key in (ord("q"), ord("Q"), 27):
-                return None
-    finally:
-        scr.timeout(100)
-
-
-def run_esp32_force(scr, firmware):
-    """Force-set detection to a specific firmware and re-enter hub."""
-    from tui.esp32_detect import Firmware, invalidate_cache, _cache
-    import time as _time
-    # Manually populate cache with forced value
-    _cache["firmware"] = firmware
-    _cache["port"] = "/dev/esp32"
-    _cache["timestamp"] = _time.time()
-    run_esp32_hub(scr)
-
-
-def _esp32_usb_reset(scr):
-    """USB-reset the ESP32 to recover from a hung state."""
-    from tui.esp32_detect import invalidate_cache
-    import subprocess
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-    msg = " Resetting ESP32 via USB... "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
-
-    # Close Marauder connection if held
-    try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
-        pass
-
-    try:
-        result = subprocess.run(
-            ["usbreset", "CP2102 USB to UART Bridge Controller"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            import time
-            time.sleep(2)  # wait for device to re-enumerate
-            invalidate_cache()
-            msg = " ESP32 reset OK "
-        else:
-            msg = f" Reset failed: {result.stderr.strip()[:40]} "
-    except FileNotFoundError:
-        msg = " usbreset not installed "
-    except subprocess.TimeoutExpired:
-        msg = " Reset timed out "
-
-    scr.addnstr(h // 2 + 1, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_STATUS) | curses.A_BOLD)
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
-
-
-def _esp32_redetect(scr):
-    """Invalidate cache and re-enter ESP32 hub."""
-    from tui.esp32_detect import invalidate_cache
-    invalidate_cache()
-    run_esp32_hub(scr)
-
-
-def _esp32_fw_cache_clear(scr):
-    """Delete every cached Bruce firmware .bin in ~/watchdogs-fw/."""
-    from tui.esp32_flash import clear_watchdogs_cache
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-    title = " Clear Bruce firmware cache? (Y/N) "
-    try:
-        scr.addnstr(h // 2, max(0, (w - len(title)) // 2), title, w - 1,
-                    curses.color_pair(C_HEADER) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-    scr.timeout(-1)
-    key = scr.getch()
-    scr.timeout(100)
-    if key not in (ord("y"), ord("Y")):
-        return
-
-    removed = clear_watchdogs_cache()
-    msg = (f" Removed {len(removed)} file(s) "
-           if removed else " Cache already empty ")
-    try:
-        scr.addnstr(h // 2 + 2, max(0, (w - len(msg)) // 2), msg, w - 1,
-                    curses.color_pair(C_STATUS) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
-
-
-def _esp32_backup(scr):
-    """Dump current ESP32 flash to a timestamped .bin."""
-    from tui.esp32_flash import FlashError, backup_flash
-
-    # Release the Marauder serial connection if held
-    try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
-        pass
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-    scr.addnstr(0, 0, " Backing up ESP32 flash... ".center(w), w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
-
-    lines = []
-
-    def on_output(line):
-        lines.append(line)
-        y = min(len(lines) + 1, h - 2)
-        try:
-            scr.addnstr(y, 1, line[:w - 2], w - 2, curses.color_pair(C_DIM))
-            scr.refresh()
-        except curses.error:
-            pass
-
-    try:
-        dest = backup_flash(on_output=on_output)
-        msg = f" Backup saved: {dest} "
-    except FlashError as e:
-        msg = f" Backup failed: {e} "
-
-    try:
-        scr.addnstr(h - 1, 0, msg[:w - 1], w - 1,
-                    curses.color_pair(C_STATUS) | curses.A_BOLD)
-    except curses.error:
-        pass
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
-
-
-def _Firmware_MP():
-    from tui.esp32_detect import Firmware
-    return Firmware.MICROPYTHON
-
-
-def _Firmware_MRD():
-    from tui.esp32_detect import Firmware
-    return Firmware.MARAUDER
-
-
-def _Firmware_MC():
-    from tui.esp32_detect import Firmware
-    return Firmware.MIMICLAW
-
-
-def _get_native_tools():
-    """Lazy-load native tools from submodules to avoid circular imports."""
-    from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle, run_trackball_scroll_toggle
-    from tui.tools import (run_keybinds, run_git_panel, run_notes, run_calculator,
-                           run_stopwatch, run_screenshot, run_syslog_viewer, run_ssh_bookmarks,
-                           run_pomodoro, run_weather, run_hackernews, run_forum, run_mdviewer)
-    from tui.games import (run_minesweeper, run_snake, run_tetris, run_2048, run_romlauncher)
-    from tui.monitor import run_live_monitor, run_esp32_monitor
-    from tui.files import run_file_browser
-    from tui.network import (run_wifi_switcher, run_hotspot_toggle, run_hotspot_config,
-                             run_wifi_fallback, run_bluetooth)
-    from tui.services import run_cron_viewer, run_webdash_config, run_push_interval
-    from tui.radio import run_gps_globe, run_fm_radio
-    from tui.adsb import run_adsb_map, run_adsb_table, run_adsb_set_home
-    from tui.adsb_home_picker import run_home_picker_action
-    from tui.adsb_layer_picker import run_layer_picker
-    from tui.adsb_basemap_info import run_basemap_info
-    from tui import adsb_hires as _adsb_hires_mod
-    from tui import adsb as _adsb_mod
-    from tui.meshtastic_map import run_meshtastic_map
-    from tui.marauder import run_marauder, run_wardrive, run_wardrive_replay
-    from tui.telegram import run_telegram
-    # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
-    # launcher.py on a deployed device) can't brick the entire native-tools
-    # registry. On import failure both entries short-circuit to a stub via
-    # the ternaries below.
-    try:
-        from tui.watchdogs import run_watchdogs, run_watchdogs_config
-        _have_watchdogs = True
-    except ImportError:
-        _have_watchdogs = False
-        def _watchdogs_missing_stub(scr):
-            import curses
-            try:
-                scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
-                scr.refresh()
-                scr.getch()
-            except curses.error:
-                pass
-        run_watchdogs = _watchdogs_missing_stub
-        run_watchdogs_config = _watchdogs_missing_stub
-    return {
-        "_theme":       lambda scr: run_theme_picker(scr),
-        "_viewmode":    lambda scr: run_viewmode_toggle(scr),
-        "_bat_gauge":   lambda scr: run_bat_gauge_toggle(scr),
-        "_keybinds":    lambda scr: run_keybinds(scr),
-        "_trackball_scroll": lambda scr: run_trackball_scroll_toggle(scr),
-        "_monitor":     lambda scr: run_live_monitor(scr),
-        "_processes":   lambda scr: run_process_manager(scr),
-        "_syslog":      lambda scr: run_syslog_viewer(scr),
-        "_filebrowser": lambda scr: run_file_browser(scr),
-        "_wifi":        lambda scr: run_wifi_switcher(scr),
-        "_hotspot_toggle": lambda scr: run_hotspot_toggle(scr),
-        "_hotspot_config": lambda scr: run_hotspot_config(scr),
-        "_webdash_config": lambda scr: run_webdash_config(scr),
-        "_push_interval": lambda scr: run_push_interval(scr),
-        "_wifi_fallback": lambda scr: run_wifi_fallback(scr),
-        "_bluetooth":   lambda scr: run_bluetooth(scr),
-        "_ssh":         lambda scr: run_ssh_bookmarks(scr),
-        "_git":         lambda scr: run_git_panel(scr),
-        "_notes":       lambda scr: run_notes(scr),
-        "_calc":        lambda scr: run_calculator(scr),
-        "_stopwatch":   lambda scr: run_stopwatch(scr),
-        "_pomodoro":    lambda scr: run_pomodoro(scr),
-        "_weather":     lambda scr: run_weather(scr),
-        "_hackernews":  lambda scr: run_hackernews(scr),
-        "_forum":       lambda scr: run_forum(scr),
-        "_telegram":    lambda scr: run_telegram(scr),
-        "_mdviewer":    lambda scr: run_mdviewer(scr),
-        "_cron":        lambda scr: run_cron_viewer(scr),
-        "_screenshot":  lambda scr: run_screenshot(scr),
-        "_minesweeper": lambda scr: run_minesweeper(scr),
-        "_snake":       lambda scr: run_snake(scr),
-        "_tetris":      lambda scr: run_tetris(scr),
-        "_2048":        lambda scr: run_2048(scr),
-        "_romlauncher": lambda scr: run_romlauncher(scr),
-        "_watchdogs":          lambda scr: run_watchdogs(scr),
-        "_watchdogs_config":   lambda scr: run_watchdogs_config(scr),
-        "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
-        "_esp32_hub":     lambda scr: run_esp32_hub(scr),
-        "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
-        "_esp32_usb_reset": lambda scr: _esp32_usb_reset(scr),
-        "_esp32_redetect": lambda scr: _esp32_redetect(scr),
-        "_esp32_backup":  lambda scr: _esp32_backup(scr),
-        "_esp32_fw_cache_clear": lambda scr: _esp32_fw_cache_clear(scr),
-        "_esp32_install_watchdogs": lambda scr: _esp32_install_watchdogs(scr),
-        "_esp32_force_mp":  lambda scr: run_esp32_force(scr, _Firmware_MP()),
-        "_esp32_force_mrd": lambda scr: run_esp32_force(scr, _Firmware_MRD()),
-        "_esp32_force_mc":  lambda scr: run_esp32_force(scr, _Firmware_MC()),
-        "_mimiclaw_chat":   lambda scr: _run_mimiclaw("run_mimiclaw_chat", scr),
-        "_mimiclaw_serial": lambda scr: _run_mimiclaw("run_mimiclaw_serial", scr),
-        "_mimiclaw_status": lambda scr: _run_mimiclaw("run_mimiclaw_status", scr),
-        "_mimiclaw_wifi":   lambda scr: _run_mimiclaw("run_mimiclaw_wifi", scr),
-        "_marauder":      lambda scr: run_marauder(scr),
-        "_wardrive":      lambda scr: run_wardrive(scr),
-        "_wardrive_replay": lambda scr: run_wardrive_replay(scr),
-        "_gps_globe":     lambda scr: run_gps_globe(scr),
-        "_fm_radio":      lambda scr: run_fm_radio(scr),
-        "_adsb_map":          lambda scr: run_adsb_map(scr),
-        "_adsb_table":        lambda scr: run_adsb_table(scr),
-        "_adsb_set_home":     lambda scr: run_adsb_set_home(scr),
-        "_mesh_map":          lambda scr: run_meshtastic_map(scr),
-        "_adsb_home_picker":  lambda scr: run_home_picker_action(scr),
-        "_adsb_layers":       lambda scr: _adsb_layers_menu_entry(scr, run_layer_picker),
-        "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
-        "_adsb_basemap_info": lambda scr: run_basemap_info(scr),
-    }
-
-
-def _adsb_layers_menu_entry(scr, run_layer_picker):
-    from tui.adsb import DEFAULT_LAYERS
-    cfg = load_config()
-    cur = int(cfg.get("adsb_layers", DEFAULT_LAYERS))
-    new_mask = run_layer_picker(scr, cur)
-    if new_mask is not None:
-        save_config("adsb_layers", new_mask)
-
-
-def _adsb_fetch_hires_entry(scr, hires_mod, adsb_mod):
-    """Menu wrapper for hi-res fetch — runs synchronously with progress in this screen."""
-    import curses
-    import time
-    cfg = load_config()
-    home_lat = cfg.get("adsb_home_lat")
-    home_lon = cfg.get("adsb_home_lon")
-    h, w = scr.getmaxyx()
-    scr.erase()
-    dim = curses.color_pair(C_DIM)
-    hdr = curses.color_pair(C_CAT) | curses.A_BOLD
-    ok_attr = curses.color_pair(C_OK) | curses.A_BOLD if hasattr(curses, 'color_pair') else 0
-    crit = curses.color_pair(C_CRIT)
-    if home_lat is None:
-        tui.put(scr,2, 2, "Set home location first.", w - 4, crit)
-        tui.put(scr,h - 1, 2, "press any key", w - 4, dim)
-        scr.refresh()
-        scr.timeout(-1)
-        scr.getch()
-        return
-    tui.put(scr,1, 2, "FETCH HI-RES BASEMAP", w - 4, hdr)
-    tui.put(scr,3, 2, f"Region: {home_lat:.3f}, {home_lon:.3f}  (±5° lat, ±7° lon)", w - 4, dim)
-    tui.put(scr,4, 2, "Source: github.com/nvkelso/natural-earth-vector (1:10m)", w - 4, dim)
-    tui.put(scr,5, 2, "Layers: coastlines, countries, states, lakes, rivers, airports", w - 4, dim)
-    tui.put(scr,7, 2, "Background fetch — you can return to the map immediately.", w - 4, dim)
-    tui.put(scr,9, 2, "y = start fetch    n = cancel", w - 4, hdr)
-    scr.refresh()
-    scr.timeout(-1)
-    while True:
-        k = scr.getch()
-        if k in (ord('y'), ord('Y')):
-            state = {"status": "idle", "msg": "", "banner_dismissed": False}
-            hires_mod.start_fetch(home_lat, home_lon, state)
-            tui.put(scr,11, 2, "Fetch started in background. Returning to menu.",
-                w - 4, curses.color_pair(C_OK) | curses.A_BOLD)
-            scr.refresh()
-            time.sleep(1)
-            scr.timeout(100)
-            return
-        if k in (ord('n'), ord('N'), ord('q'), 27):
-            scr.timeout(100)
-            return
-
-
-
-def _run_mimiclaw(fn_name, scr):
-    import tui.mimiclaw as _mc
-    return getattr(_mc, fn_name)(scr)
-
-
-
-NATIVE_TOOLS = None
+def _get_handlers():
+    """Return cached merged handlers dict, loading on first call."""
+    global _HANDLERS_CACHE
+    if _HANDLERS_CACHE is None:
+        _HANDLERS_CACHE = _load_handlers()
+    return _HANDLERS_CACHE
 
 
 def run_script(scr, script_name, title, mode):
     """Dispatch to the appropriate runner based on mode. Returns 'switch_view' or None."""
-    global NATIVE_TOOLS
-    if NATIVE_TOOLS is None:
-        NATIVE_TOOLS = _get_native_tools()
     if mode == "submenu":
         return run_submenu(scr, script_name, title)
     if script_name.startswith("_gui:"):
@@ -2769,10 +1943,16 @@ def run_script(scr, script_name, title, mode):
     if script_name.startswith("_url:"):
         run_url_open(scr, script_name[5:], title)
         return None
-    if script_name in NATIVE_TOOLS:
-        result = NATIVE_TOOLS[script_name](scr)
+    handlers = _get_handlers()
+    if script_name in handlers:
+        handlers[script_name](scr)
         if script_name == "_viewmode":
             return "switch_view"
+        return None
+    # An underscored target with no registered handler means the feature
+    # module failed to import — silently no-op (the failure was already
+    # logged to ~/crash.log by _load_handlers).
+    if script_name.startswith("_"):
         return None
     # Confirmation gate for dangerous commands at top level
     if script_name in CONFIRM_SCRIPTS:

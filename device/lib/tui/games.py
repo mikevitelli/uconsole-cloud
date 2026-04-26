@@ -1428,3 +1428,12 @@ def run_romlauncher(scr):
 
     if js:
         js.close()
+
+
+HANDLERS = {
+    "_minesweeper": run_minesweeper,
+    "_snake":       run_snake,
+    "_tetris":      run_tetris,
+    "_2048":        run_2048,
+    "_romlauncher": run_romlauncher,
+}

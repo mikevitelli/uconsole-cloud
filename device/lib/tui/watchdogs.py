@@ -246,3 +246,9 @@ def run_watchdogs_config(scr):
         if js:
             close_gamepad(js)
         scr.timeout(100)
+
+
+HANDLERS = {
+    "_watchdogs":        run_watchdogs,
+    "_watchdogs_config": run_watchdogs_config,
+}

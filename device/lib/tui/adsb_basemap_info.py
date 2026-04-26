@@ -92,3 +92,8 @@ def run_basemap_info(scr):
         if js:
             close_gamepad(js)
         scr.timeout(100)
+
+
+HANDLERS = {
+    "_adsb_basemap_info": run_basemap_info,
+}

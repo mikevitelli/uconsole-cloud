@@ -1352,3 +1352,20 @@ def run_mdviewer(scr):
 
     if js:
         js.close()
+
+
+HANDLERS = {
+    "_keybinds":   run_keybinds,
+    "_git":        run_git_panel,
+    "_notes":      run_notes,
+    "_calc":       run_calculator,
+    "_stopwatch":  run_stopwatch,
+    "_screenshot": run_screenshot,
+    "_syslog":     run_syslog_viewer,
+    "_ssh":        run_ssh_bookmarks,
+    "_pomodoro":   run_pomodoro,
+    "_weather":    run_weather,
+    "_hackernews": run_hackernews,
+    "_forum":      run_forum,
+    "_mdviewer":   run_mdviewer,
+}

@@ -1038,3 +1038,8 @@ def run_telegram(scr):
         _chat_list_view(scr, bridge)
     finally:
         bridge.close()
+
+
+HANDLERS = {
+    "_telegram": run_telegram,
+}

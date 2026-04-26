@@ -122,3 +122,8 @@ def run_file_browser(scr):
 
     if js:
         js.close()
+
+
+HANDLERS = {
+    "_filebrowser": run_file_browser,
+}

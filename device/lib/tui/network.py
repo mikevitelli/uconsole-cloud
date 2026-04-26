@@ -394,3 +394,12 @@ def run_bluetooth(scr):
 
     if js:
         js.close()
+
+
+HANDLERS = {
+    "_wifi":           run_wifi_switcher,
+    "_hotspot_toggle": run_hotspot_toggle,
+    "_hotspot_config": run_hotspot_config,
+    "_wifi_fallback":  run_wifi_fallback,
+    "_bluetooth":      run_bluetooth,
+}

@@ -3190,3 +3190,10 @@ def _get_menu_fns():
             9: _console,
         }
     return _MENU_FNS
+
+
+HANDLERS = {
+    "_marauder":        run_marauder,
+    "_wardrive":        run_wardrive,
+    "_wardrive_replay": run_wardrive_replay,
+}
