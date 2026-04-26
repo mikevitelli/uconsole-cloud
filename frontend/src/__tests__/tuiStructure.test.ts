@@ -353,7 +353,9 @@ describe("TUI category coverage", () => {
     const scripts = hwEntries.map((e) => e.script);
     expect(scripts).toContain("sub:gps");
     expect(scripts).toContain("sub:sdr");
-    expect(scripts).toContain("sub:lora");
+    // The "LoRa" entry is now sub:lora_mesh (Meshtastic + direct LoRa
+    // consolidated under one HARDWARE entry — see commit 1dab365).
+    expect(scripts).toContain("sub:lora_mesh");
     expect(scripts).toContain("_esp32_hub");
   });
 });
