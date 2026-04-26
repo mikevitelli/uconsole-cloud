@@ -135,10 +135,14 @@ if confirm "  Apply system configs (boot, udev, apt sources)?"; then
     if [ "$DEBIAN_CODENAME" = "bookworm" ]; then
         echo "  Bookworm detected — merging boot overlays (not overwriting config.txt)"
         # Lines to add to [pi4] section if not already present
+        # NOTE: dtoverlay=spi1-1cs is intentionally NOT persistent here.
+        # meshtasticd loads it on-demand with cs0_pin=16 (drop-in at
+        # /etc/systemd/system/meshtasticd.service.d/spi1-overlay.conf), and
+        # lora.sh loads the default variant on-demand. Persistent loading
+        # claims GPIO18 at boot (blocking meshtasticd) and causes audio EMI.
         BOOT_EXTRAS=(
             "dtparam=i2c_arm=on"
             "dtoverlay=i2c-rtc,pcf85063a"
-            "dtoverlay=spi1-1cs"
             "gpio=10=ip,np"
             "dtparam=ant1=off"
         )
