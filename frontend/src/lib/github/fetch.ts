@@ -40,12 +40,34 @@ export async function fetchRepoInfo(
 export async function fetchCommits(
   token: string,
   repo: string,
-  perPage = 50
+  { perPage = 100, since, sinceDays }: { perPage?: number; since?: Date; sinceDays?: number } = {}
 ) {
-  return githubFetch(
-    `${GITHUB_API}/repos/${repo}/commits?per_page=${perPage}`,
+  if (!since && sinceDays != null) {
+    since = new Date(Date.now() - sinceDays * 86400000);
+  }
+  const params = new URLSearchParams({ per_page: String(perPage) });
+  if (since) params.set("since", since.toISOString());
+  const first = await githubFetch(
+    `${GITHUB_API}/repos/${repo}/commits?${params.toString()}`,
     token
   );
+
+  // Paginate while results keep filling pages — caps at 5 pages (500 commits)
+  // to bound worst case. With `since`, the API stops on its own.
+  if (!Array.isArray(first) || first.length < perPage) return first;
+
+  const all = [...first];
+  for (let page = 2; page <= 5; page++) {
+    params.set("page", String(page));
+    const next = await githubFetch(
+      `${GITHUB_API}/repos/${repo}/commits?${params.toString()}`,
+      token
+    );
+    if (!Array.isArray(next) || next.length === 0) break;
+    all.push(...next);
+    if (next.length < perPage) break;
+  }
+  return all;
 }
 
 export async function fetchTree(
@@ -168,6 +190,25 @@ export async function validateUconsoleRepo(
 ): Promise<boolean> {
   const apt = await fetchRawFile(token, repo, "packages/apt-manual.txt");
   return apt !== null;
+}
+
+export async function fetchLatestRelease(
+  repo: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${GITHUB_API}/repos/${repo}/releases/latest`,
+      {
+        headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "uconsole-cloud" },
+        next: { revalidate: 300 },
+      }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { tag_name?: string };
+    return data.tag_name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchGitHubUser(

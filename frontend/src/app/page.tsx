@@ -9,6 +9,7 @@ import {
   fetchExtensions,
   fetchScriptsManifest,
   GitHubError,
+  fetchLatestRelease,
 } from "@/lib/github";
 import type { BackupEntry, TreeEntry, RepoInfo, GitHubCommit } from "@/lib/types";
 import { categorizeAptPackages } from "@/lib/packageCategories";
@@ -32,10 +33,14 @@ import { CopyCommand } from "@/components/CopyCommand";
 import { WaitingForDevice } from "@/components/WaitingForDevice";
 import { fetchSiteContent } from "@/lib/sanity";
 import { signInAction, signOutAction, unlinkAction } from "./actions";
+import { TokenExpired } from "@/components/TokenExpired";
 
 export default async function Home() {
-  const session = await auth();
-  const content = await fetchSiteContent();
+  const [session, content, latestVersion] = await Promise.all([
+    auth(),
+    fetchSiteContent(),
+    fetchLatestRelease("mikevitelli/uconsole-cloud"),
+  ]);
 
   // ── Not signed in ──────────────────────────────────────
   if (!session) {
@@ -115,33 +120,6 @@ export default async function Home() {
           </div>
         </div>
 
-        {/* Features */}
-        <div className="border-t border-border py-16 px-4">
-          <div className="max-w-3xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              </div>
-              <div className="text-accent text-2xl font-bold">5 min</div>
-              <div className="text-sub text-sm">Status push interval</div>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              </div>
-              <div className="text-accent text-2xl font-bold">1 command</div>
-              <div className="text-sub text-sm">Install and setup</div>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center mb-1">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              </div>
-              <div className="text-accent text-2xl font-bold">Zero config</div>
-              <div className="text-sub text-sm">Device code auth</div>
-            </div>
-          </div>
-        </div>
-
         {/* Footer */}
         <div className="border-t border-border py-6 px-4 text-center space-y-1">
           <p className="text-dim text-xs">Built for ClockworkPi uConsole</p>
@@ -149,6 +127,8 @@ export default async function Home() {
             <a href="/docs" className="hover:text-sub transition-colors">Docs</a>
             {" · "}
             <a href="https://github.com/mikevitelli/uconsole-cloud" className="hover:text-sub transition-colors">GitHub</a>
+            {" · "}
+            {latestVersion && <span className="text-dim">{latestVersion}</span>}
           </p>
         </div>
       </div>
@@ -219,7 +199,7 @@ export default async function Home() {
     [repoInfoRaw, commitsRaw, treeRaw, packages, extensions, scriptsRaw, deviceResult, lastKnownFallback] =
       await Promise.all([
         fetchRepoInfo(session.accessToken, settings.repo),
-        fetchCommits(session.accessToken, settings.repo),
+        fetchCommits(session.accessToken, settings.repo, { sinceDays: 30 }),
         fetchTree(session.accessToken, settings.repo),
         fetchAllPackages(session.accessToken, settings.repo),
         fetchExtensions(session.accessToken, settings.repo),
@@ -229,15 +209,20 @@ export default async function Home() {
       ]);
   } catch (err) {
     if (err instanceof GitHubError) {
+      if (err.status === 401) {
+        return (
+          <TokenExpired
+            title="GitHub token expired"
+            message="Your access token has expired or been revoked. Sign out and back in to issue a new one."
+            signOutAction={signOutAction}
+          />
+        );
+      }
       return (
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center space-y-4">
             <h2 className="text-xl font-semibold text-red-400">{err.message}</h2>
-            <p className="text-sub text-sm">
-              {err.status === 401
-                ? "Please sign out and sign back in to refresh your token."
-                : "Please wait a few minutes and try again."}
-            </p>
+            <p className="text-sub text-sm">Please wait a few minutes and try again.</p>
             <form action={signOutAction}>
               <button className="text-sm underline text-sub hover:text-fg cursor-pointer">Sign out</button>
             </form>
