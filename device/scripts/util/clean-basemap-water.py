@@ -132,9 +132,9 @@ def main():
         targets.extend(glob.glob(os.path.expanduser(
             "~/.config/uconsole/adsb_basemap_hires_*.json")))
     if also_global:
-        for p in ("/home/mikevitelli/uconsole-cloud/device/lib/tui/adsb_basemap_global.json",
+        for p in (os.path.expanduser("~/uconsole-cloud/device/lib/tui/adsb_basemap_global.json"),
                   "/opt/uconsole/lib/tui/adsb_basemap_global.json",
-                  "/home/mikevitelli/pkg/lib/tui/adsb_basemap_global.json"):
+                  os.path.expanduser("~/pkg/lib/tui/adsb_basemap_global.json")):
             if os.path.exists(p):
                 targets.append(p)
 

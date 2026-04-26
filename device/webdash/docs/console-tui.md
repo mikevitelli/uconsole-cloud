@@ -90,4 +90,4 @@ Color-coded thresholds: green (OK) → yellow (warning) → red (critical).
 - External scripts via subprocess with ANSI stripping
 - External GUI programs (emulators, Watch Dogs Go) launch through a shared `tui.launcher` helper using `start_new_session=True` + `DEVNULL` stdio, so a child crash can't disturb the curses parent
 
-For the full data flow and project layout, see [ARCHITECTURE.md in the repo](https://github.com/mikevitelli/uconsole-cloud/blob/main/docs/ARCHITECTURE.md).
+For the full data flow and project layout, see the project's `docs/ARCHITECTURE.md`.
