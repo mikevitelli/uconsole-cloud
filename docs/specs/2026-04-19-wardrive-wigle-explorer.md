@@ -1,7 +1,7 @@
 # Wardrive × WiGLE Explorer — Design
 
 **Date:** 2026-04-19
-**Status:** Shipped — wardrive functionality merged in `51b4945` (wip/wardrive-map → dev, 2026-04-25). WiGLE enrichment lives in `device/lib/tui/marauder.py`; HTML viewer in `device/webdash/templates/wardrive.html`.
+**Status:** Wardrive functionality shipped in `51b4945` (wip/wardrive-map → dev, 2026-04-25). WiGLE enrichment lives in `device/webdash/app.py` (`_wigle_*` family at lines 1898–2068); HTML viewer in `device/webdash/templates/wardrive.html`. The TUI BSSID lookup panel (originally planned at `device/lib/tui/wigle.py`) was not built — webdash modal covers that need. The daily quota-probe cron was retired on 2026-04-26; see Commit trail.
 **Author:** mikevitelli (via session with Claude)
 
 ## Why this doc exists
@@ -219,9 +219,61 @@ Good to know before we build.
 ## Commit trail
 
 - 2026-04-19: draft written, awaiting P1/P2/P3 validation
+- 2026-04-26: probe cron retired, premises P1/P2 resolved (see below), spec corrected
 
-### 20260420T040502Z — P1/P2 probe result
+### Premise resolution (consolidated 2026-04-26)
 
-- **P1 (daily cap):** first 429 at query #1
-- **P2 (first-discovery rate):** 0/0 = 0.0% of probed BSSIDs not in WiGLE
-- Log: `/home/mikevitelli/.local/share/wigle-probe/run-20260420T040502Z.log`
+The probe ran daily from 2026-04-20 through 2026-04-26 (logs in
+`~/.local/share/wigle-probe/`). Of seven runs, five were either
+header-only (process killed before first query, likely device sleep) or
+hit 429 immediately because earlier auth tests / earlier runs had
+already burned the day's quota. **One run produced real signal:**
+
+| Run | Queries sent | 200 OK | 429 at | First-discovery |
+|---|---|---|---|---|
+| 20260420T040502Z | 1 | 0 | #1 | no data — quota burned earlier |
+| 20260421T040501Z | 2+ (truncated) | ≥2 | — | partial |
+| 20260422T040501Z | 0 | 0 | — | run interrupted |
+| **20260423T040501Z** | **6** | **5** | **#6** | **3/5 = 60%** |
+| 20260424T040501Z | 0 | 0 | — | run interrupted |
+| 20260425T040502Z | 0 | 0 | — | run interrupted |
+| 20260426T040502Z | 1 | 0 | #1 | no data — quota burned earlier |
+
+**P1 (daily cap):** observed cap is **5–6 successful queries before
+first 429**. Well below the 100/day optimistic case in the rate-limit
+math appendix. Above the ≤10 kill threshold the spec set, so the
+direction is not formally dead — but enrich-everything is impractical
+(8,845 BSSIDs ÷ 5/day ≈ 4.8 years).
+
+**P2 (first-discovery rate):** observed **60%** on the one valid run.
+Well above the spec's ≥10% acceptability bar. The "First Discovery"
+color mode is viable on the data we have, though it should be
+re-validated with a larger sample if/when quota allows.
+
+**P3 (TUI menu integration point):** moot — the TUI lookup panel was
+never built. Webdash's enrichment modal covers the same need.
+
+### Why the cron was retired
+
+1. **Quota cannibalism.** The probe fired at 00:05 UTC daily and burned
+   the day's free-tier quota before the user could use it during a
+   wardrive. Webdash's "Enrich now" button got rate-limited every time.
+2. **Forked state.** The probe wrote to `wigle-cache.sqlite` but didn't
+   coordinate with `device/webdash/app.py`'s `wigle_meta.last_429_at`
+   23h-backoff marker. Webdash's authoritative path was the right place
+   for quota state; the probe ran blind.
+3. **Misleading reporting.** When the probe hit 429 at query #1, it
+   wrote `0/0 = 0.0%` to this doc — mathematically wrong, semantically
+   "feature is dead." The correct read is "no data — quota burned
+   earlier." This was a reporting bug masquerading as a kill signal.
+
+The probe script was archived to `device/scripts/util/wigle-quota-probe.py`
+with the no-data labeling fixed and a header explaining its history.
+Manually runnable; no longer cron-scheduled.
+
+### Recommendation going forward
+
+Use webdash's existing enrichment path for actual work. Target the
+strongest-signal ~500 BSSIDs over a 100-day burn (per the rate-limit
+math appendix). If the daily cap policy ever changes, run the archived
+probe manually to re-measure.
