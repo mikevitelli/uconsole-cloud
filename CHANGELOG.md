@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.1
+
+Push Interval improvements.
+
+### Added
+- **Push Interval → off** — new option in CONFIG that disables the
+  `uconsole-status.timer` user-scope systemd timer (`systemctl --user
+  disable --now`), letting users opt out of cloud telemetry pushes
+  entirely without uninstalling the package. Reversible — picking any
+  interval from `30s` to `30min` re-enables the timer.
+
+### Changed
+- **Push Interval moved from SERVICES to CONFIG** — the entry now lives
+  alongside other persistent preferences (theme, view mode, keybinds)
+  rather than under one-off service controls.
+
 ## v0.2.0 (2026-04-15)
 
 Watch Dogs Go TUI launcher, ADS-B global basemap, Telegram TUI client,

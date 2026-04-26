@@ -110,9 +110,9 @@ section "6. Python Imports"
 python3 -c "
 import sys
 sys.path[:0] = ['$PKG_BASE/lib', '$HOME/scripts']
-from tui.framework import entry, _get_native_tools
-tools = _get_native_tools()
-print(f'  OK: {len(tools)} native tools loaded')
+from tui.framework import entry, _load_handlers
+handlers = _load_handlers()
+print(f'  OK: {len(handlers)} feature handlers loaded')
 " 2>&1 && PASS=$((PASS + 1)) || { echo "  FAIL: TUI import chain broken"; FAIL=$((FAIL + 1)); }
 
 python3 -c "
