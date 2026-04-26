@@ -423,3 +423,11 @@ def run_trackball_scroll_toggle(scr):
 
 
 # ── Native TUI tools ──────────────────────────────────────────────────────
+
+
+HANDLERS = {
+    "_theme":            run_theme_picker,
+    "_viewmode":         run_viewmode_toggle,
+    "_bat_gauge":        run_bat_gauge_toggle,
+    "_trackball_scroll": run_trackball_scroll_toggle,
+}

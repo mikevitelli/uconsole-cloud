@@ -273,3 +273,8 @@ def run_meshtastic_map(scr):
         "mesh_overlay": show_overlay,
     })
     close_gamepad(js)
+
+
+HANDLERS = {
+    "_mesh_map": run_meshtastic_map,
+}

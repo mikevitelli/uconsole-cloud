@@ -135,3 +135,8 @@ def run_home_picker(scr):
 
 def run_home_picker_action(scr):
     run_home_picker(scr)
+
+
+HANDLERS = {
+    "_adsb_home_picker": run_home_picker_action,
+}

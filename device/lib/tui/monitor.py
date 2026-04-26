@@ -652,3 +652,9 @@ def run_esp32_monitor(scr):
     if js:
         js.close()
     scr.timeout(100)
+
+
+HANDLERS = {
+    "_monitor":       run_live_monitor,
+    "_esp32_monitor": run_esp32_monitor,
+}

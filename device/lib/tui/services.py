@@ -232,3 +232,10 @@ def run_push_interval(scr):
     draw_status_bar(scr, h, w, msg, curses.color_pair(C_STATUS) | curses.A_BOLD)
     scr.refresh()
     time.sleep(1.5)
+
+
+HANDLERS = {
+    "_cron":           run_cron_viewer,
+    "_webdash_config": run_webdash_config,
+    "_push_interval":  run_push_interval,
+}

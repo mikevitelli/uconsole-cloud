@@ -990,3 +990,11 @@ def run_mimiclaw_flash(scr):
         f"0x20000 mimiclaw.bin 0x420000 spiffs.bin"
     )
     run_stream(scr, cmd, "Flashing MimiClaw")
+
+
+HANDLERS = {
+    "_mimiclaw_chat":   run_mimiclaw_chat,
+    "_mimiclaw_serial": run_mimiclaw_serial,
+    "_mimiclaw_status": run_mimiclaw_status,
+    "_mimiclaw_wifi":   run_mimiclaw_wifi,
+}

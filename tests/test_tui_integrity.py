@@ -109,17 +109,14 @@ def _collect_script_refs(node, scripts):
 
 
 def extract_native_tool_keys(source):
-    """Extract all native tool keys from _get_native_tools return dict."""
-    tree = ast.parse(source)
-    keys = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == '_get_native_tools':
-            for child in ast.walk(node):
-                if isinstance(child, ast.Return) and isinstance(child.value, ast.Dict):
-                    for key in child.value.keys:
-                        if isinstance(key, ast.Constant):
-                            keys.append(key.value)
-    return keys
+    """Return all handler keys registered via the FEATURE_MODULES → HANDLERS chain.
+
+    Loads the live handlers dict at runtime — covers everything any feature
+    module declares in its module-level HANDLERS export.  The *source* arg is
+    accepted for backwards compatibility but unused.
+    """
+    from tui.framework import _load_handlers
+    return list(_load_handlers().keys())
 
 
 def extract_menu_native_refs(source):
@@ -213,29 +210,41 @@ class TestFrameworkSyntax:
 
 # ── Test: all imports in _get_native_tools resolve ─────────────────────────
 
-class TestNativeToolImports:
+class TestFeatureModuleImports:
+    """Every entry in framework.FEATURE_MODULES must import cleanly and expose HANDLERS."""
+
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.tree = parse_framework()
-        self.imports = extract_imports_from_function(self.tree, '_get_native_tools')
+        from tui.framework import FEATURE_MODULES
+        self.feature_modules = FEATURE_MODULES
 
-    def test_has_imports(self):
-        """_get_native_tools must have import statements."""
-        assert len(self.imports) > 0, "_get_native_tools has no imports"
+    def test_has_modules(self):
+        assert len(self.feature_modules) > 0, "FEATURE_MODULES is empty"
 
-    def test_each_import_resolves(self):
-        """Every 'from tui.X import Y' in _get_native_tools must resolve."""
+    def test_each_module_imports(self):
+        """Every entry in FEATURE_MODULES must be importable."""
         failures = []
-        for module, names in self.imports:
+        for mod_name in self.feature_modules:
             try:
-                mod = importlib.import_module(module)
-                for name in names:
-                    if not hasattr(mod, name):
-                        failures.append(f"{module}.{name} not found")
+                importlib.import_module(mod_name)
             except ImportError as e:
-                failures.append(f"Cannot import {module}: {e}")
+                failures.append(f"Cannot import {mod_name}: {e}")
         if failures:
-            pytest.fail("Import failures in _get_native_tools:\n" + "\n".join(f"  - {f}" for f in failures))
+            pytest.fail("Import failures in FEATURE_MODULES:\n" + "\n".join(f"  - {f}" for f in failures))
+
+    def test_each_module_exposes_handlers(self):
+        """Every entry in FEATURE_MODULES must export a non-empty HANDLERS dict."""
+        failures = []
+        for mod_name in self.feature_modules:
+            try:
+                mod = importlib.import_module(mod_name)
+            except ImportError:
+                continue  # covered by test_each_module_imports
+            handlers = getattr(mod, "HANDLERS", None)
+            if not isinstance(handlers, dict) or not handlers:
+                failures.append(f"{mod_name} missing or empty HANDLERS")
+        if failures:
+            pytest.fail("HANDLERS export failures:\n" + "\n".join(f"  - {f}" for f in failures))
 
 
 # Handlers that are dispatched dynamically at runtime (not statically referenced
@@ -265,10 +274,15 @@ class TestNativeToolCoverage:
         self.menu_refs = extract_menu_native_refs(self.source)
 
     def test_all_menu_refs_have_handlers(self):
-        """Every underscore-prefixed ref in menus must exist in _get_native_tools."""
-        missing = self.menu_refs - self.tool_keys
+        """Every underscore-prefixed ref in menus must resolve to a registered handler.
+
+        Skips _gui: and _url: prefixes (handled separately by run_script).
+        """
+        skipped_prefixes = ("_gui:", "_url:")
+        actionable = {r for r in self.menu_refs if not r.startswith(skipped_prefixes)}
+        missing = actionable - self.tool_keys
         if missing:
-            pytest.fail(f"Menu references with no handler in _get_native_tools: {missing}")
+            pytest.fail(f"Menu references with no registered handler: {missing}")
 
     def test_all_handlers_are_referenced(self):
         """Every handler in _get_native_tools should be referenced in a menu.

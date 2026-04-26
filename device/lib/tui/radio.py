@@ -781,3 +781,9 @@ def run_fm_radio(scr):
         if js:
             js.close()
         scr.timeout(100)
+
+
+HANDLERS = {
+    "_gps_globe": run_gps_globe,
+    "_fm_radio":  run_fm_radio,
+}

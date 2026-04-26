@@ -162,28 +162,27 @@ class TestTUIModuleExports:
         )
 
     def test_no_orphan_modules(self):
-        """Every TUI module (except framework.py and helper libs) should be
-        imported by framework.py.
+        """Every TUI module should either be in framework.FEATURE_MODULES or be
+        a known helper library.
 
-        HELPER_MODULES are utility libraries used by other tui modules rather
-        than the framework directly (e.g. launcher.py is imported by
-        watchdogs.py and games.py for detached-spawn helpers).
+        HELPER_MODULES are utility libraries imported by feature modules rather
+        than registered as features themselves (e.g. esp32_detect is imported
+        by esp32_hub, adsb_layer_picker is imported by adsb_menu).
         """
-        HELPER_MODULES = {'launcher.py'}
-        fw_path = os.path.join(TUI_DIR, 'framework.py')
-        with open(fw_path) as f:
-            fw_source = f.read()
+        HELPER_MODULES = {
+            'launcher.py',           # detached-spawn helper, used by watchdogs + games
+            'esp32_detect.py',       # serial detection, used by esp32_hub
+            'esp32_flash.py',        # esptool wrapper, used by esp32_hub
+            'adsb_hires.py',         # ADS-B hi-res fetcher, used by adsb_menu
+            'adsb_layer_picker.py',  # picker UI, used by adsb_menu
+        }
+        from tui.framework import FEATURE_MODULES
+        feature_files = {m.replace('tui.', '') + '.py' for m in FEATURE_MODULES}
 
         for module_file in self.TUI_MODULES:
             if module_file == 'framework.py' or module_file in HELPER_MODULES:
                 continue
-            module_base = module_file[:-3]
-            # Match both `from tui.foo import ...` and `from tui import foo`
-            # patterns — the latter is used for submodules accessed as objects.
-            found = (
-                f"tui.{module_base}" in fw_source
-                or f"from tui import {module_base}" in fw_source
-            )
-            assert found, (
-                f"tui/{module_file} exists but is never imported by framework.py"
+            assert module_file in feature_files, (
+                f"tui/{module_file} is not in framework.FEATURE_MODULES nor in "
+                f"the test's HELPER_MODULES allowlist"
             )

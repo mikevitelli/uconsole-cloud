@@ -731,3 +731,10 @@ def run_adsb_table(scr):
     if we_started:
         _stop_dump1090()
     scr.timeout(100)
+
+
+HANDLERS = {
+    "_adsb_map":      run_adsb_map,
+    "_adsb_table":    run_adsb_table,
+    "_adsb_set_home": run_adsb_set_home,
+}
