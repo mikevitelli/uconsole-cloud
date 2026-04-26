@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-"""uConsole Command Center — TUI launcher entry point."""
+"""uConsole Command Center — TUI launcher entry point.
+
+Lib resolution order:
+  1. UCONSOLE_DEV_LIB env var (explicit override, highest priority)
+  2. ~/uconsole-cloud/device/lib if it exists (the developer's source tree)
+  3. /opt/uconsole/lib (the .deb install target — what end users have)
+
+Set UCONSOLE_PKG_ONLY=1 to skip the dev-tree auto-detect and force /opt/.
+End users without a source tree see only step 3 — no behaviour change.
+"""
 
 import curses
 import os
 import sys
 
-# Single runtime source: /opt/uconsole/lib (where the .deb installs).
-# For rare dev cases — running a not-yet-installed tree to test — export
-# UCONSOLE_DEV_LIB=/path/to/lib. No implicit dev-tree override: the code
-# that runs is always whatever was last `make install`'d. "Which tree is
-# this?" always has one answer.
-_lib = os.environ.get('UCONSOLE_DEV_LIB', '/opt/uconsole/lib')
+_dev_tree = os.path.expanduser('~/uconsole-cloud/device/lib')
+_candidates = [
+    os.environ.get('UCONSOLE_DEV_LIB'),
+    None if os.environ.get('UCONSOLE_PKG_ONLY') else _dev_tree,
+    '/opt/uconsole/lib',
+]
+_lib = next((p for p in _candidates if p and os.path.isdir(p)), '/opt/uconsole/lib')
 if os.path.isdir(_lib):
     sys.path.insert(0, _lib)
 
