@@ -6,7 +6,9 @@
 # The AXP228 driver accepts values in microamps and caps at 900mA.
 # Common values: 300 (gentle), 500 (moderate), 900 (max)
 
-if [ -z "$1" ]; then
+set -euo pipefail
+
+if [ -z "${1:-}" ]; then
     current_ua=$(cat /sys/class/power_supply/axp20x-battery/constant_charge_current 2>/dev/null || echo "0")
     current_ma=$((current_ua / 1000))
     echo "Current charge rate: ${current_ma}mA"
