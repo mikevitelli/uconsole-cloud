@@ -15,7 +15,7 @@ Commands:
   test         run tuner test
   info         detailed device capabilities
   fm [freq]    listen to FM radio (default: 101.1M)
-  adsb         track aircraft (dump1090)
+  adsb         track aircraft (readsb)
   scan [range] power spectrum scan (default: 88M:108M:125k)
   433          IoT device decoder (rtl_433)
   decode       pager/POCSAG decoding (multimon-ng)
@@ -91,10 +91,16 @@ cmd_fm() {
 
 cmd_adsb() {
     check_sdr
-    check_tool dump1090-mutability dump1090-mutability
-    section "ADS-B Aircraft Tracking"
-    printf "Starting dump1090 interactive mode... (Ctrl-C to stop)\n\n"
-    dump1090-mutability --interactive 2>/dev/null
+    check_tool viewadsb readsb
+    section "ADS-B Aircraft Tracking (viewadsb → readsb)"
+    if systemctl is-active --quiet readsb; then
+        printf "Connecting viewadsb to running readsb... (Ctrl-C to exit)\n\n"
+        viewadsb 2>/dev/null
+    else
+        printf "readsb not running — start it first: sudo systemctl start readsb\n"
+        printf "Or use the TUI: console → Radio → ADS-B → Feeder (readsb)\n"
+        return 1
+    fi
 }
 
 cmd_scan() {

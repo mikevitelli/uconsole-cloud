@@ -23,12 +23,83 @@ from tui.framework import (
 )
 import tui_lib as tui
 
-ADSB_JSON = "/run/dump1090-mutability/aircraft.json"
-_SERVICE = "dump1090-mutability"
+ADSB_JSON = "/run/readsb/aircraft.json"
+_SERVICE = "readsb"
+
+
+def _alt(ac):
+    """Aircraft altitude — readsb uses alt_baro, dump1090-mutability used altitude."""
+    return ac.get("alt_baro", ac.get("altitude"))
+
+
+def _spd(ac):
+    """Aircraft ground speed — readsb uses gs, dump1090-mutability used speed."""
+    return ac.get("gs", ac.get("speed"))
+
+
+READSB_DEFAULTS = "/etc/default/readsb"
+
+
+def sync_home_to_readsb(lat, lon):
+    """Write --lat/--lon into /etc/default/readsb's DECODER_OPTIONS and restart readsb if running.
+
+    Returns (msg, ok) — msg is a short status string suitable for display,
+    ok is True on success. Silently no-ops if readsb is not installed.
+    """
+    import re
+    if not os.path.exists(READSB_DEFAULTS):
+        return ("readsb not installed — skipped", True)
+    try:
+        with open(READSB_DEFAULTS) as f:
+            text = f.read()
+    except OSError as e:
+        return (f"read failed: {e}", False)
+
+    new_args = f"--lat {lat:.6f} --lon {lon:.6f}"
+    line_re = re.compile(r'^DECODER_OPTIONS=.*$', re.MULTILINE)
+    m = line_re.search(text)
+    if m:
+        line = m.group(0)
+        # Strip existing --lat/--lon (with their numeric arg) and trailing whitespace inside the quotes
+        stripped = re.sub(r'\s*--lat\s+[-\d.]+', '', line)
+        stripped = re.sub(r'\s*--lon\s+[-\d.]+', '', stripped)
+        # Inject new lat/lon before the closing quote
+        if stripped.endswith('"'):
+            new_line = stripped[:-1].rstrip() + f' {new_args}"'
+        else:
+            new_line = stripped.rstrip() + f' {new_args}'
+        new_text = text[:m.start()] + new_line + text[m.end():]
+    else:
+        new_text = text.rstrip() + f'\nDECODER_OPTIONS="{new_args}"\n'
+
+    if new_text == text:
+        return ("readsb already at this location", True)
+
+    # sudo tee — write atomically as root
+    try:
+        proc = subprocess.run(
+            ["sudo", "-n", "tee", READSB_DEFAULTS],
+            input=new_text, capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            return (f"sudo tee failed: {(proc.stderr or '').strip()[:60]}", False)
+    except Exception as e:
+        return (f"write failed: {e}", False)
+
+    # Restart only if currently running — config will be picked up next start either way
+    if subprocess.run(["systemctl", "is-active", "--quiet", _SERVICE]).returncode == 0:
+        r = subprocess.run(
+            ["sudo", "-n", "systemctl", "restart", _SERVICE],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode == 0:
+            return ("synced to readsb + restarted", True)
+        return (f"config saved but restart failed: {(r.stderr or '').strip()[:40]}", False)
+    return ("synced to readsb (will apply at next start)", True)
 
 
 def _ensure_dump1090():
-    """Start dump1090 service if not already running. Returns True if we started it."""
+    """Start the feeder service if not already running. Returns True if we started it."""
     try:
         rc = subprocess.run(
             ["systemctl", "is-active", "--quiet", _SERVICE]
@@ -39,7 +110,7 @@ def _ensure_dump1090():
             ["sudo", "-n", "systemctl", "start", _SERVICE],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        time.sleep(0.5)  # let dump1090 begin writing aircraft.json
+        time.sleep(0.5)  # let readsb begin writing aircraft.json
         return True
     except Exception:
         return False
@@ -273,7 +344,7 @@ def _load_aircraft():
             data = json.load(f)
         return data.get("aircraft", []), None
     except FileNotFoundError:
-        return [], "no receiver data — is dump1090 running?"
+        return [], "no receiver data — is readsb running?"
     except Exception as e:
         return [], f"read error: {e}"
 
@@ -400,6 +471,9 @@ def _set_home_from_gps(scr):
     else:
         save_config_multi({"adsb_home_lat": lat, "adsb_home_lon": lon})
         tui.put(scr, 6, 2, f"Home set: {lat:.5f}, {lon:.5f}", w - 4, ok)
+        sync_msg, sync_ok = sync_home_to_readsb(lat, lon)
+        sync_attr = ok if sync_ok else crit
+        tui.put(scr, 7, 2, f"readsb: {sync_msg}", w - 4, sync_attr)
 
     tui.put(scr, h - 1, 2, "press any key", w - 4, dim)
     scr.refresh()
@@ -502,12 +576,12 @@ def run_adsb_map(scr):
             if not (0 <= px < canvas.pw and 0 <= py < canvas.ph):
                 continue
             track = ac.get("track")
-            spd = ac.get("speed")
+            spd = _spd(ac)
             _draw_speed_vector(canvas, px, py, track, spd, vec_scale)
             visible.append({
                 "hex": (ac.get("hex") or "------").upper(),
                 "flight": (ac.get("flight") or "").strip() or "—",
-                "alt": ac.get("altitude"),
+                "alt": _alt(ac),
                 "spd": spd,
                 "trk": track,
                 "sqk": ac.get("squawk"),
@@ -694,8 +768,8 @@ def run_adsb_table(scr):
             rows.append((
                 (ac.get("flight") or "").strip() or "—",
                 (ac.get("hex") or "------").upper(),
-                ac.get("altitude"),
-                ac.get("speed"),
+                _alt(ac),
+                _spd(ac),
                 ac.get("track"),
                 dist,
                 ac.get("squawk") or "—",
