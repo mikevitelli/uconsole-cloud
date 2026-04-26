@@ -55,6 +55,17 @@ maybe_sudo() {
   fi
 }
 
+# Safely read a single KEY=VALUE entry from $ENV_FILE without source/eval.
+# Strips surrounding matching quotes (single or double) from the value.
+# Returns the empty string if the key is missing.
+read_env_value() {
+  local key="$1"
+  maybe_sudo cat "${ENV_FILE}" 2>/dev/null \
+    | grep -E "^[[:space:]]*${key}=" \
+    | tail -n1 \
+    | sed -E "s/^[[:space:]]*${key}=//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/"
+}
+
 # Run journalctl with --user in standalone mode
 run_journalctl() {
   local args=()
@@ -130,9 +141,11 @@ cmd_link() {
 
   # Check for existing config
   local env_readable=false
+  local DEVICE_REPO="" DEVICE_TOKEN=""
   if maybe_sudo test -f "${ENV_FILE}" 2>/dev/null; then
     env_readable=true
-    eval "$(maybe_sudo cat "${ENV_FILE}" 2>/dev/null)"
+    DEVICE_REPO=$(read_env_value DEVICE_REPO)
+    DEVICE_TOKEN=$(read_env_value DEVICE_TOKEN)
   fi
   if [ "$env_readable" = true ]; then
     echo "This device is already linked."
@@ -316,8 +329,10 @@ cmd_status() {
     return 0
   fi
 
-  # shellcheck source=/dev/null
-  source "${ENV_FILE}"
+  local DEVICE_API_URL DEVICE_TOKEN DEVICE_REPO
+  DEVICE_API_URL=$(read_env_value DEVICE_API_URL)
+  DEVICE_TOKEN=$(read_env_value DEVICE_TOKEN)
+  DEVICE_REPO=$(read_env_value DEVICE_REPO)
   echo "Status: configured (${INSTALL_MODE})"
   echo "  API:   ${DEVICE_API_URL:-not set}"
   echo "  Token: ${DEVICE_TOKEN:0:8}...${DEVICE_TOKEN: -4}"
