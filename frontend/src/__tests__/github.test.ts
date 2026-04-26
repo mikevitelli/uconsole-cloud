@@ -169,16 +169,38 @@ describe("fetchCommits", () => {
     mockFetch.mockResolvedValue(mockResponse(200, []));
     await fetchCommits("tok", "owner/repo");
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("per_page=50"),
+      expect.stringContaining("per_page=100"),
       expect.any(Object)
     );
   });
 
   it("fetches commits with custom perPage", async () => {
     mockFetch.mockResolvedValue(mockResponse(200, []));
-    await fetchCommits("tok", "owner/repo", 10);
+    await fetchCommits("tok", "owner/repo", { perPage: 10 });
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("per_page=10"),
+      expect.any(Object)
+    );
+  });
+
+  it("paginates when first page is full", async () => {
+    const fullPage = Array(100).fill({ sha: "x" });
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, fullPage))
+      .mockResolvedValueOnce(mockResponse(200, []));
+    await fetchCommits("tok", "owner/repo");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      expect.stringContaining("page=2"),
+      expect.any(Object)
+    );
+  });
+
+  it("passes since as ISO string", async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, []));
+    await fetchCommits("tok", "owner/repo", { since: new Date("2026-04-01T00:00:00Z") });
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("since=2026-04-01"),
       expect.any(Object)
     );
   });
