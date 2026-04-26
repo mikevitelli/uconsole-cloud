@@ -2,6 +2,8 @@
 # Lower AXP228 PMU undervoltage cutoff to 2.9V
 # Default is 3.3V which causes false shutdowns during voltage sag
 
+set -euo pipefail
+
 VMIN_PATH="/sys/class/power_supply/axp20x-battery/voltage_min"
 
 # Wait for AXP driver to create the sysfs path (up to 30s)
