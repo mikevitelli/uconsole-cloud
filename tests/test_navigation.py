@@ -42,12 +42,14 @@ def _parse_categories():
                                         elif k.value == 'items' and isinstance(v, ast.List):
                                             items = []
                                             for item in v.elts:
-                                                if isinstance(item, ast.Tuple) and len(item.elts) == 4:
+                                                # Items are (label, target, desc, mode) or
+                                                # (label, target, desc, mode, icon) — accept 4 or 5.
+                                                if isinstance(item, ast.Tuple) and len(item.elts) in (4, 5):
                                                     vals = [
                                                         e.value if isinstance(e, ast.Constant) else None
                                                         for e in item.elts
                                                     ]
-                                                    items.append(tuple(vals))
+                                                    items.append(tuple(vals[:4]))
                                             cat['items'] = items
                                 categories.append(cat)
     return categories
@@ -72,12 +74,12 @@ def _parse_submenus():
                             if isinstance(k, ast.Constant) and isinstance(v, ast.List):
                                 items = []
                                 for item in v.elts:
-                                    if isinstance(item, ast.Tuple) and len(item.elts) == 4:
+                                    if isinstance(item, ast.Tuple) and len(item.elts) in (4, 5):
                                         vals = [
                                             e.value if isinstance(e, ast.Constant) else None
                                             for e in item.elts
                                         ]
-                                        items.append(tuple(vals))
+                                        items.append(tuple(vals[:4]))
                                 submenus[k.value] = items
     return submenus
 
@@ -101,7 +103,9 @@ class TestCategoryStructure:
         assert len(cat['items']) > 0, f"Category {cat['name']} has no items"
 
     @pytest.mark.parametrize("cat", CATEGORIES, ids=[c['name'] for c in CATEGORIES])
-    def test_items_have_four_fields(self, cat):
+    def test_items_have_required_fields(self, cat):
+        # Items are (label, target, desc, mode) or (label, target, desc, mode, icon).
+        # _parse_categories already truncates to 4 — assert nothing slipped past.
         for item in cat['items']:
             assert len(item) == 4, f"Item {item[0]} in {cat['name']} has {len(item)} fields, expected 4"
 
@@ -132,7 +136,9 @@ class TestSubmenuStructure:
         assert len(SUBMENUS[key]) > 0, f"Submenu '{key}' is empty"
 
     @pytest.mark.parametrize("key", list(SUBMENUS.keys()))
-    def test_submenu_items_have_four_fields(self, key):
+    def test_submenu_items_have_required_fields(self, key):
+        # Items are (label, target, desc, mode) or (label, target, desc, mode, icon).
+        # _parse_submenus already truncates to 4 — assert nothing slipped past.
         for item in SUBMENUS[key]:
             assert len(item) == 4, f"Item {item[0]} in {key} has {len(item)} fields"
 

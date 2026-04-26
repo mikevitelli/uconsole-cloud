@@ -42,19 +42,6 @@ def get_framework_source():
         return f.read()
 
 
-def extract_imports_from_function(tree, func_name):
-    """Extract all 'from X import Y' statements inside a function."""
-    imports = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            for child in ast.walk(node):
-                if isinstance(child, ast.ImportFrom):
-                    module = child.module
-                    names = [alias.name for alias in child.names]
-                    imports.append((module, names))
-    return imports
-
-
 def extract_all_toplevel_imports(tree):
     """Extract all top-level 'from X import Y' and 'import X' statements."""
     imports = []
@@ -94,7 +81,7 @@ def _collect_script_refs(node, scripts):
     elif isinstance(node, ast.List):
         for elt in node.elts:
             _collect_script_refs(elt, scripts)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         # (label, script, desc, mode)
         script_node = node.elts[1]
         mode_node = node.elts[3]
@@ -139,7 +126,7 @@ def _collect_native_refs(node, refs):
     elif isinstance(node, ast.List):
         for elt in node.elts:
             _collect_native_refs(elt, refs)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         script_node = node.elts[1]
         if isinstance(script_node, ast.Constant) and isinstance(script_node.value, str):
             if script_node.value.startswith('_'):
@@ -166,7 +153,7 @@ def _collect_submenu_refs(node, refs):
     elif isinstance(node, ast.Dict):
         for value in node.values:
             _collect_submenu_refs(value, refs)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         script_node = node.elts[1]
         mode_node = node.elts[3]
         if (isinstance(script_node, ast.Constant) and isinstance(mode_node, ast.Constant)
@@ -247,21 +234,28 @@ class TestFeatureModuleImports:
             pytest.fail("HANDLERS export failures:\n" + "\n".join(f"  - {f}" for f in failures))
 
 
-# Handlers that are dispatched dynamically at runtime (not statically referenced
-# in SUBMENUS or CATEGORIES) and are therefore exempt from the static-ref check.
-DYNAMIC_HANDLERS = {
-    # ESP32 handlers injected at runtime by _esp32_menu_for() / run_esp32_hub().
-    # These live in _ESP32_MICROPYTHON_ITEMS, _ESP32_MARAUDER_ITEMS, or
-    # _ESP32_COMMON_ITEMS and are written into SUBMENUS["sub:esp32"] dynamically,
-    # so the static AST checker cannot see them referenced in SUBMENUS/CATEGORIES.
-    "_esp32_monitor",    # in _ESP32_MICROPYTHON_ITEMS (MicroPython path)
-    "_marauder",         # in _ESP32_MARAUDER_ITEMS (Marauder path)
-    "_esp32_force_mp",   # injected by _esp32_menu_for() when firmware is UNKNOWN
-    "_esp32_force_mrd",  # injected by _esp32_menu_for() when firmware is UNKNOWN
-    "_esp32_usb_reset",  # in _ESP32_COMMON_ITEMS (all firmware paths)
-    "_esp32_flash",      # in _ESP32_COMMON_ITEMS (all firmware paths)
-    "_esp32_redetect",   # in _ESP32_COMMON_ITEMS (all firmware paths)
-}
+# Handlers dispatched dynamically at runtime (not statically referenced in
+# SUBMENUS or CATEGORIES) and therefore exempt from the static-ref check.
+# Sourced from esp32_hub at runtime so adding a new dynamic menu item doesn't
+# silently fall through to test_all_handlers_are_referenced as an "orphan".
+
+def _dynamic_handlers():
+    from tui import esp32_hub
+    keys = set()
+    for items in (esp32_hub._ESP32_MICROPYTHON_ITEMS,
+                  esp32_hub._ESP32_MARAUDER_ITEMS,
+                  esp32_hub._ESP32_COMMON_ITEMS,
+                  esp32_hub._ESP32_MIMICLAW_ITEMS):
+        for item in items:
+            target = item[1]
+            if isinstance(target, str) and target.startswith("_") and not target.startswith("_gui:") and not target.startswith("_url:"):
+                keys.add(target)
+    # Manual: * entries injected when firmware is UNKNOWN
+    keys.update({"_esp32_force_mp", "_esp32_force_mrd", "_esp32_force_mc"})
+    return keys
+
+
+DYNAMIC_HANDLERS = _dynamic_handlers()
 
 
 # ── Test: all native tool keys in menus have handlers ──────────────────────
