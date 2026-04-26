@@ -9,6 +9,7 @@ from tui.framework import (
     open_gamepad,
     save_config_multi,
 )
+from tui.adsb import sync_home_to_readsb
 import tui_lib as tui
 
 
@@ -105,7 +106,8 @@ def run_home_picker(scr):
                 if field == 2:
                     code, name, lat, lon = PRESETS[preset_idx]
                     save_config_multi({"adsb_home_lat": lat, "adsb_home_lon": lon})
-                    status = f"Saved: {code} {lat:.4f}, {lon:.4f}"
+                    sync_msg, _ = sync_home_to_readsb(lat, lon)
+                    status = f"Saved: {code} {lat:.4f}, {lon:.4f} — {sync_msg}"
                     lat_str = f"{lat:.4f}"
                     lon_str = f"{lon:.4f}"
                 else:
@@ -114,7 +116,8 @@ def run_home_picker(scr):
                         status = err
                     else:
                         save_config_multi({"adsb_home_lat": lat, "adsb_home_lon": lon})
-                        status = f"Saved: {lat:.4f}, {lon:.4f}"
+                        sync_msg, _ = sync_home_to_readsb(lat, lon)
+                        status = f"Saved: {lat:.4f}, {lon:.4f} — {sync_msg}"
             elif field in (0, 1):
                 target = lat_str if field == 0 else lon_str
                 if key in (curses.KEY_BACKSPACE, 127, 8):
