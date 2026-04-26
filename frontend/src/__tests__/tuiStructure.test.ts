@@ -54,7 +54,7 @@ function parseSubmenuEntries(): Array<{
     const block = match[2];
     // Parse entries within the block
     const entryPattern =
-      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"\)/g;
+      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"(?:,\s+"[^"]+")?\)/g;
     let entry;
     while ((entry = entryPattern.exec(block)) !== null) {
       entries.push({
@@ -89,7 +89,7 @@ function parseCategoryEntries(): Array<{
     const catName = match[1];
     const block = match[2];
     const entryPattern =
-      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"\)/g;
+      /\("([^"]+)",\s+"([^"]+)",\s+"([^"]+)",\s+"([^"]+)"(?:,\s+"[^"]+")?\)/g;
     let entry;
     while ((entry = entryPattern.exec(block)) !== null) {
       entries.push({
