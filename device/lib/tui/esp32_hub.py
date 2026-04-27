@@ -26,7 +26,7 @@ _ESP32_MICROPYTHON_ITEMS = [
 
 _ESP32_MARAUDER_ITEMS = [
     ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "💀"),
-    ("War Drive",        "_wardrive",                      "GPS-tagged AP sweep → CSV",              "action",     "🚗"),
+    ("War Drive (BETA)", "_wardrive",                      "GPS-tagged AP sweep → CSV",              "action",     "🚗"),
     ("Replay Session",   "_wardrive_replay",               "browse + replay past war-drive CSVs",    "action",     "🎞️"),
     ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "🔌"),
     ("Status",           "radio/esp32-marauder.sh info",   "firmware, MAC, hardware",                "panel",      "🩺"),

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}War Drive — uConsole{% endblock %}
+{% block title %}War Drive (BETA) — uConsole{% endblock %}
 
 {% block extra_head %}
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -56,6 +56,7 @@
 <div id="app">
   <header>
     <span class="title">◉ WAR DRIVE</span>
+    <span class="pill" style="color:#8ae234;border-color:#2d5016" title="Beta — capture only happens during a TUI session">BETA</span>
     <select id="session-select" title="Session">
       {% if initial_sessions %}
         {% for s in initial_sessions %}

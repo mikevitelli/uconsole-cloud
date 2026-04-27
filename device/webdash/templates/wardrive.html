@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>War Drive — uConsole</title>
+<title>War Drive (BETA) — uConsole</title>
 
 <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -27,6 +27,10 @@
   }
   .topbar .brand { font-weight: 900; color: hsl(var(--p));
     letter-spacing: 3px; font-size: 14px; white-space: nowrap; }
+  .topbar .beta-tag { font-size: 9px; font-weight: 800; letter-spacing: 1.5px;
+    padding: 2px 6px; border-radius: 4px; background: hsl(var(--p) / 0.15);
+    color: hsl(var(--p)); border: 1px solid hsl(var(--p) / 0.4);
+    margin-left: -4px; align-self: center; white-space: nowrap; }
   .topbar select { flex: 1; min-width: 0; max-width: 260px; }
   .topbar .spacer { flex: 1; }
   .row { display: flex; align-items: center; gap: 6px; }
@@ -130,6 +134,7 @@
 <div id="app">
   <div class="topbar">
     <span class="brand">◉ WAR</span>
+    <span class="beta-tag" title="Beta — capture only happens during a TUI session">BETA</span>
     <select id="session-select" class="select select-bordered select-xs">
       {% if initial_sessions %}
         <option value="__all__">ALL SESSIONS</option>

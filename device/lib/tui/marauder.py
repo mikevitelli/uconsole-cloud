@@ -595,7 +595,7 @@ _MENU = [
     ("Signal Monitor",  "Live RSSI braille waveforms",           "📊"),
     ("Evil Portal",     "Captive portal credential capture",     "🪤"),
     ("Network Recon",   "Join network, ping, ARP, port scan",   "🕵️"),
-    ("War Drive",       "GPS-tagged AP sweep \u2192 CSV",        "🚗"),
+    ("War Drive (BETA)","GPS-tagged AP sweep \u2192 CSV",        "🚗"),
     ("Device",          "Info, settings, MAC spoof, reboot",     "🛠️"),
     ("Raw Console",     "Direct serial I/O",                     "🔌"),
 ]

@@ -14,11 +14,14 @@ that picks up the dev tree without `make install`.
 - **Meshtastic TUI client** (`tui.meshtastic`) — full mesh map visualization,
   packet filtering, CLI wrapper alignment. Consolidated under HARDWARE radio
   alongside LoRa, with a shared `sub:lora_mesh` submenu.
-- **Wardrive GPS-tagged AP map** (opt-in via `UCONSOLE_WARDRIVE_ENABLED=1` or
-  `/etc/uconsole/wardrive-enabled`) — capture engine in `tui.marauder`, OSM
-  street overlay via Overpass API, MapLibre GL viewer in webdash, demo data
-  generator. Polish (signal-strength color ramp, error surfacing, config
-  tunables, Overpass mirror fallback) deferred to v0.2.3.
+- **Wardrive GPS-tagged AP map (BETA)** — capture engine in `tui.marauder`,
+  OSM street overlay via Overpass API, MapLibre GL viewer in webdash, demo
+  data generator. The `/wardrive` route is always reachable; it shows an
+  empty session list until a TUI marauder session writes a capture file —
+  there's no daemon and no autostart, so a fresh install does nothing
+  wardrive-related until the user explicitly opens it from the TUI. Polish
+  (signal-strength color ramp, error surfacing, config tunables, Overpass
+  mirror fallback) deferred to v0.2.3.
 - **TUI emoji icons** — per-item color emoji on every submenu and the tile
   grid. Single-codepoint glyphs only (terminal drops ZWJ joiners).
 - **Launcher auto-detect** — `console` picks up `~/uconsole-cloud/device/lib/`
