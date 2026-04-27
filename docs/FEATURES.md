@@ -55,10 +55,13 @@ External GUI programs (emulators, Watch Dogs Go) launch through `tui.launcher` w
 - Live monitor via SSE (1s push while panel open)
 - Documentation wiki served at `/docs` (these very pages)
 - Crash log viewer, timer scheduling, config management
-- **Wardrive AP map (opt-in)** — MapLibre GL view of GPS-tagged AP captures
+- **Wardrive AP map (BETA)** — MapLibre GL view of GPS-tagged AP captures
   from `tui.marauder`, with session selector, density heatmap, and OSM
-  basemap. Disabled by default — enable via `UCONSOLE_WARDRIVE_ENABLED=1`
-  or `touch /etc/uconsole/wardrive-enabled`. Polish landing in v0.2.3.
+  basemap. The page is always reachable; it shows an empty session list
+  until you start a TUI marauder session — capture only happens while
+  you're in that session, no daemon. Polish (signal-strength color ramp,
+  error surfacing, config tunables, Overpass mirror fallback) landing in
+  v0.2.3.
 
 ### Packaging
 
@@ -82,7 +85,7 @@ External GUI programs (emulators, Watch Dogs Go) launch through `tui.launcher` w
 | Area | Status | Reference |
 |------|--------|-----------|
 | Suspend-to-RAM | **Deferred to v0.3.x** — requires CONFIG_SUSPEND=y kernel rebuild that hasn't been scheduled. Plan preserved intact. | [`docs/plans/2026-04-21-uconsole-suspend-to-ram.md`](plans/2026-04-21-uconsole-suspend-to-ram.md) |
-| Wardrive map polish | **Deferred to v0.2.3** — feature ships opt-in in v0.2.2; remaining work is signal-strength color ramp, error surfacing, config tunables, Overpass mirror fallback. | (no plan doc yet) |
+| Wardrive map polish | **Deferred to v0.2.3** — feature ships as BETA in v0.2.2 (always reachable, capture is TUI-only); remaining work is signal-strength color ramp, error surfacing, config tunables, Overpass mirror fallback. | (no plan doc yet) |
 
 ## Open issues
 

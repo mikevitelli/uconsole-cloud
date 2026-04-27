@@ -1590,37 +1590,17 @@ def api_lora():
     return jsonify({**_lora_data, 'age': age, 'online': 0 < age < 60})
 
 
-# ── War Drive (WIP / opt-in) ─────────────────────────────────────────
-# Disabled by default — the UX is still in flux. Enable with either:
-#   sudo touch /etc/uconsole/wardrive-enabled
-# or set UCONSOLE_WARDRIVE_ENABLED=1 in the webdash service env.
-# When disabled, both /wardrive and /api/wardrive/* return 404 so the
-# feature is invisible to users who haven't opted in.
+# ── War Drive (BETA) ─────────────────────────────────────────────────
+# The data is the state. Routes are always reachable; if no captures
+# exist yet the page shows an empty-state nudge to start a session
+# from the TUI. Capture only happens during a TUI marauder session —
+# nothing in webdash starts or runs a scanner.
 
 _WARDRIVE_DIR = os.path.expanduser('~/esp32/marauder-logs')
 _WARDRIVE_NAME_RE = re.compile(r'^wardrive-(?:DEMO-)?\d{8}T\d{6}\.csv$')
-_WARDRIVE_FLAG_FILE = '/etc/uconsole/wardrive-enabled'
 _WARDRIVE_LABELS_FILE = os.path.join(_WARDRIVE_DIR, 'labels.json')
 _WARDRIVE_TRASH_DIR = os.path.join(_WARDRIVE_DIR, '.trash')
 _WARDRIVE_ALL = '__all__'
-
-
-def _wardrive_enabled():
-    if os.environ.get('UCONSOLE_WARDRIVE_ENABLED') in ('1', 'true', 'yes'):
-        return True
-    try:
-        return os.path.exists(_WARDRIVE_FLAG_FILE)
-    except OSError:
-        return False
-
-
-def _wardrive_gate():
-    """Return a 404 response if the feature is disabled; else None."""
-    if _wardrive_enabled():
-        return None
-    return ('War Drive is disabled. To enable:\n'
-            '  sudo touch /etc/uconsole/wardrive-enabled\n'
-            '  sudo systemctl restart uconsole-webdash'), 404
 
 
 def _wardrive_load_labels():
@@ -1718,8 +1698,6 @@ def _wardrive_parse(path, since_row=0):
 
 @app.route('/wardrive')
 def wardrive_page():
-    g = _wardrive_gate()
-    if g: return g
     """Live map of war-drive sessions.
 
     Default view uses MapLibre GL + deck.gl for a 3D cyberpunk
@@ -1747,8 +1725,6 @@ def wardrive_page():
 @app.route('/api/wardrive/sessions')
 def api_wardrive_sessions():
     """List available war-drive CSV sessions, newest first."""
-    g = _wardrive_gate()
-    if g: return g
     files = _wardrive_list_files()
     # Also report whether this is the live/in-progress session (newest,
     # modified in last 5 minutes)
@@ -1765,8 +1741,6 @@ def api_wardrive_data(name):
     Special name '__all__' returns merged rows from every session with each
     row tagged with its source session (for per-session track splitting).
     """
-    g = _wardrive_gate()
-    if g: return g
 
     if name == _WARDRIVE_ALL:
         sessions = _wardrive_list_files()
@@ -1824,8 +1798,6 @@ def api_wardrive_data(name):
 
 @app.route('/api/wardrive/rename', methods=['POST'])
 def api_wardrive_rename():
-    g = _wardrive_gate()
-    if g: return g
     data = request.get_json(silent=True) or {}
     name = data.get('name', '')
     label = (data.get('label') or '').strip()[:80]
@@ -1874,8 +1846,6 @@ def _wardrive_trash(name):
 
 @app.route('/api/wardrive/delete', methods=['POST'])
 def api_wardrive_delete():
-    g = _wardrive_gate()
-    if g: return g
     data = request.get_json(silent=True) or {}
     name = data.get('name', '')
     if not _WARDRIVE_NAME_RE.match(name):
@@ -1888,8 +1858,6 @@ def api_wardrive_delete():
 
 @app.route('/api/wardrive/delete-empty', methods=['POST'])
 def api_wardrive_delete_empty():
-    g = _wardrive_gate()
-    if g: return g
     deleted = []
     for s in _wardrive_list_files():
         if s['row_count'] <= 1:
@@ -2062,16 +2030,12 @@ def _wigle_status_payload():
 
 @app.route('/api/wigle/status')
 def api_wigle_status():
-    g = _wardrive_gate()
-    if g: return g
     return jsonify(_wigle_status_payload())
 
 
 @app.route('/api/wigle/cached')
 def api_wigle_cached():
     """Return the full cached enrichment map: {bssid: {encryption, ssid, ...}}."""
-    g = _wardrive_gate()
-    if g: return g
     conn = _wigle_db()
     try:
         rows = conn.execute('''SELECT bssid, ssid, encryption, first_seen,
@@ -2096,8 +2060,6 @@ _WIGLE_BSSID_RE = re.compile(r'^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$')
 def api_wigle_enrich():
     """Look up BSSIDs in WiGLE. Body: {bssids: [...], max: 25}.
     Only queries BSSIDs not already in cache. Stops on 429."""
-    g = _wardrive_gate()
-    if g: return g
     auth = _wigle_auth_header()
     if not auth:
         return jsonify({'error': 'WiGLE not configured'}), 400
