@@ -150,6 +150,7 @@ class TestTUIModuleExports:
             'framework.py', 'esp32_detect.py', 'esp32_flash.py',
             'adsb_hires.py',    # ADS-B hi-res fetch helper, used via _adsb_fetch_hires
             'launcher.py',      # detached-spawn helper, used by watchdogs + romlauncher
+            'wifi_radio.py',    # parser-only for now; run_* added in Task 9
         }
         if module_file in UTILITY_MODULES:
             pytest.skip(f"{module_file} is a utility module")
@@ -176,6 +177,7 @@ class TestTUIModuleExports:
             'adsb_hires.py',         # ADS-B hi-res fetcher, used by adsb_menu
             'adsb_layer_picker.py',  # picker UI, used by adsb_menu
             'aio.py',                # parser + detect only; HANDLERS + FEATURE_MODULES wired in Tasks 5+10
+            'wifi_radio.py',         # parsers + helpers; HANDLERS added in Task 9, FEATURE_MODULES in Task 10
         }
         from tui.framework import FEATURE_MODULES
         feature_files = {m.replace('tui.', '') + '.py' for m in FEATURE_MODULES}
