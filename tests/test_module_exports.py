@@ -150,7 +150,6 @@ class TestTUIModuleExports:
             'framework.py', 'esp32_detect.py', 'esp32_flash.py',
             'adsb_hires.py',    # ADS-B hi-res fetch helper, used via _adsb_fetch_hires
             'launcher.py',      # detached-spawn helper, used by watchdogs + romlauncher
-            'aio.py',           # parser-only for now; run_* added in Task 5
         }
         if module_file in UTILITY_MODULES:
             pytest.skip(f"{module_file} is a utility module")

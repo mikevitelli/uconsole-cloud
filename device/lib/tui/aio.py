@@ -141,3 +141,191 @@ def ensure_rail(name):
         return True
     rc, _ = _run_ctl([name, "on"])
     return rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Curses dashboard panel
+# ---------------------------------------------------------------------------
+
+import curses
+
+from tui.framework import (
+    C_HEADER,
+    C_ITEM,
+    C_SEL,
+    C_STATUS,
+    draw_header,
+    draw_separator,
+    draw_status_bar,
+    open_gamepad,
+    GP_A,
+    GP_B,
+    GP_X,
+    GP_Y,
+    _tui_input_loop,
+)
+
+RAIL_ORDER = ["GPS", "LORA", "SDR", "USB"]
+
+
+def toggle_rail(name, on):
+    """Toggle live rail. Returns True on success."""
+    if name not in RAIL_LABELS:
+        return False
+    rc, _ = _run_ctl([name, "on" if on else "off"])
+    return rc == 0
+
+
+def toggle_boot_rail(name, on):
+    """Toggle boot-default for a rail. Returns True on success."""
+    if name not in RAIL_LABELS:
+        return False
+    rc, _ = _run_ctl(["--boot-rail", name, "on" if on else "off"])
+    return rc == 0
+
+
+def get_boot_rails():
+    """Return {RAIL: bool} of currently configured boot defaults.
+
+    Calls `aiov2_ctl --boot-rails-status` and parses the same `RAIL ON/OFF`
+    lines emitted by --status.
+    """
+    rc, out = _run_ctl(["--boot-rails-status"])
+    if rc != 0:
+        return {}
+    boot = {}
+    for line in out.splitlines():
+        m = _RAIL_RE.match(line)
+        if m:
+            boot[m.group(1)] = m.group(3) == "ON"
+    return boot
+
+
+def run_aio_dashboard(scr):
+    """Full-screen TUI panel for AIO v2 rail control."""
+    if detect() == "v1":
+        # Delegate to the legacy v1 script. Imported lazily to avoid a hard
+        # framework dependency at module import time (keeps unit tests clean).
+        from tui.framework import run_panel
+        run_panel(scr, "radio/aio-check.sh", "AIO Board Check")
+        return
+
+    js = open_gamepad()
+    scr.timeout(150)
+    selected = 0
+    last_status = {"rails": {}, "power": {}}
+    last_boot = {}
+    last_refresh = 0.0
+    error_msg = ""
+    error_until = 0.0
+    REFRESH_INTERVAL = 1.5
+
+    import time
+
+    def refresh():
+        nonlocal last_status, last_boot, last_refresh
+        last_status = get_status()
+        last_boot = get_boot_rails()
+        last_refresh = time.time()
+
+    refresh()
+
+    while True:
+        h, w = scr.getmaxyx()
+        scr.erase()
+
+        draw_header(scr, w)
+        title = "AIO v2 — Rails & Power"
+        scr.addnstr(6, max(0, (w - len(title)) // 2), title, w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+        draw_separator(scr, 7, w)
+
+        y = 9
+        scr.addnstr(y, 2, "── Power ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        y += 1
+        p = last_status.get("power", {})
+        if p:
+            mode = p.get("mode", "?")
+            scr.addnstr(y, 4, f"Mode       {mode}", w - 6, curses.color_pair(C_ITEM))
+            y += 1
+            cap = p.get("capacity", "?")
+            status_word = p.get("status", "?")
+            pwr = p.get("power", "?")
+            scr.addnstr(y, 4, f"Power      {pwr} W       Battery  {cap}%  ({status_word})",
+                        w - 6, curses.color_pair(C_ITEM))
+            y += 2
+        else:
+            scr.addnstr(y, 4, "(unable to read --status)", w - 6,
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+            y += 2
+
+        scr.addnstr(y, 2, "── Rails ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        y += 1
+        for i, rail in enumerate(RAIL_ORDER):
+            info = last_status.get("rails", {}).get(rail, {})
+            on = info.get("state", False)
+            boot_on = last_boot.get(rail, False)
+            dot = "●" if on else "○"
+            boot_dot = "●" if boot_on else "○"
+            label = RAIL_LABELS[rail]
+            line = f"{rail:5}  {dot}  {'ON ' if on else 'OFF'}    boot {boot_dot}     {label}"
+            cursor = "▸ " if i == selected else "  "
+            attr = curses.color_pair(C_SEL) | curses.A_REVERSE if i == selected \
+                else curses.color_pair(C_ITEM)
+            scr.addnstr(y, 2, cursor + line, w - 4, attr)
+            y += 1
+
+        y += 1
+        scr.addnstr(y, 2, "── WiFi ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        y += 1
+        # Lazy import to avoid circular import at module load
+        from tui.wifi_radio import current_mode_label, brief_radio_summary
+        scr.addnstr(y, 4, current_mode_label() + "     " + brief_radio_summary(),
+                    w - 6, curses.color_pair(C_ITEM))
+
+        if error_msg and time.time() < error_until:
+            scr.addnstr(h - 2, 2, error_msg, w - 4,
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+        footer = " ↑↓ Rail │ A Toggle │ X Boot Default │ Y WiFi Radios │ B Back "
+        draw_status_bar(scr, h, w, footer)
+        scr.refresh()
+
+        if time.time() - last_refresh > REFRESH_INTERVAL:
+            refresh()
+
+        key, gp_action = _tui_input_loop(scr, js)
+        if key == -1 and gp_action is None:
+            continue
+        if key == ord("q") or key == ord("Q") or gp_action == "back":
+            return
+        if key == curses.KEY_UP or key == ord("k"):
+            selected = (selected - 1) % len(RAIL_ORDER)
+        elif key == curses.KEY_DOWN or key == ord("j"):
+            selected = (selected + 1) % len(RAIL_ORDER)
+        elif key in (curses.KEY_ENTER, 10, 13, ord(" ")) or gp_action == "enter":
+            rail = RAIL_ORDER[selected]
+            current_on = last_status.get("rails", {}).get(rail, {}).get("state", False)
+            ok = toggle_rail(rail, not current_on)
+            if not ok:
+                error_msg = f"  ✗ failed to toggle {rail}"
+                error_until = time.time() + 3
+            refresh()
+        elif key == ord("b") or key == ord("B") or gp_action == "refresh":
+            # GP_X mapped to "refresh" by _tui_input_loop — repurpose for boot-rail toggle
+            rail = RAIL_ORDER[selected]
+            current_boot = last_boot.get(rail, False)
+            ok = toggle_boot_rail(rail, not current_boot)
+            if not ok:
+                error_msg = f"  ✗ failed to set boot default for {rail}"
+                error_until = time.time() + 3
+            refresh()
+        elif key == ord("w") or key == ord("W") or gp_action == "quit":
+            # GP_Y mapped to "quit" by _tui_input_loop — repurpose for WiFi jump
+            from tui.wifi_radio import run_wifi_radio_picker
+            run_wifi_radio_picker(scr)
+            refresh()
+
+
+HANDLERS = {
+    "_aio_board": run_aio_dashboard,
+}
