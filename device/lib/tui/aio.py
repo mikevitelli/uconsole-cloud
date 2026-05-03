@@ -76,3 +76,25 @@ def parse_status(text):
         else:
             power[key] = value
     return {"rails": rails, "power": power}
+
+
+# ---------------------------------------------------------------------------
+# Board detection
+# ---------------------------------------------------------------------------
+
+_detect_cache = None
+
+
+def detect():
+    """Return 'v2' if the AIO v2 control binary is present and executable, else 'v1'.
+
+    Cached for the lifetime of the process.
+    """
+    global _detect_cache
+    if _detect_cache is not None:
+        return _detect_cache
+    if os.path.isfile(AIOV2_CTL) and os.access(AIOV2_CTL, os.X_OK):
+        _detect_cache = "v2"
+    else:
+        _detect_cache = "v1"
+    return _detect_cache
