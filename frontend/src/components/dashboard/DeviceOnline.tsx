@@ -84,11 +84,14 @@ export function DeviceOnline({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
           {[
             {
-              label: "WiFi",
-              value: `${wifi.ssid} (${wifi.signalDBm} dBm)`,
+              label: "Network",
+              value:
+                wifi.kind === "ethernet"
+                  ? `Ethernet${wifi.iface ? ` (${wifi.iface})` : ""}`
+                  : `${wifi.ssid} (${wifi.signalDBm} dBm)`,
             },
             {
-              label: "Bitrate",
+              label: wifi.kind === "ethernet" ? "Link" : "Bitrate",
               value: `${wifi.bitrateMbps} Mbps`,
             },
             {
