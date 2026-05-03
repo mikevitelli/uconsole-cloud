@@ -7,7 +7,6 @@ handler delegates to the legacy radio/aio-check.sh panel.
 
 import os
 import re
-import shutil
 import subprocess
 
 AIOV2_CTL = "/usr/local/bin/aiov2_ctl"
@@ -158,10 +157,6 @@ from tui.framework import (
     draw_separator,
     draw_status_bar,
     open_gamepad,
-    GP_A,
-    GP_B,
-    GP_X,
-    GP_Y,
     _tui_input_loop,
 )
 
@@ -278,10 +273,13 @@ def run_aio_dashboard(scr):
         y += 1
         scr.addnstr(y, 2, "── WiFi ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
         y += 1
-        # Lazy import to avoid circular import at module load
-        from tui.wifi_radio import current_mode_label, brief_radio_summary
-        scr.addnstr(y, 4, current_mode_label() + "     " + brief_radio_summary(),
-                    w - 6, curses.color_pair(C_ITEM))
+        # Lazy import: wifi_radio may not be loaded yet (forward dependency)
+        try:
+            from tui.wifi_radio import current_mode_label, brief_radio_summary
+            wifi_line = current_mode_label() + "     " + brief_radio_summary()
+        except ImportError:
+            wifi_line = "(WiFi info unavailable)"
+        scr.addnstr(y, 4, wifi_line, w - 6, curses.color_pair(C_ITEM))
 
         if error_msg and time.time() < error_until:
             scr.addnstr(h - 2, 2, error_msg, w - 4,
@@ -293,7 +291,7 @@ def run_aio_dashboard(scr):
         if time.time() - last_refresh > REFRESH_INTERVAL:
             refresh()
 
-        key, gp_action = _tui_input_loop(scr, js)
+        key, gp_action = _tui_input_loop(scr, js, map_y_quit=True)
         if key == -1 and gp_action is None:
             continue
         if key == ord("q") or key == ord("Q") or gp_action == "back":
