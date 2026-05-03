@@ -16,37 +16,54 @@ Goal: TUI controls that mirror the AIO v2 GUI (rails + boot defaults + power tel
 ## What
 
 ### 1. Board detection (`aio.detect()`)
-
+error     /home/mikevitelli/.npm/_logs/2026-04-13T02_06_44_961Z-debug-0.log
 Returns `"v2"` if `/usr/local/bin/aiov2_ctl` exists and is executable, else `"v1"`. Cached for the lifetime of the TUI process. No per-render re-checks.
 
 ### 2. AIO dashboard panel (v2 only)
 
 New module `lib/tui/aio.py`. Full-screen TUI panel rendered from `aiov2_ctl --status` output (parser handles the existing fixed text format: four `FEATURE GPIO_n: ON|OFF` lines plus labelled `Source / Status / Capacity / Mode / Voltage / Current / Power` fields). Auto-refresh every 1.5 s while focused; immediate re-render after any toggle.
 
-Layout:
+Renders inside the standard TUI chrome — global `HEADER` art at top, centered title row in `C_HEADER | A_BOLD`, `draw_separator`, sectioned content, `draw_status_bar` at the bottom. No outer ASCII box.
+
+Layout (showing only the panel-specific content, between header and status bar):
 
 ```
-┌─ AIO v2 — Rails & Power ──────────────────────────────────┐
-│  Mode      AC powering system + battery                    │
-│  Power     3.86 W           Battery   89%   (Charging)     │
-│                                                            │
-│  Rails (press key to toggle, Shift = boot default)         │
-│   [G]  GPS    ●  ON    boot ●     uBlox NEO                │
-│   [L]  LORA   ○  OFF   boot ○     SX1262                   │
-│   [S]  SDR    ○  OFF   boot ○     RTL-SDR                  │
-│   [U]  USB    ●  ON    boot ●     AC1200 + ESP32           │
-│                                                            │
-│  WiFi: Both active   wlan0=CM5  wlan1=AC1200   [w] switch  │
-│                                                            │
-│  q  back        r  refresh                                 │
-└────────────────────────────────────────────────────────────┘
+                        AIO v2 — Rails & Power
+─────────────────────────────────────────────────────────────
+
+  ── Power ──
+    Mode       AC powering system + battery
+    Power      3.86 W       Battery  89%  (Charging)
+
+  ── Rails ──
+  ▸ GPS    ●  ON     boot ●     uBlox NEO
+    LORA   ○  OFF    boot ○     SX1262
+    SDR    ○  OFF    boot ○     RTL-SDR
+    USB    ●  ON     boot ●     AC1200 + ESP32
+
+  ── WiFi ──
+    Both active     wlan0=CM5 onboard     wlan1=AC1200
 ```
 
-Keys:
-- `g` `l` `s` `u` — toggle live rail. Shells out to `aiov2_ctl FEATURE on|off`. Optimistic UI: flip the dot immediately, revert + show one-line error on non-zero exit.
-- `G` `L` `S` `U` (shift) — toggle boot default. Calls `aiov2_ctl --boot-rail FEATURE on|off`.
-- `w` — jump to WiFi Radio Mode screen (Section 4).
-- `r` — force refresh. `q` — back.
+Footer (replaces global `FOOTER_HELP` while panel is focused):
+
+```
+ ↑↓ Rail │ A Toggle │ X Boot Default │ Y WiFi Radios │ B Back
+```
+
+Input model — gamepad-first, with keyboard fallbacks:
+
+| Action | Gamepad | Keyboard |
+|---|---|---|
+| Move selection up/down between the 4 rails | ↑ / ↓ | ↑ / ↓ |
+| Toggle the selected rail (live) | `GP_A` | Enter / Space |
+| Toggle the selected rail's boot default | `GP_X` | `b` |
+| Jump to WiFi Radio Mode screen (Section 4) | `GP_Y` | `w` |
+| Back | `GP_B` | `q` / Backspace |
+
+Both `GP_A` (toggle live) and `GP_X` (boot default) use optimistic UI: flip the indicator dot immediately, revert + show one-line error in `C_STATUS` color above the footer on non-zero exit. The next 1.5 s refresh re-syncs from truth.
+
+Selected row uses the existing `C_SEL` reverse-video pair (same as menus). On/off dots use `C_STATUS` (green) for `●` and the muted `C_ITEM` for `○`.
 
 No safety guard on USB toggle — the row label (`AC1200 + ESP32`) makes the cost visible.
 
@@ -103,23 +120,37 @@ Mode persists to `~/.config/uconsole/wifi_radio_mode` (single-line text file, co
 
 If `network/wifi.sh` has no `--ifname` flag for scoping to `wlan1`, the implementation either adds one or shells `nmcli device wifi connect ... ifname wlan1` directly. To verify during planning.
 
-**TUI screen** at `NETWORK → WiFi → Radio Mode`:
+**TUI screen** at `NETWORK → WiFi → Radio Mode`. Same chrome conventions as the AIO panel — global header, centered title, `draw_separator`, `draw_status_bar`. Panel-specific content:
 
 ```
-┌─ WiFi Radios ─────────────────────────────────────────────┐
-│  Active mode:   Both active                                │
-│                                                            │
-│  ◉  Both active                  (default)                 │
-│  ○  CM5 onboard only             (block AC1200)            │
-│  ○  AC1200 only                  (block onboard)           │
-│                                                            │
-│  Status:                                                   │
-│   wlan0  brcmfmac    CM5 onboard      Big Parma  -54 dBm   │
-│   wlan1  mt7921u     AC1200 (WiFi 6)  Not your iPhone -71  │
-│                                                            │
-│  ↑↓ choose       enter  apply       q  back                │
-└────────────────────────────────────────────────────────────┘
+                          WiFi Radios
+─────────────────────────────────────────────────────────────
+
+  ── Mode ──
+  ▸ ●  Both active            (default — both radios up)
+    ○  CM5 onboard only       (block AC1200)
+    ○  AC1200 only            (block onboard)
+
+  ── Status ──
+    wlan0  brcmfmac    CM5 onboard       Big Parma  -54 dBm
+    wlan1  mt7921u     AC1200 (WiFi 6)   Not your iPhone -71
 ```
+
+Footer:
+
+```
+ ↑↓ Mode │ A Apply │ B Back
+```
+
+Input model:
+
+| Action | Gamepad | Keyboard |
+|---|---|---|
+| Move selection up/down between the 3 modes | ↑ / ↓ | ↑ / ↓ |
+| Apply the selected mode | `GP_A` | Enter / Space |
+| Back | `GP_B` | `q` / Backspace |
+
+Currently-active mode shows `●`, others show `○`. Selected row uses `C_SEL`. After `Apply`, if the chosen mode strands AC1200 with no connection, the existing wifi-connect flow (gamepad-driven SSID picker) takes over scoped to `wlan1`, then returns here.
 
 Switching is brute-force rfkill, not NetworkManager `autoconnect-priority`. Rfkill is legible — the disabled radio literally doesn't exist while blocked, so behavior is predictable. Priority-based "AC1200 preferred, onboard fallback" is deferred until both radios are actively used in production.
 
