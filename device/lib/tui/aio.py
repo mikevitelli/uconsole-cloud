@@ -98,3 +98,46 @@ def detect():
     else:
         _detect_cache = "v1"
     return _detect_cache
+
+
+# ---------------------------------------------------------------------------
+# Rail control helpers
+# ---------------------------------------------------------------------------
+
+def _run_ctl(args, timeout=5):
+    """Run aiov2_ctl with args, return (returncode, stdout). Never raises."""
+    try:
+        r = subprocess.run(
+            [AIOV2_CTL, *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return r.returncode, r.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return 1, ""
+
+
+def get_status():
+    """Return parsed status dict, or empty {rails:{},power:{}} on any failure."""
+    rc, out = _run_ctl(["--status"])
+    if rc != 0:
+        return {"rails": {}, "power": {}}
+    return parse_status(out)
+
+
+def ensure_rail(name):
+    """Ensure rail `name` (GPS/LORA/SDR/USB) is powered. Return True on success.
+
+    On AIO v1 boards: no-op, returns True.
+    On AIO v2 with rail already ON: returns True.
+    On AIO v2 with rail OFF: calls `aiov2_ctl <name> on` and returns True if rc==0.
+    """
+    if name not in RAIL_LABELS:
+        return False
+    if detect() == "v1":
+        return True
+    status = get_status()
+    rail = status["rails"].get(name)
+    if rail and rail["state"]:
+        return True
+    rc, _ = _run_ctl([name, "on"])
+    return rc == 0
