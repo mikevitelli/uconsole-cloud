@@ -229,3 +229,119 @@ def set_mode(mode):
     save_mode(mode)
     needs_connect = (mode == "ac1200" and ac1200 is not None and not ac1200.get("ssid"))
     return {"ac1200_needs_connect": needs_connect}
+
+
+import curses
+
+from tui.framework import (
+    C_HEADER,
+    C_ITEM,
+    C_SEL,
+    C_STATUS,
+    draw_header,
+    draw_separator,
+    draw_status_bar,
+    open_gamepad,
+    _tui_input_loop,
+)
+
+MODE_OPTIONS = [
+    ("both",    "Both active",       "default — both radios up"),
+    ("onboard", "CM5 onboard only",  "block AC1200"),
+    ("ac1200",  "AC1200 only",       "block onboard"),
+]
+
+
+def _signal_for(ifname):
+    """Return signal in dBm or empty string."""
+    try:
+        out = subprocess.check_output(["iw", "dev", ifname, "link"],
+                                       text=True, timeout=2)
+        m = re.search(r"signal:\s+(-?\d+)\s+dBm", out)
+        return f"{m.group(1)} dBm" if m else ""
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            FileNotFoundError):
+        return ""
+
+
+def run_wifi_radio_picker(scr):
+    """3-mode WiFi radio mode picker."""
+    js = open_gamepad()
+    scr.timeout(200)
+    cur_mode = load_mode()
+    selected = next((i for i, (m, *_) in enumerate(MODE_OPTIONS) if m == cur_mode), 0)
+    radios = list_radios()
+    apply_msg = ""
+    apply_until = 0.0
+    import time
+
+    while True:
+        h, w = scr.getmaxyx()
+        scr.erase()
+        draw_header(scr, w)
+        title = "WiFi Radios"
+        scr.addnstr(6, max(0, (w - len(title)) // 2), title, w,
+                    curses.color_pair(C_HEADER) | curses.A_BOLD)
+        draw_separator(scr, 7, w)
+
+        y = 9
+        scr.addnstr(y, 2, "── Mode ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        y += 1
+        for i, (mode_id, label, hint) in enumerate(MODE_OPTIONS):
+            marker = "●" if mode_id == cur_mode else "○"
+            cursor = "▸ " if i == selected else "  "
+            line = f"{marker}  {label:22} ({hint})"
+            attr = curses.color_pair(C_SEL) | curses.A_REVERSE if i == selected \
+                else curses.color_pair(C_ITEM)
+            scr.addnstr(y, 2, cursor + line, w - 4, attr)
+            y += 1
+
+        y += 1
+        scr.addnstr(y, 2, "── Status ──", w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        y += 1
+        for r in radios:
+            sig = _signal_for(r["ifname"])
+            ssid = r.get("ssid") or "(not associated)"
+            blocked = "  [blocked]" if r["soft_blocked"] else ""
+            line = f"{r['ifname']:6} {r['driver']:10} {r['label']:18} {ssid}  {sig}{blocked}"
+            scr.addnstr(y, 4, line, w - 6, curses.color_pair(C_ITEM))
+            y += 1
+
+        if apply_msg and time.time() < apply_until:
+            scr.addnstr(h - 2, 2, apply_msg, w - 4,
+                        curses.color_pair(C_STATUS) | curses.A_BOLD)
+        footer = " ↑↓ Mode │ A Apply │ B Back "
+        draw_status_bar(scr, h, w, footer)
+        scr.refresh()
+
+        key, gp_action = _tui_input_loop(scr, js)
+        if key == -1 and gp_action is None:
+            continue
+        if key == ord("q") or key == ord("Q") or gp_action == "back":
+            return
+        if key == curses.KEY_UP or key == ord("k"):
+            selected = (selected - 1) % len(MODE_OPTIONS)
+        elif key == curses.KEY_DOWN or key == ord("j"):
+            selected = (selected + 1) % len(MODE_OPTIONS)
+        elif key in (curses.KEY_ENTER, 10, 13, ord(" ")) or gp_action == "enter":
+            chosen = MODE_OPTIONS[selected][0]
+            try:
+                result = set_mode(chosen)
+                cur_mode = chosen
+                radios = list_radios()
+                apply_msg = f"  ✓ applied {chosen}"
+                apply_until = time.time() + 2
+                if result.get("ac1200_needs_connect"):
+                    # Drop into the existing wifi-connect flow scoped to wlan1.
+                    # We invoke the existing _wifi handler if it accepts an
+                    # interface, otherwise the user can connect manually.
+                    apply_msg = "  ⚠ AC1200 needs a network — open WiFi Switcher"
+                    apply_until = time.time() + 5
+            except Exception as e:
+                apply_msg = f"  ✗ apply failed: {e}"
+                apply_until = time.time() + 5
+
+
+HANDLERS = {
+    "_wifi_radio": run_wifi_radio_picker,
+}
