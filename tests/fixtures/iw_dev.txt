@@ -1,0 +1,26 @@
+phy#2
+	Interface wlan1
+		ifindex 6
+		wdev 0x200000001
+		addr aa:bb:cc:00:00:01
+		ssid HomeWiFi
+		type managed
+		channel 149 (5745 MHz), width: 80 MHz, center1: 5775 MHz
+		txpower 3.00 dBm
+		multicast TXQ:
+			qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+			0	0	0	0	0	0	0	0		0
+phy#0
+	Unnamed/non-netdev interface
+		wdev 0x2
+		addr aa:bb:cc:00:00:02
+		type P2P-device
+		txpower 31.00 dBm
+	Interface wlan0
+		ifindex 3
+		wdev 0x1
+		addr aa:bb:cc:00:00:03
+		ssid HomeWiFi - 2.4GHz
+		type managed
+		channel 3 (2422 MHz), width: 20 MHz, center1: 2422 MHz
+		txpower 31.00 dBm
