@@ -85,3 +85,52 @@ def test_ensure_rail_unknown_rail_returns_false(monkeypatch):
     monkeypatch.setattr(aio, "_detect_cache", "v2")
     monkeypatch.setattr(aio.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0, stdout=""))
     assert aio.ensure_rail("BOGUS") is False
+
+
+# ---------------------------------------------------------------------------
+# toggle_rail / toggle_boot_rail / get_boot_rails
+# ---------------------------------------------------------------------------
+
+def test_toggle_rail_unknown_returns_false(monkeypatch):
+    monkeypatch.setattr(aio.subprocess, "run", lambda *a, **kw: MagicMock(returncode=0, stdout=""))
+    assert aio.toggle_rail("BOGUS", True) is False
+
+
+def test_toggle_rail_on(monkeypatch):
+    calls = []
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return MagicMock(returncode=0, stdout="")
+    monkeypatch.setattr(aio.subprocess, "run", fake_run)
+    assert aio.toggle_rail("GPS", True) is True
+    assert calls[0] == [aio.AIOV2_CTL, "GPS", "on"]
+
+
+def test_toggle_rail_off_failure_returns_false(monkeypatch):
+    monkeypatch.setattr(aio.subprocess, "run",
+                        lambda *a, **kw: MagicMock(returncode=1, stdout=""))
+    assert aio.toggle_rail("LORA", False) is False
+
+
+def test_toggle_boot_rail_invokes_correct_argv(monkeypatch):
+    calls = []
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return MagicMock(returncode=0, stdout="")
+    monkeypatch.setattr(aio.subprocess, "run", fake_run)
+    assert aio.toggle_boot_rail("LORA", False) is True
+    assert calls[0] == [aio.AIOV2_CTL, "--boot-rail", "LORA", "off"]
+
+
+def test_get_boot_rails_parses_status_format(monkeypatch):
+    fake_out = "GPS   GPIO27: ON\nLORA  GPIO16: OFF\nSDR   GPIO7: OFF\nUSB   GPIO23: ON\n"
+    monkeypatch.setattr(aio.subprocess, "run",
+                        lambda *a, **kw: MagicMock(returncode=0, stdout=fake_out))
+    out = aio.get_boot_rails()
+    assert out == {"GPS": True, "LORA": False, "SDR": False, "USB": True}
+
+
+def test_get_boot_rails_returns_empty_on_error(monkeypatch):
+    monkeypatch.setattr(aio.subprocess, "run",
+                        lambda *a, **kw: MagicMock(returncode=1, stdout=""))
+    assert aio.get_boot_rails() == {}
