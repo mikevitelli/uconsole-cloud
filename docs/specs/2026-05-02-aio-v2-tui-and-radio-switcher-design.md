@@ -109,7 +109,7 @@ New module. Three responsibilities:
 - `mt7921u` → "AC1200 (WiFi 6)"
 - anything else → driver string verbatim
 
-Returns `[{phy, ifname, driver, label, ssid, signal, blocked}]`. SSID/signal pulled from `iw dev <ifname> link`; `blocked` from `rfkill list`.
+Returns `[{phy, ifname, driver, label, ssid, soft_blocked}]`. `ssid` from `iw dev`; `soft_blocked` from `rfkill list`. (Per-row signal strength is fetched separately by the picker via `iw dev <ifname> link` — kept out of `list_radios` because it requires a per-iface subprocess call.)
 
 **Three-mode switcher.** `set_mode(mode)` where `mode ∈ {"onboard", "ac1200", "both"}`:
 - `onboard`: `rfkill unblock <onboard.phy>` + `rfkill block <ac1200.phy>`.

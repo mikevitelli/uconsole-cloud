@@ -171,7 +171,7 @@ def current_mode_label():
 
 
 def brief_radio_summary():
-    """One-liner for the AIO dashboard: 'wlan0=CM5 wlan1=AC1200'."""
+    """One-liner for the AIO dashboard: 'wlan0=CM5  wlan1=AC1200'."""
     parts = []
     for r in list_radios():
         short = "CM5" if r["driver"] == "brcmfmac" else "AC1200" if r["driver"] == "mt7921u" else r["driver"]

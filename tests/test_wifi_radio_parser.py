@@ -67,3 +67,49 @@ def test_save_mode_rejects_invalid(tmp_path, monkeypatch):
     monkeypatch.setattr(wifi_radio, "MODE_FILE", str(tmp_path / "mode"))
     with pytest.raises(ValueError):
         wifi_radio.save_mode("bogus")
+
+
+def test_find_radio_by_driver_first_match():
+    radios = [
+        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0"},
+        {"phy": 2, "driver": "mt7921u",  "ifname": "wlan1"},
+    ]
+    found = wifi_radio.find_radio_by_driver(radios, "mt7921u")
+    assert found["ifname"] == "wlan1"
+    assert wifi_radio.find_radio_by_driver(radios, "missing") is None
+
+
+def test_current_mode_label_mapping(tmp_path, monkeypatch):
+    f = tmp_path / "mode"
+    monkeypatch.setattr(wifi_radio, "MODE_FILE", str(f))
+    cases = [
+        ("both",    "Both active"),
+        ("onboard", "CM5 onboard only"),
+        ("ac1200",  "AC1200 only"),
+    ]
+    for mode_id, expected in cases:
+        wifi_radio.save_mode(mode_id)
+        assert wifi_radio.current_mode_label() == expected
+    # Garbage in MODE_FILE → load_mode returns "both" → label is "Both active"
+    f.write_text("garbage\n")
+    assert wifi_radio.current_mode_label() == "Both active"
+
+
+def test_brief_radio_summary_format(monkeypatch):
+    fake_radios = [
+        {"phy": 2, "ifname": "wlan1", "driver": "mt7921u", "label": "AC1200 (WiFi 6)",
+         "ssid": "HomeWiFi", "soft_blocked": False},
+        {"phy": 0, "ifname": "wlan0", "driver": "brcmfmac", "label": "CM5 onboard",
+         "ssid": "HomeWiFi - 2.4GHz", "soft_blocked": False},
+    ]
+    monkeypatch.setattr(wifi_radio, "list_radios", lambda: fake_radios)
+    # Two-space separator between entries
+    assert wifi_radio.brief_radio_summary() == "wlan1=AC1200  wlan0=CM5"
+
+
+def test_brief_radio_summary_unknown_driver_falls_through(monkeypatch):
+    monkeypatch.setattr(wifi_radio, "list_radios", lambda: [
+        {"phy": 0, "ifname": "wlan9", "driver": "exotic_driver",
+         "label": "exotic_driver", "ssid": None, "soft_blocked": False},
+    ])
+    assert wifi_radio.brief_radio_summary() == "wlan9=exotic_driver"
