@@ -36,6 +36,11 @@ export interface WifiStatus {
   quality: number;
   bitrateMbps: number;
   ip: string;
+  // Added 2026-05-03: device-side push-status.sh now reports the actual
+  // default-route interface, not always wlan0. Optional for backward
+  // compatibility with devices on older releases.
+  iface?: string;
+  kind?: "ethernet" | "wifi" | "unknown";
 }
 
 export interface AioDevice {
