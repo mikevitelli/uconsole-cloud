@@ -117,50 +117,66 @@ def test_brief_radio_summary_unknown_driver_falls_through(monkeypatch):
 
 def test_set_mode_both_unblocks_all(monkeypatch):
     radios = [
-        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": True, "ssid": None, "label": "CM5 onboard"},
-        {"phy": 1, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": True, "ssid": None, "label": "AC1200 (WiFi 6)"},
+        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": True, "ssid": None, "label": "CM5 onboard", "rfkill_id": 1},
+        {"phy": 2, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": True, "ssid": None, "label": "AC1200 (WiFi 6)", "rfkill_id": 7},
     ]
     monkeypatch.setattr(wifi_radio, "list_radios", lambda: radios)
     calls = []
     monkeypatch.setattr(wifi_radio.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or MagicMock(returncode=0))
     monkeypatch.setattr(wifi_radio, "save_mode", lambda m: None)
     wifi_radio.set_mode("both")
-    # Both phys unblocked
-    assert ["rfkill", "unblock", "phy0"] in calls
-    assert ["rfkill", "unblock", "phy1"] in calls
-    # No block calls
+    assert ["rfkill", "unblock", "1"] in calls
+    assert ["rfkill", "unblock", "7"] in calls
     assert not any(c[1] == "block" for c in calls if len(c) >= 2)
 
 
 def test_set_mode_onboard_blocks_ac1200(monkeypatch):
     radios = [
-        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": False, "ssid": "X", "label": "CM5 onboard"},
-        {"phy": 1, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": False, "ssid": None, "label": "AC1200"},
+        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": False, "ssid": "X", "label": "CM5 onboard", "rfkill_id": 1},
+        {"phy": 2, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": False, "ssid": None, "label": "AC1200", "rfkill_id": 7},
     ]
     monkeypatch.setattr(wifi_radio, "list_radios", lambda: radios)
     calls = []
     monkeypatch.setattr(wifi_radio.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or MagicMock(returncode=0))
     monkeypatch.setattr(wifi_radio, "save_mode", lambda m: None)
     wifi_radio.set_mode("onboard")
-    assert ["rfkill", "unblock", "phy0"] in calls
-    assert ["rfkill", "block", "phy1"] in calls
+    assert ["rfkill", "unblock", "1"] in calls
+    assert ["rfkill", "block", "7"] in calls
 
 
 def test_set_mode_ac1200_blocks_onboard(monkeypatch):
     radios = [
-        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": False, "ssid": "X", "label": "CM5 onboard"},
-        {"phy": 1, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": False, "ssid": None, "label": "AC1200"},
+        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": False, "ssid": "X", "label": "CM5 onboard", "rfkill_id": 1},
+        {"phy": 2, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": False, "ssid": None, "label": "AC1200", "rfkill_id": 7},
     ]
     monkeypatch.setattr(wifi_radio, "list_radios", lambda: radios)
     calls = []
     monkeypatch.setattr(wifi_radio.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or MagicMock(returncode=0))
     monkeypatch.setattr(wifi_radio, "save_mode", lambda m: None)
     wifi_radio.set_mode("ac1200")
-    assert ["rfkill", "unblock", "phy1"] in calls
-    assert ["rfkill", "block", "phy0"] in calls
+    assert ["rfkill", "unblock", "7"] in calls
+    assert ["rfkill", "block", "1"] in calls
 
 
 def test_set_mode_invalid_raises(monkeypatch):
     monkeypatch.setattr(wifi_radio, "list_radios", lambda: [])
     with pytest.raises(ValueError):
         wifi_radio.set_mode("garbage")
+
+
+def test_set_mode_skips_radio_with_no_rfkill_id(monkeypatch):
+    # Radio detected by iw dev but somehow absent from rfkill list
+    radios = [
+        {"phy": 0, "driver": "brcmfmac", "ifname": "wlan0", "soft_blocked": False,
+         "ssid": "X", "label": "CM5 onboard", "rfkill_id": None},
+        {"phy": 2, "driver": "mt7921u",  "ifname": "wlan1", "soft_blocked": False,
+         "ssid": None, "label": "AC1200", "rfkill_id": 7},
+    ]
+    monkeypatch.setattr(wifi_radio, "list_radios", lambda: radios)
+    calls = []
+    monkeypatch.setattr(wifi_radio.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or MagicMock(returncode=0))
+    monkeypatch.setattr(wifi_radio, "save_mode", lambda m: None)
+    wifi_radio.set_mode("ac1200")
+    # AC1200 unblocked; onboard skipped (no rfkill_id), no error
+    assert ["rfkill", "unblock", "7"] in calls
+    assert not any(c == ["rfkill", "block", "None"] for c in calls)

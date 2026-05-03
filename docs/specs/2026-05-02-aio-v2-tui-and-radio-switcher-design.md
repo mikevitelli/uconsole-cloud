@@ -109,12 +109,12 @@ New module. Three responsibilities:
 - `mt7921u` → "AC1200 (WiFi 6)"
 - anything else → driver string verbatim
 
-Returns `[{phy, ifname, driver, label, ssid, soft_blocked}]`. `ssid` from `iw dev`; `soft_blocked` from `rfkill list`. (Per-row signal strength is fetched separately by the picker via `iw dev <ifname> link` — kept out of `list_radios` because it requires a per-iface subprocess call.)
+Returns `[{phy, ifname, driver, label, ssid, soft_blocked, rfkill_id}]`. `ssid` from `iw dev`; `soft_blocked` and `rfkill_id` from `rfkill list`. `rfkill_id` is the numeric id from `rfkill list` (util-linux rfkill rejects device-name identifiers like `phy0` — must use numeric ID). `None` if the radio isn't in rfkill list. (Per-row signal strength is fetched separately by the picker via `iw dev <ifname> link` — kept out of `list_radios` because it requires a per-iface subprocess call.)
 
 **Three-mode switcher.** `set_mode(mode)` where `mode ∈ {"onboard", "ac1200", "both"}`:
-- `onboard`: `rfkill unblock <onboard.phy>` + `rfkill block <ac1200.phy>`.
+- `onboard`: `rfkill unblock <onboard.rfkill_id>` + `rfkill block <ac1200.rfkill_id>`.
 - `ac1200`: inverse. If AC1200 has no active connection after unblock, drop into the existing wifi-connect flow (from `network/wifi.sh`) scoped to `wlan1`.
-- `both`: `rfkill unblock` everything. No further action.
+- `both`: `rfkill unblock` for each radio's `rfkill_id`. No further action.
 
 Mode persists to `~/.config/uconsole/wifi_radio_mode` (single-line text file, content is one of `onboard|ac1200|both`) so the dashboard shows the chosen mode on next launch. NetworkManager itself has no state for this — rfkill is the source of truth at runtime; the file is presentational only.
 

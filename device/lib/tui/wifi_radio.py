@@ -116,7 +116,7 @@ def _driver_for_phy(phy_id):
 
 
 def list_radios():
-    """Return enriched radio info: [{phy, ifname, driver, label, ssid, soft_blocked}, ...]."""
+    """Return enriched radio info: [{phy, ifname, driver, label, ssid, soft_blocked, rfkill_id}, ...]."""
     try:
         iw_out = subprocess.check_output(["iw", "dev"], text=True, timeout=3)
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
@@ -129,11 +129,13 @@ def list_radios():
     radios = parse_iw_dev(iw_out)
     rfk = parse_rfkill_list(rfk_out)
     blocked_by_phy = {e["name"]: e["soft_blocked"] for e in rfk if e["kind"] == "phy"}
+    id_by_phy = {e["name"]: e["id"] for e in rfk if e["kind"] == "phy"}
 
     for r in radios:
         r["driver"] = _driver_for_phy(r["phy"])
         r["label"] = _label_for_driver(r["driver"])
         r["soft_blocked"] = blocked_by_phy.get(f"phy{r['phy']}", False)
+        r["rfkill_id"] = id_by_phy.get(f"phy{r['phy']}", None)
     return radios
 
 
@@ -209,20 +211,20 @@ def set_mode(mode):
         )
 
     if mode == "both":
-        if onboard:
-            _do("unblock", f"phy{onboard['phy']}")
-        if ac1200:
-            _do("unblock", f"phy{ac1200['phy']}")
+        if onboard and onboard.get("rfkill_id") is not None:
+            _do("unblock", str(onboard["rfkill_id"]))
+        if ac1200 and ac1200.get("rfkill_id") is not None:
+            _do("unblock", str(ac1200["rfkill_id"]))
     elif mode == "onboard":
-        if onboard:
-            _do("unblock", f"phy{onboard['phy']}")
-        if ac1200:
-            _do("block", f"phy{ac1200['phy']}")
+        if onboard and onboard.get("rfkill_id") is not None:
+            _do("unblock", str(onboard["rfkill_id"]))
+        if ac1200 and ac1200.get("rfkill_id") is not None:
+            _do("block", str(ac1200["rfkill_id"]))
     elif mode == "ac1200":
-        if ac1200:
-            _do("unblock", f"phy{ac1200['phy']}")
-        if onboard:
-            _do("block", f"phy{onboard['phy']}")
+        if ac1200 and ac1200.get("rfkill_id") is not None:
+            _do("unblock", str(ac1200["rfkill_id"]))
+        if onboard and onboard.get("rfkill_id") is not None:
+            _do("block", str(onboard["rfkill_id"]))
 
     save_mode(mode)
     needs_connect = (mode == "ac1200" and ac1200 is not None and not ac1200.get("ssid"))
