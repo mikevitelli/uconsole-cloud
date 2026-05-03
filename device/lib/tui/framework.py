@@ -131,6 +131,7 @@ SUBMENUS = {
     ],
     "sub:wifi": [
         ("WiFi Switcher",    "_wifi",               "scan and connect to networks",           "action", "🔀"),
+        ("Radio Mode",       "_wifi_radio",         "switch onboard / AC1200 / both",         "action", "📡"),
         ("WiFi Scan",        "network/network.sh scan",     "nearby WiFi networks",                   "panel",  "🔎"),
         ("Hotspot Toggle",   "_hotspot_toggle",     "start/stop WiFi hotspot",                "action", "🔥"),
         ("Hotspot Config",   "_hotspot_config",     "change AP name and password",            "action", "🔑"),
@@ -330,7 +331,7 @@ CATEGORIES = [
     {
         "name": "HARDWARE",
         "items": [
-            ("AIO Board Check",  "radio/aio-check.sh",  "V1 board component status",              "panel",   "🧩"),
+            ("AIO Board",        "_aio_board",          "rails, power, boot defaults",            "action",  "🧩"),
             ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu","🛰️"),
             ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu", "📻"),
             ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu", "✈️"),
@@ -1870,6 +1871,7 @@ def main_tiles(scr):
 # menu items resolve to silent no-ops at dispatch (see run_script).
 
 FEATURE_MODULES = [
+    "tui.aio",
     "tui.config_ui",
     "tui.tools",
     "tui.games",
@@ -1889,6 +1891,7 @@ FEATURE_MODULES = [
     "tui.watchdogs",
     "tui.processes",
     "tui.esp32_hub",
+    "tui.wifi_radio",
 ]
 
 _HANDLERS_CACHE = None
@@ -1957,9 +1960,32 @@ def _get_handlers():
     return _HANDLERS_CACHE
 
 
+# Mapping of menu-item key → AIO rail to power on first
+_RAIL_DEPENDENT = {
+    "sub:gps":       "GPS",
+    "sub:sdr":       "SDR",
+    "sub:adsb":      "SDR",
+    "sub:lora_mesh": "LORA",
+}
+
+
+def _maybe_power_rail(key):
+    """Best-effort: power on the AIO rail this submenu depends on."""
+    rail = _RAIL_DEPENDENT.get(key)
+    if not rail:
+        return
+    try:
+        from tui.aio import ensure_rail
+        ensure_rail(rail)
+    except Exception:
+        # Auto-power is best-effort; never block the submenu open.
+        pass
+
+
 def run_script(scr, script_name, title, mode):
     """Dispatch to the appropriate runner based on mode. Returns 'switch_view' or None."""
     if mode == "submenu":
+        _maybe_power_rail(script_name)
         return run_submenu(scr, script_name, title)
     if script_name.startswith("_gui:"):
         run_gui_launch(scr, script_name[5:], title)

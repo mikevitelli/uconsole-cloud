@@ -175,8 +175,6 @@ class TestTUIModuleExports:
             'esp32_flash.py',        # esptool wrapper, used by esp32_hub
             'adsb_hires.py',         # ADS-B hi-res fetcher, used by adsb_menu
             'adsb_layer_picker.py',  # picker UI, used by adsb_menu
-            'aio.py',                # parser + detect only; HANDLERS + FEATURE_MODULES wired in Tasks 5+10
-            'wifi_radio.py',         # parsers + helpers; HANDLERS added in Task 9, FEATURE_MODULES in Task 10
         }
         from tui.framework import FEATURE_MODULES
         feature_files = {m.replace('tui.', '') + '.py' for m in FEATURE_MODULES}
