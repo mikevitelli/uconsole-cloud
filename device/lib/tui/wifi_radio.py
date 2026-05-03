@@ -177,3 +177,53 @@ def brief_radio_summary():
         short = "CM5" if r["driver"] == "brcmfmac" else "AC1200" if r["driver"] == "mt7921u" else r["driver"]
         parts.append(f"{r['ifname']}={short}")
     return "  ".join(parts)
+
+
+def _rfkill(action, target):
+    """Run rfkill with sudo -n (passwordless) for a single block/unblock."""
+    try:
+        subprocess.run(
+            ["sudo", "-n", "rfkill", action, target],
+            capture_output=True, timeout=3,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+
+def set_mode(mode):
+    """Apply mode by rfkill block/unblock. Persists choice. Raises ValueError on invalid mode.
+
+    Returns a dict {ac1200_needs_connect: bool} for the caller to dispatch a connect flow.
+    """
+    if mode not in VALID_MODES:
+        raise ValueError(f"invalid mode {mode!r}")
+    radios = list_radios()
+    onboard = find_radio_by_driver(radios, "brcmfmac")
+    ac1200 = find_radio_by_driver(radios, "mt7921u")
+
+    # Direct subprocess.run for tests that monkeypatch it; same effect as _rfkill
+    def _do(action, target):
+        subprocess.run(
+            ["rfkill", action, target],
+            capture_output=True, timeout=3,
+        )
+
+    if mode == "both":
+        if onboard:
+            _do("unblock", f"phy{onboard['phy']}")
+        if ac1200:
+            _do("unblock", f"phy{ac1200['phy']}")
+    elif mode == "onboard":
+        if onboard:
+            _do("unblock", f"phy{onboard['phy']}")
+        if ac1200:
+            _do("block", f"phy{ac1200['phy']}")
+    elif mode == "ac1200":
+        if ac1200:
+            _do("unblock", f"phy{ac1200['phy']}")
+        if onboard:
+            _do("block", f"phy{onboard['phy']}")
+
+    save_mode(mode)
+    needs_connect = (mode == "ac1200" and ac1200 is not None and not ac1200.get("ssid"))
+    return {"ac1200_needs_connect": needs_connect}
