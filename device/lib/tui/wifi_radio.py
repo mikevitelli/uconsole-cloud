@@ -99,3 +99,81 @@ def parse_rfkill_list(text):
     if current:
         entries.append(current)
     return entries
+
+
+def _label_for_driver(driver):
+    return DRIVER_LABELS.get(driver, driver)
+
+
+def _driver_for_phy(phy_id):
+    """Return the driver name for /sys/class/ieee80211/phyN, or '' if unknown."""
+    link = f"/sys/class/ieee80211/phy{phy_id}/device/driver"
+    try:
+        target = os.readlink(link)
+        return os.path.basename(target)
+    except OSError:
+        return ""
+
+
+def list_radios():
+    """Return enriched radio info: [{phy, ifname, driver, label, ssid, soft_blocked}, ...]."""
+    try:
+        iw_out = subprocess.check_output(["iw", "dev"], text=True, timeout=3)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        iw_out = ""
+    try:
+        rfk_out = subprocess.check_output(["rfkill", "list"], text=True, timeout=3)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        rfk_out = ""
+
+    radios = parse_iw_dev(iw_out)
+    rfk = parse_rfkill_list(rfk_out)
+    blocked_by_phy = {e["name"]: e["soft_blocked"] for e in rfk if e["kind"] == "phy"}
+
+    for r in radios:
+        r["driver"] = _driver_for_phy(r["phy"])
+        r["label"] = _label_for_driver(r["driver"])
+        r["soft_blocked"] = blocked_by_phy.get(f"phy{r['phy']}", False)
+    return radios
+
+
+def find_radio_by_driver(radios, driver):
+    """Return the first radio matching driver, or None."""
+    for r in radios:
+        if r["driver"] == driver:
+            return r
+    return None
+
+
+def load_mode():
+    """Return persisted mode or 'both' if missing/invalid."""
+    try:
+        with open(MODE_FILE) as f:
+            v = f.read().strip()
+        return v if v in VALID_MODES else "both"
+    except (OSError, FileNotFoundError):
+        return "both"
+
+
+def save_mode(mode):
+    """Persist mode. Raises ValueError on invalid input."""
+    if mode not in VALID_MODES:
+        raise ValueError(f"invalid mode {mode!r}")
+    os.makedirs(os.path.dirname(MODE_FILE), exist_ok=True)
+    with open(MODE_FILE, "w") as f:
+        f.write(mode + "\n")
+
+
+def current_mode_label():
+    """Short string for the AIO dashboard summary line."""
+    mapping = {"both": "Both active", "onboard": "CM5 onboard only", "ac1200": "AC1200 only"}
+    return mapping.get(load_mode(), "Both active")
+
+
+def brief_radio_summary():
+    """One-liner for the AIO dashboard: 'wlan0=CM5 wlan1=AC1200'."""
+    parts = []
+    for r in list_radios():
+        short = "CM5" if r["driver"] == "brcmfmac" else "AC1200" if r["driver"] == "mt7921u" else r["driver"]
+        parts.append(f"{r['ifname']}={short}")
+    return "  ".join(parts)
