@@ -15,7 +15,7 @@ RAIL_LABELS = {
     "GPS":  "uBlox NEO",
     "LORA": "SX1262",
     "SDR":  "RTL-SDR",
-    "USB":  "AC1200 + ESP32",
+    "USB":  "AC1200",
 }
 
 # Rail line: "GPS   GPIO27: ON"

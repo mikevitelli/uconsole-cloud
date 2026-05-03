@@ -39,7 +39,7 @@ Layout (showing only the panel-specific content, between header and status bar):
   ▸ GPS    ●  ON     boot ●     uBlox NEO
     LORA   ○  OFF    boot ○     SX1262
     SDR    ○  OFF    boot ○     RTL-SDR
-    USB    ●  ON     boot ●     AC1200 + ESP32
+    USB    ●  ON     boot ●     AC1200
 
   ── WiFi ──
     Both active     wlan0=CM5 onboard     wlan1=AC1200
@@ -65,7 +65,7 @@ Both `GP_A` (toggle live) and `GP_X` (boot default) use optimistic UI: flip the 
 
 Selected row uses the existing `C_SEL` reverse-video pair (same as menus). On/off dots use `C_STATUS` (green) for `●` and the muted `C_ITEM` for `○`.
 
-No safety guard on USB toggle — the row label (`AC1200 + ESP32`) makes the cost visible.
+No safety guard on USB toggle — the row label (`AC1200`) makes the cost visible. The internal USB-C is single-occupancy: AC1200 *or* ESP32, not both. Currently AC1200; swap requires editing the constant.
 
 Per-rail "what's plugged in here" labels are hardcoded as a constant in `aio.py`:
 
@@ -74,7 +74,7 @@ RAIL_LABELS = {
     "GPS":  "uBlox NEO",
     "LORA": "SX1262",
     "SDR":  "RTL-SDR",
-    "USB":  "AC1200 + ESP32",
+    "USB":  "AC1200",  # currently AC1200; swap to "ESP32" if you re-cable
 }
 ```
 
@@ -97,7 +97,7 @@ Mappings (wired in `framework.py` action dispatcher, not inside the submenu modu
 | `SDR Radio` submenu (`sub:sdr`) | `SDR` |
 | `ADS-B Map` submenu (`sub:adsb`) | `SDR` |
 | `LoRa Mesh` submenu (`sub:lora_mesh`) | `LORA` |
-| `ESP32` action (`_esp32_hub`) | none — USB rail is overloaded with AC1200, hands off |
+| `ESP32` action (`_esp32_hub`) | none — internal USB-C is currently AC1200, not ESP32; if user re-cables to ESP32 they toggle USB themselves |
 | `Watch Dogs Go` game (`_watchdogs`) | none — sometimes-fun, not daily-use |
 
 ### 4. WiFi radio switcher (`wifi_radio.py`)
