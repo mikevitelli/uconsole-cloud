@@ -1,0 +1,15 @@
+AIO v2 Status
+====================
+GPS   GPIO27: OFF
+LORA  GPIO16: OFF
+SDR   GPIO7: OFF
+USB   GPIO23: OFF
+--------------------
+Source    : AC
+Status    : Charging
+Capacity  : 100%
+Direction : idle
+Mode      : AC powering system
+Voltage   : 4.23 V
+Current   : 0.01 A
+Power     : 0.06 W

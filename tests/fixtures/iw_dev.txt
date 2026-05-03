@@ -1,0 +1,26 @@
+phy#2
+	Interface wlan1
+		ifindex 6
+		wdev 0x200000001
+		addr 38:7a:cc:97:09:02
+		ssid Big Parma
+		type managed
+		channel 149 (5745 MHz), width: 80 MHz, center1: 5775 MHz
+		txpower 3.00 dBm
+		multicast TXQ:
+			qsz-byt	qsz-pkt	flows	drops	marks	overlmt	hashcol	tx-bytes	tx-packets
+			0	0	0	0	0	0	0	0		0
+phy#0
+	Unnamed/non-netdev interface
+		wdev 0x2
+		addr 8a:a2:9e:c1:9d:62
+		type P2P-device
+		txpower 31.00 dBm
+	Interface wlan0
+		ifindex 3
+		wdev 0x1
+		addr 88:a2:9e:c1:9d:62
+		ssid Big Parma - 2.4GHz
+		type managed
+		channel 3 (2422 MHz), width: 20 MHz, center1: 2422 MHz
+		txpower 31.00 dBm
