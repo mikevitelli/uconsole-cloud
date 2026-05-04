@@ -20,12 +20,13 @@ RECOVERY_WAIT=10
 LOG="$HOME/cellhealth.log"
 
 # ── Battery info (update when cells are swapped) ──
-CELL_MODEL="Nitecore NL1834"
-CELL_CAPACITY="3400mAh"
+CELL_MODEL="Samsung INR18650-35E"
+CELL_CAPACITY="3500mAh"
 CELL_COUNT=2
-CELL_INSTALL_DATE="2026-03-22"
+CELL_INSTALL_DATE="2026-03-29"
 
-# ── voltage-based capacity estimate — Nitecore NL1834 measured curve (2026-03-27) ──
+# ── voltage-based capacity estimate — generic 18650 LiCoO2 curve, validated against
+# ── Nitecore NL1834 measurements (2026-03-27); shape is similar enough for Samsung 35E ──
 
 vest_from_voltage() {
     local voltage_ua=$1
@@ -63,7 +64,7 @@ voltage_v() {
 
 # ── CPU load generator ──
 # Uses dd + md5sum which yield to the scheduler and respond to signals,
-# unlike pure busy loops that starve Ctrl+C on a 4-core CM4.
+# unlike pure busy loops that starve Ctrl+C on a 4-core CM4/CM5.
 
 LOAD_PIDS=()
 
