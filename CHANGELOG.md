@@ -3,8 +3,10 @@
 ## v0.2.2 (unreleased)
 
 ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
-hardware fixes, TUI emoji icons, audit security closeout, and a launcher
-that picks up the dev tree without `make install`.
+hardware fixes, TUI emoji icons, audit security closeout, a launcher
+that picks up the dev tree without `make install`, and CM5 + AIO v2
+support — TUI dashboard for the new power-gated rails plus a WiFi
+radio-mode picker for the AC1200 module.
 
 ### Added
 - **MimiClaw integration** under the ESP32 hub — firmware detection, WiFi
@@ -30,6 +32,21 @@ that picks up the dev tree without `make install`.
   `/opt/uconsole/lib/`, and `UCONSOLE_DEV_LIB=/path` points at any tree.
 - **Documentation split** — `docs/PIPELINE.md`, `docs/ARCHITECTURE.md`,
   `docs/API.md`, `docs/SELF-HOSTING.md` extracted from the README.
+- **AIO v2 dashboard panel** (`HARDWARE → AIO Board`) — wraps the
+  HackerGadgets `aiov2_ctl` CLI in a curses panel: live rail state for
+  GPS / LORA / SDR / USB, per-rail boot defaults, power telemetry
+  (mode / battery / current / voltage). Replaces the V1-only
+  `aio-check.sh` entry. Auto-detects v1 vs v2 hardware and falls back
+  to the legacy script on v1 boards.
+- **WiFi Radio Mode picker** (`NETWORK → WiFi → Radio Mode`) — three-mode
+  switcher (`Both active` / `CM5 onboard only` / `AC1200 only`) that
+  applies the policy via `rfkill block/unblock` on the matching phy's
+  numeric id. Persists choice to `~/.config/uconsole/wifi_radio_mode`.
+  Adds a one-line WiFi summary to the AIO dashboard footer.
+- **Auto-power-on for rail-dependent submenus** — opening
+  GPS Receiver / SDR Radio / ADS-B Map / LoRa Mesh now powers the
+  required rail first via `aiov2_ctl FEATURE on` if it's off. Best-effort,
+  silent, no-op on AIO v1 boards.
 
 ### Changed
 - **ADS-B feeder migrated from dump1090-mutability to readsb + viewadsb.**
@@ -51,6 +68,10 @@ that picks up the dev tree without `make install`.
   so `SetRx` / `SetTx` returned command-error status with no user-visible cause.
 - **`lora.sh` failed inside venvs** that lack system `python3-spidev`. Now
   honors a `PYTHON3` env override (default `/usr/bin/python3`).
+- **`set_mode` rfkill identifier** — util-linux 2.38.1 rejects device names
+  like `phy0`. `list_radios()` now enriches each radio dict with the numeric
+  `rfkill_id` from `rfkill list`, and `set_mode` uses that. Without this,
+  the radio mode picker silently no-ops on Bookworm.
 - **`restore.sh` left `dtoverlay=spi1-1cs` in `BOOT_EXTRAS`** persistently after
   AIO board removal, which fought the LoRa init.
 - **`.deb` install** carried user-specific config and path leaks; CI install-test
