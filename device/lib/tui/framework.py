@@ -120,7 +120,7 @@ SUBMENUS = {
         ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action",      "📥"),
         ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action",      "📤"),
         ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action",     "⚡"),
-        ("CPU Freq Cap",     "power/cpu-freq-cap.sh",     "cap CPU at 1.2 GHz for battery",        "action",     "🎚️"),
+        ("CPU Freq",         "_cpu_freq",                 "set min/max — 1.5–2.4 GHz",             "action",     "🎚️"),
         ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen", "🔌"),
     ],
     "sub:power_ctl": [
@@ -1873,6 +1873,7 @@ def main_tiles(scr):
 FEATURE_MODULES = [
     "tui.aio",
     "tui.config_ui",
+    "tui.cpu_freq",
     "tui.tools",
     "tui.games",
     "tui.monitor",
