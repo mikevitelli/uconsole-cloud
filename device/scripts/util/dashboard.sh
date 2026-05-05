@@ -3,9 +3,8 @@
 # Usage: dashboard.sh          Status overview + script launcher
 #        dashboard.sh status   Status only (no menu)
 
-SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 source "$(dirname "$0")/lib.sh"
+# lib.sh sets SCRIPTS_DIR=$REPO_DIR/scripts (whole tree, not just this subdir)
 
 # ── data collection ──
 
@@ -136,15 +135,18 @@ print_menu() {
     local i=1
     declare -gA script_map
 
-    for script in "$SCRIPTS_DIR"/*.sh; do
-        [ "$script" = "$SCRIPTS_DIR/dashboard.sh" ] && continue
-        [ "$script" = "$SCRIPTS_DIR/myscript.sh" ] && continue
-        local name=$(basename "$script" .sh)
+    while IFS= read -r -d '' script; do
+        # skip self, lib.sh symlinks, and placeholders
+        case "$(basename "$script")" in
+            dashboard.sh|myscript.sh|lib.sh) continue ;;
+        esac
+        local rel="${script#$SCRIPTS_DIR/}"          # e.g. network/wifi.sh
+        local name="${rel%.sh}"                       # e.g. network/wifi
         local desc=$(head -3 "$script" | grep -oP '(?<=# ).*' | head -1)
         script_map[$i]="$script"
-        printf "  ${BOLD}${GREEN}%d${RESET}  %-12s ${DIM}%s${RESET}\n" "$i" "$name" "$desc"
+        printf "  ${BOLD}${GREEN}%2d${RESET}  %-22s ${DIM}%s${RESET}\n" "$i" "$name" "$desc"
         i=$((i + 1))
-    done
+    done < <(find "$SCRIPTS_DIR" -type f -name '*.sh' -not -path '*/__pycache__/*' -print0 | sort -z)
 
     script_count=$((i - 1))
 

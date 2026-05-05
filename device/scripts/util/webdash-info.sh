@@ -1,9 +1,12 @@
 #!/bin/bash
 # Webdash status and config overview for TUI panel
-LIB_DIR="$(cd "$(dirname "$0")" && pwd)"
-for libpath in /opt/uconsole/lib/lib.sh "$LIB_DIR/../lib/lib.sh" "$HOME/scripts/lib.sh"; do
-    [ -f "$libpath" ] && { source "$libpath" 2>/dev/null || true; break; }
+# Prefer local symlink (works in dev + deployed); fall back to /opt/uconsole.
+# Use _SCRIPT_DIR to avoid colliding with lib.sh's own LIB_DIR.
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+for _libpath in "$_SCRIPT_DIR/lib.sh" /opt/uconsole/lib/lib.sh; do
+    [ -f "$_libpath" ] && { source "$_libpath" 2>/dev/null || true; break; }
 done
+unset _libpath
 
 section "Web Dashboard Info"
 

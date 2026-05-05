@@ -7,15 +7,26 @@
 _LIB_SH_LOADED=1
 
 # ── directory constants ──
-# derived from lib.sh's own location so consumers don't need to compute these
+# REPO_DIR: prefer git toplevel (robust against script reorg), fall back to $HOME.
+# Set BACKUP_TOOL=1 before sourcing if you depend on REPO_DIR being correct;
+# we'll fail loud rather than silently writing to the wrong place.
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$LIB_DIR/.." && pwd)"
-SCRIPTS_DIR="$LIB_DIR"
+REPO_DIR="$(git -C "$LIB_DIR" rev-parse --show-toplevel 2>/dev/null \
+            || git -C "$HOME" rev-parse --show-toplevel 2>/dev/null \
+            || echo "$HOME")"
+SCRIPTS_DIR="$REPO_DIR/scripts"
 PKG_DIR="$REPO_DIR/packages"
 SHELL_DIR="$REPO_DIR/shell"
 SSH_DIR="$REPO_DIR/ssh"
 GH_DIR="$REPO_DIR/config/gh"
 SYS_DIR="$REPO_DIR/system"
+
+if [ "${BACKUP_TOOL:-0}" = "1" ]; then
+    if [ ! -d "$REPO_DIR/.git" ] || [ ! -d "$REPO_DIR/system" ] || [ ! -d "$REPO_DIR/scripts" ]; then
+        echo "lib.sh: REPO_DIR=$REPO_DIR doesn't look like the uConsole backup repo" >&2
+        exit 1
+    fi
+fi
 LOG_FILE="${LOG_FILE:-$HOME/update.log}"
 
 # ── colors ──
