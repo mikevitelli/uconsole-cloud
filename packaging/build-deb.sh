@@ -56,13 +56,40 @@ find "${BUILD_DIR}/opt/uconsole/" -name '.console-config.json' -delete 2>/dev/nu
 find "${BUILD_DIR}/opt/uconsole/" -name '*.pyc' -delete 2>/dev/null || true
 
 # Scrub user-specific config snapshots that live in device/scripts/ as a
-# private backup but must NOT ship in the public .deb. The install-test
-# CI job greps /opt/uconsole/ for personal data (mikevitelli, 192.168.1.,
-# etc.) and these directories are where it leaks from.
+# private backup but must NOT ship in the public .deb. These are also
+# .gitignored so they shouldn't be in canonical, but cp -r doesn't care
+# about .gitignore — it copies whatever is on the working-tree disk.
 rm -rf "${BUILD_DIR}/opt/uconsole/scripts/ssh"            # personal SSH keys
 rm -rf "${BUILD_DIR}/opt/uconsole/scripts/system/etc"     # crontab.user, sudoers.d
-rm -rf "${BUILD_DIR}/opt/uconsole/scripts/config"         # systemd-user backups, dconf dumps
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/system/wifi"    # NetworkManager .nmconnection (PSKs)
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/config"         # systemd-user, dconf, gh OAuth, etc.
+rm -rf "${BUILD_DIR}/opt/uconsole/scripts/packages"       # apt/pip/etc machine snapshots
 rm -f  "${BUILD_DIR}/opt/uconsole/scripts/.console-config.json"
+
+# Scrub PRIVATE SCRIPTS (single source of truth: packaging/private_scripts.txt).
+# Defense-in-depth layer 1: scrub at build time so an accidental re-introduction
+# in canonical can't leak into the .deb. Layer 2 (post-build assertion below)
+# is the real gate.
+#
+# Set BYPASS_PRIVATE_SCRUB=1 to skip this layer — useful only for testing the
+# layer-2 assertion in isolation. Don't set it in production builds.
+PRIVATE_SCRIPTS_FILE="${REPO_ROOT}/packaging/private_scripts.txt"
+if [ ! -f "$PRIVATE_SCRIPTS_FILE" ]; then
+    echo "ERROR: private_scripts.txt missing — cannot enforce private-script scrub" >&2
+    exit 1
+fi
+if [ "${BYPASS_PRIVATE_SCRUB:-0}" != "1" ]; then
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        line="$(echo "$line" | tr -d '[:space:]')"
+        [ -z "$line" ] && continue
+        target="${BUILD_DIR}/opt/uconsole/scripts/${line}"
+        if [ -e "$target" ]; then
+            echo "  scrubbed private script: ${line}"
+            rm -f "$target"
+        fi
+    done < "$PRIVATE_SCRIPTS_FILE"
+fi
 
 # ── Cloud-side CLI wrapper (overrides device repo's copy if present) ──
 
@@ -132,11 +159,43 @@ cp "${BUILD_DIR}/opt/uconsole/share/defaults/uconsole-completion.bash" "${BUILD_
 
 # ── Build the .deb ──
 
-dpkg-deb --root-owner-group --build "${BUILD_DIR}" "${REPO_ROOT}/dist/${PKG}_${VERSION}_arm64.deb"
+DEB_PATH="${REPO_ROOT}/dist/${PKG}_${VERSION}_arm64.deb"
+dpkg-deb --root-owner-group --build "${BUILD_DIR}" "${DEB_PATH}"
+
+# ── Post-build assertion: no PRIVATE SCRIPTS in shipped .deb ──
+# Background: 0.2.1 (built 2026-04-15) shipped backup.sh because the script
+# was in canonical at build time. This check catches that class of leak by
+# inspecting the actual .deb payload — not just canonical state.
+echo ""
+echo "── Asserting private-script absence in built .deb ──"
+DEB_CONTENTS="$(dpkg-deb -c "${DEB_PATH}")"
+LEAKED=()
+while IFS= read -r line; do
+    line="${line%%#*}"
+    line="$(echo "$line" | tr -d '[:space:]')"
+    [ -z "$line" ] && continue
+    if echo "${DEB_CONTENTS}" | grep -qE "[[:space:]]\./opt/uconsole/scripts/${line}\$"; then
+        LEAKED+=("${line}")
+    fi
+done < "$PRIVATE_SCRIPTS_FILE"
+
+if [ ${#LEAKED[@]} -gt 0 ]; then
+    echo "" >&2
+    echo "FATAL: built .deb contains private scripts that must NOT ship:" >&2
+    for s in "${LEAKED[@]}"; do echo "  - opt/uconsole/scripts/${s}" >&2; done
+    echo "" >&2
+    echo "These paths are listed in packaging/private_scripts.txt." >&2
+    echo "Either remove them from device/scripts/ (preferred) or remove" >&2
+    echo "them from packaging/private_scripts.txt (only if they're now" >&2
+    echo "intentionally public)." >&2
+    rm -f "${DEB_PATH}"
+    exit 1
+fi
+echo "  ok — no private scripts shipped"
 
 echo ""
 echo "Built: dist/${PKG}_${VERSION}_arm64.deb"
-SIZE=$(du -h "${REPO_ROOT}/dist/${PKG}_${VERSION}_arm64.deb" | cut -f1)
+SIZE=$(du -h "${DEB_PATH}" | cut -f1)
 echo "Size:  ${SIZE}"
 echo ""
 echo "To install on device:"

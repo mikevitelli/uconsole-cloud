@@ -39,9 +39,19 @@ def _resolve_cmd_standalone(script_name, script_dir):
 
 # Scripts the menu references but that aren't shipped in the public tree
 # (private repos provide them at install time — see test_tui_integrity.py).
-KNOWN_PRIVATE_SCRIPTS = {
-    "system/backup.sh",   # removed from public tree in d2f3783 for security
-}
+# Single source of truth: packaging/private_scripts.txt — also consumed by
+# packaging/build-deb.sh.
+def _load_private_scripts():
+    path = os.path.join(os.path.dirname(__file__), '..', 'packaging', 'private_scripts.txt')
+    out = set()
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                out.add(line)
+    return out
+
+KNOWN_PRIVATE_SCRIPTS = _load_private_scripts()
 
 
 def _extract_all_script_names():
