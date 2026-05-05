@@ -1,0 +1,22 @@
+# Scripts that the TUI menu references but that MUST NOT ship in the .deb.
+# These are device-private (live in the operator's backup repo, not here).
+#
+# Format: one path per line, relative to device/scripts/.
+# Lines starting with `#` and blank lines are comments — ignored by the
+# loaders.
+#
+# Single source of truth — read by:
+#   packaging/build-deb.sh         (scrub + post-build assertion)
+#   tests/test_tui_integrity.py    (skip-list for menu-resolves-to-file test)
+#   tests/test_resolve_cmd.py      (skip-list for command resolution test)
+#
+# Adding a script here = it's allowed to be missing from the public tree.
+# Removing a script = the test will fail until you actually ship it.
+#
+# History: backup.sh was removed in d2f3783 (2026-04-22) after a 2026-04-17
+# incident where it auto-committed five .nmconnection files with plaintext
+# WiFi PSKs to origin/dev. The 0.2.1 .deb (built 2026-04-15) still ships it
+# because the file was in canonical at build time. The post-build assertion
+# in build-deb.sh closes that gap going forward.
+
+system/backup.sh

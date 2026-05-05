@@ -351,10 +351,20 @@ class TestSubmenuIntegrity:
 # /opt/uconsole/scripts/ at install time, so the menu reference is correct
 # from a runtime perspective. The test must skip them so CI doesn't false-
 # fail on the absence.
-KNOWN_PRIVATE_SCRIPTS = {
-    "system/backup.sh",   # removed from public tree in d2f3783 for security;
-                          # users get it via their own backup repos
-}
+#
+# Single source of truth: packaging/private_scripts.txt — also consumed by
+# packaging/build-deb.sh to scrub + post-build assert.
+def _load_private_scripts():
+    path = os.path.join(os.path.dirname(__file__), '..', 'packaging', 'private_scripts.txt')
+    out = set()
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                out.add(line)
+    return out
+
+KNOWN_PRIVATE_SCRIPTS = _load_private_scripts()
 
 
 class TestScriptPaths:
