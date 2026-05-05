@@ -8,13 +8,13 @@
 
 set -euo pipefail
 
-# source lib.sh if available (for colors), otherwise define stubs
+# source lib.sh if available (for colors), otherwise define stubs.
+# Prefer the local symlink (works in dev + deployed); fall back to /opt/uconsole.
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$_SCRIPT_DIR/../../scripts/lib.sh" ]; then
-    source "$_SCRIPT_DIR/../../scripts/lib.sh" 2>/dev/null || true
-elif [ -f "/home/$(whoami)/scripts/lib.sh" ]; then
-    source "/home/$(whoami)/scripts/lib.sh" 2>/dev/null || true
-fi
+for _libpath in "$_SCRIPT_DIR/lib.sh" /opt/uconsole/lib/lib.sh; do
+    [ -f "$_libpath" ] && { source "$_libpath" 2>/dev/null || true; break; }
+done
+unset _libpath
 # ensure output helpers exist even without lib.sh
 type ok    &>/dev/null || ok()      { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 type warn  &>/dev/null || warn()    { printf "  \033[33m!\033[0m %s\n" "$1"; }
