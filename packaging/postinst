@@ -111,6 +111,31 @@ with open(path, 'w') as f:
         # Reload systemd to pick up new unit files (but do NOT enable or start)
         systemctl daemon-reload 2>/dev/null || true
 
+        # ── Security cleanup: remove leaky backup.sh from prior versions ──
+        # Versions 0.1.0 through 0.2.1 shipped /opt/uconsole/scripts/system/
+        # backup.sh which captures WiFi PSKs, sudoers, gh OAuth token, etc.
+        # The script doesn't auto-run (uconsole-backup.timer is not auto-
+        # enabled by this postinst), but ships executable. Devices that
+        # enabled the timer AND had /opt/uconsole as a git repo could
+        # have leaked credentials.
+        #
+        # On upgrade from any leaky version, remove the file. Operator-
+        # installed copies (the maintainer's private backup repo into
+        # /opt/uconsole/scripts/system/) would also be cleaned, but those
+        # belong in ~/pkg/scripts/system/backup.sh anyway, not /opt/.
+        # See device/docs/PUBLISHING.md for the full post-mortem.
+        if [ -n "${2:-}" ] && dpkg --compare-versions "$2" le-nl 0.2.1 \
+                2>/dev/null; then
+            if [ -f /opt/uconsole/scripts/system/backup.sh ]; then
+                rm -f /opt/uconsole/scripts/system/backup.sh
+                echo "Security: removed leaky backup.sh shipped in $2 (now in" \
+                     "the operator-private ~/pkg/ backup repo only)."
+                echo "  See https://github.com/mikevitelli/uconsole-cloud" \
+                     "release notes for v0.2.2 if you ran it from a git" \
+                     "working tree — rotate WiFi PSKs and GitHub PATs."
+            fi
+        fi
+
         # ── Battery-safety services (UNSTABLE — opt-in) ────────────────
         # Four units ship pointing at /opt/uconsole/scripts/power/ and
         # /opt/uconsole/scripts/util/. They are NOT auto-enabled on
