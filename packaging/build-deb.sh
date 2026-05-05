@@ -100,6 +100,28 @@ chmod +x "${BUILD_DIR}/opt/uconsole/bin/uconsole"
 mkdir -p "${BUILD_DIR}/opt/uconsole/share/defaults"
 cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/opt/uconsole/share/defaults/"
 
+# ── Debian-policy boilerplate: changelog + copyright in /usr/share/doc/PKG/ ──
+# Lintian E:no-changelog and E:no-copyright-file otherwise. Mandatory per
+# Debian Policy 12.7 (changelog) and 12.5 (copyright).
+mkdir -p "${BUILD_DIR}/usr/share/doc/${PKG}"
+
+# Upstream changelog: gzip -n (no name/timestamp) for reproducible builds.
+# Project's CHANGELOG.md is markdown, not strict Debian format — that's
+# acceptable for non-archive-uploaded packages. Lintian may warn about
+# format but won't error.
+gzip -9n -c "${REPO_ROOT}/CHANGELOG.md" > "${BUILD_DIR}/usr/share/doc/${PKG}/changelog.gz"
+chmod 644 "${BUILD_DIR}/usr/share/doc/${PKG}/changelog.gz"
+
+# DEP-5 copyright file. Generated inline from packaging/copyright.template
+# so the LICENSE text and project metadata stay in one source of truth.
+if [ -f "${REPO_ROOT}/packaging/copyright" ]; then
+    cp "${REPO_ROOT}/packaging/copyright" "${BUILD_DIR}/usr/share/doc/${PKG}/copyright"
+    chmod 644 "${BUILD_DIR}/usr/share/doc/${PKG}/copyright"
+else
+    echo "ERROR: packaging/copyright missing — Debian Policy 12.5 mandatory" >&2
+    exit 1
+fi
+
 # Ship uconsole.conf as a dpkg conffile (postinst won't overwrite user edits)
 cp "${REPO_ROOT}/packaging/defaults/uconsole.conf.default" "${BUILD_DIR}/etc/uconsole/uconsole.conf"
 
