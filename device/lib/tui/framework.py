@@ -30,7 +30,14 @@ _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
     os.path.join(_PKG_ROOT, 'scripts') if os.path.isdir(os.path.join(_PKG_ROOT, 'scripts'))
     else '/opt/uconsole/scripts')
-CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
+
+# CONFIG_FILE: writable per-user JSON. Lives in $XDG_CONFIG_HOME/uconsole/
+# (default ~/.config/uconsole/). Was previously SCRIPT_DIR/.console-config.json,
+# which is root-owned in /opt/uconsole/scripts/ on a packaged install — every
+# save_config() PermissionError'd silently for end users.
+_XDG_CONFIG_HOME = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
+CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, 'uconsole')
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'console.json')
 
 # Package version — always read VERSION (updated by /publish). Append '-dev'
 # when running from a non-installed tree so you can tell at a glance whether
@@ -611,6 +618,7 @@ def load_config():
 
 def _save_config_locked(updates):
     """Atomically read-modify-write config with file locking."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     fd = os.open(CONFIG_FILE, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -2263,13 +2271,38 @@ def main(scr):
     return None
 
 
+def _migrate_legacy_config():
+    """Copy older config files into CONFIG_FILE on first run.
+
+    Two legacy locations, both inside SCRIPT_DIR (root-owned post-deploy):
+      - .console-theme.json   (0.1.x — theme only)
+      - .console-config.json  (0.2.x — full config)
+
+    Copy rather than rename, since the old file lives in a root-owned tree
+    on packaged installs and rename would fail. The orphan stays put; it's
+    no longer read once CONFIG_FILE exists.
+    """
+    if os.path.isfile(CONFIG_FILE):
+        return
+    for legacy in (
+        os.path.join(SCRIPT_DIR, ".console-config.json"),
+        os.path.join(SCRIPT_DIR, ".console-theme.json"),
+    ):
+        if not os.path.isfile(legacy):
+            continue
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(legacy) as src, open(CONFIG_FILE, "w") as dst:
+                dst.write(src.read())
+            return
+        except OSError:
+            continue
+
+
 def entry(scr):
     """Entry point that switches between list and tile views."""
     _init_workspace()
-    # Migrate old config
-    old_config = os.path.join(SCRIPT_DIR, ".console-theme.json")
-    if os.path.isfile(old_config) and not os.path.isfile(CONFIG_FILE):
-        os.rename(old_config, CONFIG_FILE)
+    _migrate_legacy_config()
 
     while True:
         mode = load_view_mode()
