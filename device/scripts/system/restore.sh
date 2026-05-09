@@ -178,7 +178,6 @@ if confirm "  Apply system configs (boot, udev, apt sources)?"; then
 
     # -- timezone --
     if [ -f "$REPO_DIR/system/etc/timezone" ]; then
-        local tz
         tz=$(cat "$REPO_DIR/system/etc/timezone")
         sudo timedatectl set-timezone "$tz" 2>/dev/null
         echo "  -> timezone: $tz"
@@ -197,7 +196,7 @@ if confirm "  Apply system configs (boot, udev, apt sources)?"; then
 
     # -- WiFi connections --
     if [ -d "$REPO_DIR/system/wifi" ] && [ "$(ls -A "$REPO_DIR/system/wifi" 2>/dev/null)" ]; then
-        local wifi_count=0
+        wifi_count=0
         for conn in "$REPO_DIR/system/wifi"/*.nmconnection; do
             [ -f "$conn" ] || continue
             sudo cp "$conn" /etc/NetworkManager/system-connections/
