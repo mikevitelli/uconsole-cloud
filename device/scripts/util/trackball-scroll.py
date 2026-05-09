@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Trackball scroll daemon: hold Select to convert trackball movement to scroll."""
+"""Trackpad scroll daemon: hold Fn to convert trackpad movement to scroll.
+
+Fn is a firmware-level layer shift on the AIO v2 ZMK keyboard and emits no
+keycode on its own. While Fn is held, ZMK keeps RightCtrl + RightAlt in the
+down state, which is the signature this daemon watches for.
+"""
 
 import os
 import sys
@@ -17,8 +22,11 @@ EV_SYN = 0x00
 EV_KEY = 0x01
 EV_REL = 0x02
 
-# Key codes
-KEY_SELECT = 353
+# Key codes — Fn on the ZMK bb9900 keyboard, when held alone (i.e. without
+# triggering chord-mode via a layer-mapped key), emits KEY_FRONT (132). Trackpad
+# motion is on a separate endpoint, so Fn stays in this "alone" state during
+# Fn+slide gestures and KEY_FRONT remains held.
+KEY_FN_TRIGGER = 132
 
 # REL codes
 REL_X = 0x00
@@ -48,8 +56,8 @@ def wait_for_devices():
     """Wait for both input devices to appear, polling every 5 seconds."""
     import time
     while True:
-        consumer = find_device("Consumer Control")
-        mouse = find_device("uConsole Mouse")
+        consumer = find_device("ZMK Project bb9900 Keyboard")
+        mouse = find_device("ZMK Project bb9900 Mouse")
         if consumer and mouse:
             return consumer, mouse
         print(f"Waiting for devices: consumer={consumer} mouse={mouse}",
@@ -73,12 +81,12 @@ def main():
     # We'll grab/ungrab dynamically based on Select state
     EVIOCGRAB = 0x40044590
 
-    select_held = False
+    fn_held = False
     accum_x = 0
     accum_y = 0
 
     def cleanup(*_):
-        if select_held:
+        if fn_held:
             try:
                 import fcntl
                 fcntl.ioctl(fd_mouse, EVIOCGRAB, 0)
@@ -109,37 +117,55 @@ def main():
                     EVENT_FMT, data[offset:offset + EVENT_SIZE]
                 )
 
-                # Track Select key
-                if fd == fd_key and ev_type == EV_KEY and ev_code == KEY_SELECT:
+                # Log every keyboard key event for diagnosis
+                if fd == fd_key and ev_type == EV_KEY:
+                    print(f"DEBUG kbd: code={ev_code} val={ev_value}",
+                          file=sys.stderr, flush=True)
+
+                # Track Fn (emitted as KEY_FRONT by ZMK when held alone)
+                if fd == fd_key and ev_type == EV_KEY and ev_code == KEY_FN_TRIGGER:
                     if ev_value == 1:  # press
-                        select_held = True
+                        fn_held = True
                         accum_x = 0
                         accum_y = 0
                         try:
                             fcntl.ioctl(fd_mouse, EVIOCGRAB, 1)
-                        except:
-                            pass
+                            print("DEBUG fn=ON grab=OK", file=sys.stderr, flush=True)
+                        except Exception as e:
+                            print(f"DEBUG fn=ON grab=FAIL {e}", file=sys.stderr, flush=True)
                     elif ev_value == 0:  # release
-                        select_held = False
+                        fn_held = False
                         try:
                             fcntl.ioctl(fd_mouse, EVIOCGRAB, 0)
-                        except:
-                            pass
+                            print("DEBUG fn=OFF ungrab=OK", file=sys.stderr, flush=True)
+                        except Exception as e:
+                            print(f"DEBUG fn=OFF ungrab=FAIL {e}", file=sys.stderr, flush=True)
 
-                # Convert mouse movement to scroll when Select held
-                if fd == fd_mouse and ev_type == EV_REL and select_held:
-                    if ev_code == REL_Y:
-                        accum_y += ev_value
-                        ticks = accum_y // SCROLL_DIVISOR
-                        if ticks:
-                            vscroll.emit(uinput.REL_WHEEL, -ticks)
-                            accum_y -= ticks * SCROLL_DIVISOR
-                    elif ev_code == REL_X:
-                        accum_x += ev_value
-                        ticks = accum_x // SCROLL_DIVISOR
-                        if ticks:
-                            vscroll.emit(uinput.REL_HWHEEL, ticks)
-                            accum_x -= ticks * SCROLL_DIVISOR
+                # Convert mouse movement to scroll when Fn held
+                if fd == fd_mouse and ev_type == EV_REL:
+                    if fn_held:
+                        if ev_code == REL_Y:
+                            accum_y += ev_value
+                            ticks = accum_y // SCROLL_DIVISOR
+                            if ticks:
+                                vscroll.emit(uinput.REL_WHEEL, -ticks)
+                                accum_y -= ticks * SCROLL_DIVISOR
+                                print(f"DEBUG emit WHEEL ticks={-ticks}",
+                                      file=sys.stderr, flush=True)
+                        elif ev_code == REL_X:
+                            accum_x += ev_value
+                            ticks = accum_x // SCROLL_DIVISOR
+                            if ticks:
+                                vscroll.emit(uinput.REL_HWHEEL, ticks)
+                                accum_x -= ticks * SCROLL_DIVISOR
+                                print(f"DEBUG emit HWHEEL ticks={ticks}",
+                                      file=sys.stderr, flush=True)
+                    else:
+                        # Log motion events while NOT engaged so we can tell whether
+                        # the trackpad is reporting motion at all
+                        if ev_code in (REL_X, REL_Y):
+                            print(f"DEBUG motion-passthrough code={ev_code} val={ev_value}",
+                                  file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

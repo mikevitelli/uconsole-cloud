@@ -16,6 +16,7 @@ import threading
 import tty
 import termios
 import re
+import glob
 
 # Allow importing tui_lib from multiple locations
 for _p in [os.path.dirname(os.path.realpath(__file__)),
@@ -398,16 +399,22 @@ HEADER = [
 
 FOOTER_HELP = " ↑↓ Navigate │ ←→ Category │ A Run │ B Back │ X Refresh │ Y Quit "
 
-# ── Gamepad (js0) ─────────────────────────────────────────────────────────
-JS_PATH = "/dev/input/js0"
-JS_FMT = "IhBB"
-JS_SIZE = struct.calcsize(JS_FMT)
+# ── Gamepad (evdev on ZMK keyboard) ───────────────────────────────────────
+# The ZMK firmware emits ABXY as F21–F24 over the keyboard HID interface
+# (no joystick device). We side-channel-read the keyboard's evdev node
+# without grabbing it, so curses still gets normal text input.
+EVDEV_FMT = "llHHi"  # struct input_event: timeval(16) + type(2) + code(2) + value(4)
+EVDEV_SIZE = struct.calcsize(EVDEV_FMT)
+EV_KEY = 1
+_KBD_GLOB = "/dev/input/by-id/usb-ZMK_Project_*-event-kbd"
 
-# Button mapping: Y=3, X=0, B=2, A=1
 GP_A = 1       # Enter / run
 GP_B = 2       # Back (previous category)
 GP_X = 0       # Refresh
 GP_Y = 3       # Quit
+
+# F-key code → GP_ button. F21=Y, F22=X, F23=B, F24=A.
+_KEY_TO_GP = {191: GP_Y, 192: GP_X, 193: GP_B, 194: GP_A}
 
 # Gamepad ownership uses two layers:
 # 1. Workspace detection — workspace-monitor daemon writes active workspace name
@@ -459,13 +466,15 @@ def _is_gamepad_owner():
 
 
 def open_gamepad():
-    """Open js0 in non-blocking mode. Returns file object or None."""
-    try:
-        f = open(JS_PATH, "rb")
-        os.set_blocking(f.fileno(), False)
-        return f
-    except (OSError, FileNotFoundError):
-        return None
+    """Open the ZMK keyboard's evdev node non-blocking. Returns file or None."""
+    for path in glob.glob(_KBD_GLOB):
+        try:
+            f = open(path, "rb")
+            os.set_blocking(f.fileno(), False)
+            return f
+        except (OSError, PermissionError):
+            continue
+    return None
 
 
 def close_gamepad(js=None):
@@ -484,14 +493,15 @@ def read_gamepad(js):
         return pressed
     try:
         while True:
-            data = js.read(JS_SIZE)
-            if not data or len(data) < JS_SIZE:
+            data = js.read(EVDEV_SIZE)
+            if not data or len(data) < EVDEV_SIZE:
                 break
-            _ts, val, typ, num = struct.unpack(JS_FMT, data)
-            if typ & 0x80:
-                continue  # skip init events
-            if typ == 1 and val == 1:
-                pressed.append(num)
+            _sec, _usec, typ, code, val = struct.unpack(EVDEV_FMT, data)
+            if typ != EV_KEY or val != 1:
+                continue  # only key-down on EV_KEY
+            btn = _KEY_TO_GP.get(code)
+            if btn is not None:
+                pressed.append(btn)
     except (OSError, BlockingIOError):
         pass
     if not _is_gamepad_owner():
@@ -815,7 +825,7 @@ def wait_for_input():
     js = open_gamepad()
     if js:
         try:
-            while js.read(JS_SIZE):
+            while js.read(EVDEV_SIZE):
                 pass  # drain
         except (OSError, BlockingIOError):
             pass
@@ -831,10 +841,10 @@ def wait_for_input():
                     sys.stdin.read(1)
                     return
                 elif js and r == js.fileno():
-                    data = js.read(JS_SIZE)
-                    if data and len(data) >= JS_SIZE:
-                        _ts, val, typ, num = struct.unpack(JS_FMT, data)
-                        if typ == 1 and val == 1:
+                    data = js.read(EVDEV_SIZE)
+                    if data and len(data) >= EVDEV_SIZE:
+                        _sec, _usec, typ, code, val = struct.unpack(EVDEV_FMT, data)
+                        if typ == EV_KEY and val == 1 and code in _KEY_TO_GP:
                             return
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
