@@ -985,29 +985,43 @@ async function run(name) {
   _showRaw = false;
 
   try {
-    var es = new EventSource('/api/stream/' + name);
-
-    es.onmessage = function(e) {
-      _rawOutput += e.data + '\n';
-      pre.textContent += e.data + '\n';
-      pre.scrollTop = pre.scrollHeight;
-    };
-
-    await new Promise(function(resolve, reject) {
-      es.addEventListener('done', function(e) {
-        es.close();
-        try {
-          var d = JSON.parse(e.data);
-          _rawRc = d.returncode;
-          _rawError = d.error || '';
-        } catch(ex) {}
-        resolve();
-      });
-      es.onerror = function() {
-        es.close();
-        reject(new Error('Stream connection lost'));
-      };
-    });
+    /* POST + fetch streaming — /api/stream is POST-only so EventSource (GET)
+       can't be used. Parse SSE frames manually from the response body. */
+    var resp = await fetch('/api/stream/' + encodeURIComponent(name), { method: 'POST' });
+    if (!resp.ok || !resp.body) throw new Error('Stream open failed: HTTP ' + resp.status);
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var streamDone = false;
+    while (!streamDone) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        var frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        var eventName = 'message';
+        var dataLines = [];
+        frame.split('\n').forEach(function(line) {
+          if (line.indexOf('event: ') === 0) eventName = line.slice(7);
+          else if (line.indexOf('data: ') === 0) dataLines.push(line.slice(6));
+        });
+        var data = dataLines.join('\n');
+        if (eventName === 'done') {
+          try {
+            var d = JSON.parse(data);
+            _rawRc = d.returncode;
+            _rawError = d.error || '';
+          } catch (ex) {}
+          streamDone = true;
+        } else if (eventName === 'message' && dataLines.length) {
+          _rawOutput += data + '\n';
+          pre.textContent += data + '\n';
+          pre.scrollTop = pre.scrollHeight;
+        }
+      }
+    }
 
     var elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
 
