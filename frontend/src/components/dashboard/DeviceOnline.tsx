@@ -4,6 +4,7 @@ import { StatusGrid } from "@/components/viz/StatusGrid";
 import { batteryColor, tempColor, stalenessColor } from "@/lib/device-colors";
 import { formatAge } from "@/lib/deviceStatus";
 import type { DeviceStatusPayload } from "@/lib/deviceStatus";
+import { buildLocalDashboardUrl } from "@/lib/network";
 
 interface DeviceOnlineProps {
   status: DeviceStatusPayload;
@@ -20,6 +21,9 @@ export function DeviceOnline({
 }: DeviceOnlineProps) {
   const { battery, cpu, memory, disk, wifi, aio, screen } = status;
   const memUsedPct = Math.round((memory.usedMB / memory.totalMB) * 100);
+  // Device-pushed wifi.ip is untrusted — only build the link when it's
+  // a literal IP. See buildLocalDashboardUrl for the threat model.
+  const localShellUrl = buildLocalDashboardUrl(wifi.ip);
 
   return (
     <section className="bg-card border border-border rounded-xl p-4">
@@ -200,12 +204,12 @@ export function DeviceOnline({
       </div>
 
       {/* Local Shell Hub — subtle link when not on same network (banner handles it otherwise) */}
-      {!isSameNetwork && status.webdash?.running && wifi.ip && wifi.ip !== "none" && (
+      {!isSameNetwork && status.webdash?.running && localShellUrl && (
         <div className="mt-3 flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-2">
           <span className="w-2 h-2 rounded-full bg-[var(--green)] shrink-0" />
           <div className="flex-1 min-w-0">
             <a
-              href={`https://${wifi.ip}`}
+              href={localShellUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs font-medium text-bright hover:underline"
