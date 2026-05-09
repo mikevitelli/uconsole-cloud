@@ -141,7 +141,7 @@ export async function fetchScriptsManifest(
   token: string,
   repo: string
 ): Promise<string | null> {
-  return fetchRawFile(token, repo, "scripts/scripts-manifest.txt");
+  return fetchRawFile(token, repo, "scripts/manifest.txt");
 }
 
 export async function fetchCommitDetail(
