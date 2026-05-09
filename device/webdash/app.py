@@ -231,8 +231,9 @@ def api_set_password():
         return redirect('/login')
     pw = request.form.get('password', '')
     confirm = request.form.get('confirm', '')
-    if len(pw) < 4:
-        return render_template('set_password.html', error='Password must be at least 4 characters'), 400
+    if len(pw) < _PASSWORD_MIN_LEN:
+        return render_template('set_password.html',
+            error=f'Password must be at least {_PASSWORD_MIN_LEN} characters'), 400
     if pw != confirm:
         return render_template('set_password.html', error='Passwords do not match'), 400
     h = _hash_password(pw)
@@ -253,8 +254,8 @@ def api_change_password():
         return jsonify({'error': 'Not authenticated'}), 401
     pw = request.form.get('password', '')
     confirm = request.form.get('confirm', '')
-    if len(pw) < 4:
-        return jsonify({'error': 'Password must be at least 4 characters'}), 400
+    if len(pw) < _PASSWORD_MIN_LEN:
+        return jsonify({'error': f'Password must be at least {_PASSWORD_MIN_LEN} characters'}), 400
     if pw != confirm:
         return jsonify({'error': 'Passwords do not match'}), 400
     h = _hash_password(pw)
@@ -278,6 +279,26 @@ def logout():
 _rate_buckets = {}  # ip -> (count, window_start)
 _RATE_LIMIT = 30
 _RATE_WINDOW = 60
+
+
+_TRUSTED_PROXY_IPS = frozenset(('127.0.0.1', '::1'))
+
+
+def _client_ip():
+    """Return the trusted client IP.
+
+    nginx terminates TLS on 443 and proxies to Flask on 127.0.0.1:8080,
+    setting X-Real-IP. Only honor X-Real-IP when the direct hop is
+    loopback — otherwise an attacker hitting Flask directly (or via a
+    misconfigured proxy) could spoof the header to claim a private IP
+    and unlock _LOCAL_ONLY_PATHS.
+    """
+    direct = request.remote_addr or ''
+    if direct in _TRUSTED_PROXY_IPS:
+        forwarded = request.headers.get('X-Real-IP')
+        if forwarded:
+            return forwarded.strip()
+    return direct
 
 
 def _is_local_ip(ip):
@@ -308,12 +329,40 @@ def _check_rate_limit(ip):
     return True
 
 
+# Auth-path rate limit — separate bucket and tighter ceiling than the
+# generic local-only one, since /login is the brute-force surface.
+_auth_buckets = {}
+_AUTH_RATE_LIMIT = 10
+_AUTH_RATE_WINDOW = 60
+
+
+def _check_auth_rate_limit(ip):
+    """Returns True if auth request is allowed, False if rate limited."""
+    now = time.time()
+    count, start = _auth_buckets.get(ip, (0, now))
+    if now - start > _AUTH_RATE_WINDOW:
+        _auth_buckets[ip] = (1, now)
+        return True
+    if count >= _AUTH_RATE_LIMIT:
+        return False
+    _auth_buckets[ip] = (count + 1, start)
+    return True
+
+
 _PUBLIC_PATHS = frozenset((
     '/login', '/setup-password', '/api/set-password',
     '/favicon.png', '/apple-touch-icon.png',
     '/apple-touch-icon-precomposed.png', '/uconsole.crt',
     '/uConsole.gif', '/manifest.json', '/sw.js',
 ))
+# Subset of _PUBLIC_PATHS that POST credentials. Rate-limited per IP to
+# slow brute-force from the LAN.
+_AUTH_PATHS = frozenset((
+    '/login', '/api/set-password',
+))
+# Minimum password length when first set or rotated. The earlier 4-char
+# floor was indefensible on a LAN-reachable login.
+_PASSWORD_MIN_LEN = 10
 _LOCAL_ONLY_PATHS = frozenset((
     '/api/public/stats',
     '/api/esp32/push', '/api/esp32',
@@ -326,10 +375,15 @@ _LOCAL_ONLY_PATHS = frozenset((
 
 @app.before_request
 def require_auth():
+    # Auth-path rate-limit applies even though these are publicly reachable —
+    # they're the brute-force surface. Check before the public-paths bypass.
+    if request.path in _AUTH_PATHS and request.method == 'POST':
+        if not _check_auth_rate_limit(_client_ip()):
+            return jsonify({'error': 'Too many attempts. Please wait a minute.'}), 429
     if request.path in _PUBLIC_PATHS:
         return
     if request.path in _LOCAL_ONLY_PATHS:
-        client_ip = request.headers.get('X-Real-IP', request.remote_addr)
+        client_ip = _client_ip()
         if not _is_local_ip(client_ip):
             return jsonify({'error': 'Forbidden'}), 403
         if not _check_rate_limit(client_ip):
@@ -864,7 +918,7 @@ def api_stats():
 @app.route('/api/public/stats')
 def api_public_stats():
     """Public system stats endpoint — no auth, rate limited, local IPs only."""
-    client_ip = request.headers.get('X-Real-IP', request.remote_addr)
+    client_ip = _client_ip()
     if not _is_local_ip(client_ip):
         return jsonify({'error': 'Forbidden'}), 403
     if not _check_rate_limit(client_ip):
@@ -1422,9 +1476,14 @@ def api_run(script):
         return jsonify({'error': 'Script timed out', 'output': '', 'returncode': -1})
 
 
-@app.route('/api/stream/<script>', methods=['GET'])
+@app.route('/api/stream/<script>', methods=['POST'])
 def api_stream(script):
-    """Stream script output line-by-line via Server-Sent Events."""
+    """Stream script output line-by-line via Server-Sent Events.
+
+    POST-only so that running a script is not reachable via a state-changing
+    HTTP GET (defense in depth on top of the SameSite=Lax session cookie).
+    The JS client uses fetch() with a streaming response reader.
+    """
     if script not in ALLOWED_SCRIPTS:
         return jsonify({'error': 'Unknown script'}), 404
 
