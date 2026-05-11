@@ -48,13 +48,14 @@ gather_stats() {
     ac_online="$BAT_AC_ONLINE"
 
     # wifi
-    iw_out=$(iwconfig wlan0 2>/dev/null)
+    [ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+    iw_out=$(iwconfig "${WIFI_IFACE:-wlan0}" 2>/dev/null)
     wifi_ssid=$(echo "$iw_out" | grep -oP 'ESSID:"\K[^"]+')
     wifi_signal=$(echo "$iw_out" | grep -oP 'Signal level=\K[-\d]+')
     wifi_quality=$(echo "$iw_out" | grep -oP 'Link Quality=\K\d+')
     wifi_quality_max=$(echo "$iw_out" | grep -oP 'Link Quality=\d+/\K\d+')
     wifi_rate=$(echo "$iw_out" | grep -oP 'Bit Rate=\K[\d.]+')
-    wifi_ip=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+    wifi_ip=$(ip -4 -o addr show "${WIFI_IFACE:-wlan0}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
 
     # antenna (Bookworm uses /boot/firmware/)
     if grep -q '^dtparam=ant2' /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then

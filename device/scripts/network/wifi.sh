@@ -14,7 +14,8 @@ nmcli general status >/dev/null 2>&1 || { err "NetworkManager is not running"; e
 exec 200>"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wifi.sh.lock"
 flock -n 200 || { err "Another wifi.sh instance is running"; exit 1; }
 
-IFACE="wlan0"
+[ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+IFACE="${WIFI_IFACE:-wlan0}"
 IPHONE_CON="PhoneHotspot"
 HOME_CON="HomeWiFi"
 OFFICE_CON="OfficeWiFi"

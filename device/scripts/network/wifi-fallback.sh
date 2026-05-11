@@ -22,11 +22,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+: "${HOME:=$(getent passwd 1000 | cut -d: -f6)}"
 STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wifi-fallback"
 STATE_FILE="$STATE_DIR/enabled"
 COOLDOWN_FILE="$STATE_DIR/last_action"
 COOLDOWN_SECS=30
-IFACE="wlan0"
+[ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+IFACE="${WIFI_IFACE:-wlan0}"
 LOG_TAG="wifi-fallback"
 DISPATCHER_LINK="/etc/NetworkManager/dispatcher.d/90-wifi-fallback"
 IPHONE_CON="PhoneHotspot"

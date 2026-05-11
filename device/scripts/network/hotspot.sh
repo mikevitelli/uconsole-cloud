@@ -18,7 +18,8 @@ if [ -f "$CONF_FILE" ]; then
 fi
 HOTSPOT_BAND="bg"
 CON_NAME="uConsole-Hotspot"
-IFACE="wlan0"
+[ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+IFACE="${WIFI_IFACE:-wlan0}"
 LOG_TAG="hotspot"
 
 log() { logger -t "$LOG_TAG" "$1"; }
