@@ -31,7 +31,11 @@ def run_live_monitor(scr):
     prev_rx = prev_tx = prev_time = 0
 
     js = open_gamepad()
-    scr.timeout(1000)
+    refresh_ms = int(load_config().get("monitor_refresh_ms", 1000))
+    if refresh_ms < 100 or refresh_ms > 60000:
+        refresh_ms = 1000
+    refresh_label = f"{refresh_ms}ms" if refresh_ms < 1000 else f"{refresh_ms // 1000}s"
+    scr.timeout(refresh_ms)
 
     tui.init_gauge_colors()
     def net_bytes():
@@ -459,7 +463,7 @@ def run_live_monitor(scr):
         tui.panel_bot(scr, ry, rx, pw_r)
 
         # ── Footer ──
-        footer = f" ◈ t{tick}  1s refresh  B Back "
+        footer = f" ◈ t{tick}  {refresh_label} refresh  B Back "
         tui.put(scr, h - 1, 0, "─" * w, w, brd)
         fx = (w - len(footer)) // 2
         tui.put(scr, h - 1, fx, footer, len(footer), brd)

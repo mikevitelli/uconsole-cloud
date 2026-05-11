@@ -383,6 +383,7 @@ CATEGORIES = [
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action", "⚖️"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action",     "🖱️"),
             ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action", "☁️"),
+            ("Monitor Refresh",  "_monitor_refresh",    "live monitor update rate",               "action", "⏱️"),
             ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action","🐺"),
         ],
     },
