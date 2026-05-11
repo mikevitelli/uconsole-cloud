@@ -37,6 +37,10 @@ REL_HWHEEL = 0x06
 # Scroll sensitivity: accumulate this many REL units before emitting one scroll tick
 SCROLL_DIVISOR = 3
 
+# Verbose per-event tracing (set TRACKBALL_DEBUG=1 to enable). Off by default so
+# the daemon doesn't flood journalctl while the user is reading a TUI stream.
+DEBUG = os.environ.get("TRACKBALL_DEBUG") == "1"
+
 # Find input devices by name
 def find_device(name_substring):
     for i in range(20):
@@ -118,7 +122,7 @@ def main():
                 )
 
                 # Log every keyboard key event for diagnosis
-                if fd == fd_key and ev_type == EV_KEY:
+                if DEBUG and fd == fd_key and ev_type == EV_KEY:
                     print(f"DEBUG kbd: code={ev_code} val={ev_value}",
                           file=sys.stderr, flush=True)
 
@@ -130,14 +134,16 @@ def main():
                         accum_y = 0
                         try:
                             fcntl.ioctl(fd_mouse, EVIOCGRAB, 1)
-                            print("DEBUG fn=ON grab=OK", file=sys.stderr, flush=True)
+                            if DEBUG:
+                                print("DEBUG fn=ON grab=OK", file=sys.stderr, flush=True)
                         except Exception as e:
                             print(f"DEBUG fn=ON grab=FAIL {e}", file=sys.stderr, flush=True)
                     elif ev_value == 0:  # release
                         fn_held = False
                         try:
                             fcntl.ioctl(fd_mouse, EVIOCGRAB, 0)
-                            print("DEBUG fn=OFF ungrab=OK", file=sys.stderr, flush=True)
+                            if DEBUG:
+                                print("DEBUG fn=OFF ungrab=OK", file=sys.stderr, flush=True)
                         except Exception as e:
                             print(f"DEBUG fn=OFF ungrab=FAIL {e}", file=sys.stderr, flush=True)
 
@@ -150,22 +156,23 @@ def main():
                             if ticks:
                                 vscroll.emit(uinput.REL_WHEEL, -ticks)
                                 accum_y -= ticks * SCROLL_DIVISOR
-                                print(f"DEBUG emit WHEEL ticks={-ticks}",
-                                      file=sys.stderr, flush=True)
+                                if DEBUG:
+                                    print(f"DEBUG emit WHEEL ticks={-ticks}",
+                                          file=sys.stderr, flush=True)
                         elif ev_code == REL_X:
                             accum_x += ev_value
                             ticks = accum_x // SCROLL_DIVISOR
                             if ticks:
                                 vscroll.emit(uinput.REL_HWHEEL, ticks)
                                 accum_x -= ticks * SCROLL_DIVISOR
-                                print(f"DEBUG emit HWHEEL ticks={ticks}",
-                                      file=sys.stderr, flush=True)
-                    else:
+                                if DEBUG:
+                                    print(f"DEBUG emit HWHEEL ticks={ticks}",
+                                          file=sys.stderr, flush=True)
+                    elif DEBUG and ev_code in (REL_X, REL_Y):
                         # Log motion events while NOT engaged so we can tell whether
                         # the trackpad is reporting motion at all
-                        if ev_code in (REL_X, REL_Y):
-                            print(f"DEBUG motion-passthrough code={ev_code} val={ev_value}",
-                                  file=sys.stderr, flush=True)
+                        print(f"DEBUG motion-passthrough code={ev_code} val={ev_value}",
+                              file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
