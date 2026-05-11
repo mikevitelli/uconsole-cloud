@@ -30,12 +30,11 @@ OUTPUT_LIMIT = 8000
 KB_DIR = Path(os.environ.get("UCONSOLE_AI_KB", str(Path.home() / ".config" / "uconsole-ai")))
 
 CLAUDE_MD_PATHS = [
-    Path("/home/mikevitelli/CLAUDE.md"),
     Path.home() / "CLAUDE.md",
     Path("/etc/uconsole/CLAUDE.md"),
 ]
 
-SYSTEM_PROMPT_BASE_FALLBACK = """You are uconsole-ai, an offline expert on a Clockwork Pi uConsole (CM5 Lite, Debian Bookworm). User: mikevitelli.
+SYSTEM_PROMPT_BASE_FALLBACK = """You are uconsole-ai, an offline expert on a Clockwork Pi uConsole (CM5 Lite, Debian Bookworm).
 
 Tools: run_bash, read_file, write_file, list_dir, list_topics, recall.
 
