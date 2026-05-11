@@ -198,19 +198,45 @@ def run_live_monitor(scr):
         except Exception:
             pass
 
-        # WiFi
-        ssid = ip_addr = signal = ""
+        # Primary network — follow the lowest-metric default route so ethernet
+        # wins display when plugged in, falling back to wifi otherwise.
+        primary_iface = primary_kind = ssid = ip_addr = signal = ""
         try:
-            ssid = subprocess.check_output(["iwgetid", "-r"], stderr=subprocess.DEVNULL, timeout=1).decode().strip()
-            ip_addr = subprocess.check_output(["hostname", "-I"], timeout=1).decode().split()[0]
+            routes = json.loads(subprocess.check_output(
+                ["ip", "-j", "-4", "route", "show", "default"],
+                stderr=subprocess.DEVNULL, timeout=1).decode())
+            routes.sort(key=lambda r: r.get("metric", 0))
+            for r in routes:
+                dev = r.get("dev", "")
+                if dev.startswith("eth"):
+                    primary_iface, primary_kind = dev, "ethernet"; break
+                if dev.startswith("wlan") or dev.startswith("wlp"):
+                    primary_iface, primary_kind = dev, "wifi"; break
         except Exception:
             pass
-        try:
-            iwout = subprocess.check_output(["iwconfig", "wlan0"], stderr=subprocess.DEVNULL, timeout=1).decode()
-            m = re.search(r'Signal level=(\S+)', iwout)
-            signal = f"{m.group(1)}dBm" if m else ""
-        except Exception:
-            pass
+        if primary_iface:
+            try:
+                addrs = json.loads(subprocess.check_output(
+                    ["ip", "-j", "-4", "addr", "show", "dev", primary_iface],
+                    stderr=subprocess.DEVNULL, timeout=1).decode())
+                ip_addr = addrs[0]["addr_info"][0]["local"]
+            except Exception:
+                pass
+        if primary_kind == "wifi":
+            try:
+                ssid = subprocess.check_output(
+                    ["iwgetid", primary_iface, "-r"],
+                    stderr=subprocess.DEVNULL, timeout=1).decode().strip()
+            except Exception:
+                pass
+            try:
+                iwout = subprocess.check_output(
+                    ["iwconfig", primary_iface],
+                    stderr=subprocess.DEVNULL, timeout=1).decode()
+                m = re.search(r'Signal level=(\S+)', iwout)
+                signal = f"{m.group(1)}dBm" if m else ""
+            except Exception:
+                pass
 
         # TOP processes
         top_procs = []
@@ -420,9 +446,12 @@ def run_live_monitor(scr):
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, "⠉ rx  ", 6, curses.color_pair(C_STATUS))
         tui.put(scr, ry, rx + 9, "⠉ tx", 4, curses.color_pair(C_CAT))
-        if ssid:
-            wifi_info = f"  {ssid}  {ip_addr}  {signal}"
-            tui.put(scr, ry, rx + 14, wifi_info, pw_r - 16, dim)
+        if primary_kind == "ethernet":
+            net_info = f"  Wired  {ip_addr}"
+            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
+        elif ssid:
+            net_info = f"  {ssid}  {ip_addr}  {signal}"
+            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
         ry += 1
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, f"total ↓{rx_now // (1024**2)}MB ↑{tx_now // (1024**2)}MB", pw_r - 4, dim)
