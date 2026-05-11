@@ -22,8 +22,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-: "${HOME:=$(getent passwd 1000 | cut -d: -f6)}"
-STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wifi-fallback"
+STATE_DIR="/var/lib/wifi-fallback"
 STATE_FILE="$STATE_DIR/enabled"
 COOLDOWN_FILE="$STATE_DIR/last_action"
 COOLDOWN_SECS=30
@@ -238,6 +237,7 @@ cmd_status() {
 
 cmd_enable() {
     source_lib
+    [ "$(id -u)" -eq 0 ] || exec sudo "$0" enable
     mkdir -p "$STATE_DIR"
     echo "1" > "$STATE_FILE"
     log "fallback enabled"
@@ -246,6 +246,7 @@ cmd_enable() {
 
 cmd_disable() {
     source_lib
+    [ "$(id -u)" -eq 0 ] || exec sudo "$0" disable
     mkdir -p "$STATE_DIR"
     echo "0" > "$STATE_FILE"
     log "fallback disabled"
