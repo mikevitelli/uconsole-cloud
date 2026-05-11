@@ -31,7 +31,7 @@ COOLDOWN_SECS=30
 IFACE="${WIFI_IFACE:-wlan0}"
 LOG_TAG="wifi-fallback"
 DISPATCHER_LINK="/etc/NetworkManager/dispatcher.d/90-wifi-fallback"
-IPHONE_CON="PhoneHotspot"
+IPHONE_CON="${WIFI_IPHONE_CON:-}"
 HOTSPOT_SCRIPT="$SCRIPT_DIR/hotspot.sh"
 IPHONE_SSID_WAIT=15
 IPHONE_RETRIES=3
@@ -62,6 +62,10 @@ active_connection() {
 }
 
 try_iphone_hotspot() {
+    if [ -z "$IPHONE_CON" ]; then
+        log "iPhone hotspot fallback skipped (WIFI_IPHONE_CON not set in /etc/uconsole/wifi.conf)"
+        return 1
+    fi
     log "trying iPhone hotspot (wait ${IPHONE_SSID_WAIT}s for SSID, ${IPHONE_RETRIES} retries)"
 
     # Get the SSID for this connection profile

@@ -1545,5 +1545,5 @@ The branch is at `https://github.com/mikevitelli/uconsole-cloud/tree/feat/aio-v2
 - `aiov2_ctl --measure` (power delta measurement). Easy to add as a sub-action later.
 - Per-rail user-editable labels via JSON config. Hardcoded constant in `aio.py` for now.
 - "AC1200 preferred, onboard fallback" autoconnect-priority mode.
-- Auto-disconnecting AC1200 from stale hotspot networks (e.g., "PhoneHotspot").
+- Auto-disconnecting AC1200 from stale hotspot networks (e.g., a previously-saved phone hotspot).
 - Wiring the auto-connect flow scoped to `wlan1` after `set_mode("ac1200")` strands the radio. Plan ships with a hint message; full plumbing is a follow-up once `_wifi` handler signature is verified.

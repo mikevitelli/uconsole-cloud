@@ -37,7 +37,7 @@ destructive ops (reflash) sit at the top level alongside everyday ops.
 - New file: `tui/esp32_wifi_cache.py` (<80 lines).
 - Cache at `~/.config/uconsole/mimiclaw.json`, chmod 600, shape:
   ```json
-  {"ip": "192.168.1.x", "ssid": "OfficeWiFi", "updated_at": "ISO8601"}
+  {"ip": "192.168.1.x", "ssid": "<your-ssid>", "updated_at": "ISO8601"}
   ```
 - `_resolve_ip()` returns cache → probe → None.
 - `run_mimiclaw_chat()` uses `_resolve_ip()` instead of `MIMI_IP`. On WS
@@ -50,7 +50,7 @@ Initial screen — method picker, with a `Current:` line that reflects
 live `wifi_status`:
 
 ```
-Current:  OfficeWiFi  (192.168.1.x)
+Current:  <your-ssid>  (192.168.1.x)
 
   Scan nearby networks
   Copy from uConsole WiFi
@@ -222,7 +222,7 @@ closes the monitor and retries.
 
 **Payload escaping.** `set_wifi` uses `argtable3` on the ESP-IDF side
 and accepts double-quoted args (confirmed empirically: `set_wifi
-"OfficeWiFi" <wpa-password>` succeeded). SSIDs with embedded `"`
+"<your-ssid>" <your-password>` succeeded). SSIDs with embedded `"`
 or `\` get shell-style escaped; SSIDs with `\r` or `\n` are rejected
 client-side with an error.
 

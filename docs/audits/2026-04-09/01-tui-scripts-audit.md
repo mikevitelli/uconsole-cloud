@@ -128,9 +128,9 @@ All 5 `lib.sh` files in the script subdirectories are symlinks to `/opt/uconsole
 
 ### I2. Hardcoded WiFi connection names
 **Files:** `wifi.sh` (lines 18-20), `wifi-fallback.sh` (line 33)
-- `IPHONE_CON="PhoneHotspot"`
-- `HOME_CON="HomeWiFi"`
-- `OFFICE_CON="OfficeWiFi"`
+- `IPHONE_CON="<phone-hotspot-ssid>"`
+- `HOME_CON="<home-ssid>"`
+- `OFFICE_CON="<office-ssid>"`
 
 These are hardcoded. Consider reading from a config file (hotspot.sh already does this pattern with `$CONF_FILE`).
 

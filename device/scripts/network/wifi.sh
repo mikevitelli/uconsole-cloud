@@ -16,9 +16,9 @@ flock -n 200 || { err "Another wifi.sh instance is running"; exit 1; }
 
 [ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
 IFACE="${WIFI_IFACE:-wlan0}"
-IPHONE_CON="PhoneHotspot"
-HOME_CON="HomeWiFi"
-OFFICE_CON="OfficeWiFi"
+IPHONE_CON="${WIFI_IPHONE_CON:-}"
+HOME_CON="${WIFI_HOME_CON:-}"
+OFFICE_CON="${WIFI_OFFICE_CON:-}"
 
 # ── helpers ──
 
@@ -173,11 +173,13 @@ cmd_priority() {
         [ "$type" != "802-11-wireless" ] && continue
 
         local label=""
-        case "$name" in
-            "$HOME_CON")    label="(home)" ;;
-            "$OFFICE_CON")  label="(office)" ;;
-            "$IPHONE_CON")  label="(iPhone)" ;;
-        esac
+        if [ -n "$HOME_CON" ] && [ "$name" = "$HOME_CON" ]; then
+            label="(home)"
+        elif [ -n "$OFFICE_CON" ] && [ "$name" = "$OFFICE_CON" ]; then
+            label="(office)"
+        elif [ -n "$IPHONE_CON" ] && [ "$name" = "$IPHONE_CON" ]; then
+            label="(iPhone)"
+        fi
 
         local status_color="$GREEN"
         [ "$autocon" = "no" ] && status_color="$RED"
@@ -205,14 +207,24 @@ cmd_ip() {
 
 # ── main ──
 
+_require_con() {
+    local var="$1" cmd="$2"
+    [ -n "$var" ] && return 0
+    err "Not configured. Set WIFI_${cmd}_CON in /etc/uconsole/wifi.conf to your NM connection name."
+    exit 1
+}
+
 case "${1:-}" in
     iphone|phone|i)
+        _require_con "$IPHONE_CON" "IPHONE"
         connect_to "$IPHONE_CON" "iPhone" true
         ;;
     home|h)
+        _require_con "$HOME_CON" "HOME"
         connect_to "$HOME_CON" "Home WiFi"
         ;;
     office|o)
+        _require_con "$OFFICE_CON" "OFFICE"
         connect_to "$OFFICE_CON" "Office WiFi"
         ;;
     scan|s)

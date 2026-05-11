@@ -69,7 +69,7 @@ C_OK = tui.C_OK  # re-exported from tui_lib
 ESSID_POOL = [
     "Spectrum_3f21", "Verizon_8A2B1C", "ATTu6RdbYs", "NETGEAR42",
     "Starbucks WiFi", "TMOBILE-6C30", "xfinitywifi", "eero",
-    "NYC_Free_WiFi", "SpectrumSetup-83", "PhoneHotspot",
+    "NYC_Free_WiFi", "SpectrumSetup-83", "iPhone (1142)",
     "FBI Surveillance Van", "LANdlord", "PrettyFly_WiFi",
     "(hidden)", "dlink-AB12", "TP-Link_4821",
 ]

@@ -34,7 +34,7 @@ ESSID_POOL = [
     "MySpectrumWiFi-5G", "eero", "BellCanada9988", "TP-Link_4821",
     "SpectrumSetup-83", "Verizon_KQH7CT", "Linksys00042", "NYC_Free_WiFi",
     "Starlink-42", "HomeBase_2.4G", "HomeBase_5G", "CapitalOne_cafe",
-    "PrettyFly_WiFi", "PhoneHotspot", "FBI Surveillance Van",
+    "PrettyFly_WiFi", "iPhone (1142)", "FBI Surveillance Van",
     "SurveillanceVan", "(hidden)", "Gotham4411", "cloudrouter",
     "LaGuardia_Guest", "SubwayFree", "PublicWiFi_NYC", "DroppedPacketsInc",
     "TellMyWifiLoveHer", "LANdlordOfTheFlies", "GetOffMyLAN", "IDontKnow",
