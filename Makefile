@@ -32,11 +32,11 @@ RSYNC_EXCLUDE := --exclude __pycache__ --exclude .pytest_cache --exclude tests \
 
 install:
 	@echo "Deploying device/ → /opt/uconsole/"
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/lib/ /opt/uconsole/lib/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/scripts/ /opt/uconsole/scripts/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/lib/ /opt/uconsole/lib/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/scripts/ /opt/uconsole/scripts/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
 	@sudo cp frontend/public/scripts/uconsole /opt/uconsole/bin/uconsole 2>/dev/null || true
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
