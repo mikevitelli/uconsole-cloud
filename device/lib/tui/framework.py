@@ -140,6 +140,7 @@ SUBMENUS = {
     "sub:wifi": [
         ("WiFi Switcher",    "_wifi",               "scan and connect to networks",           "action", "🔀"),
         ("Radio Mode",       "_wifi_radio",         "switch onboard / AC1200 / both",         "action", "📡"),
+        ("Antenna Array",    "_antenna_array",      "live per-chain MT7921 2x2 ribbon monitor", "action", "📈"),
         ("WiFi Scan",        "network/network.sh scan",     "nearby WiFi networks",                   "panel",  "🔎"),
         ("Hotspot Toggle",   "_hotspot_toggle",     "start/stop WiFi hotspot",                "action", "🔥"),
         ("Hotspot Config",   "_hotspot_config",     "change AP name and password",            "action", "🔑"),
@@ -1900,6 +1901,7 @@ FEATURE_MODULES = [
     "tui.network",
     "tui.services",
     "tui.radio",
+    "tui.antenna",
     "tui.adsb",
     "tui.adsb_home_picker",
     "tui.adsb_basemap_info",
