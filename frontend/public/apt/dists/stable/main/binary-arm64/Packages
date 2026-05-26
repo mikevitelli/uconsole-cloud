@@ -1,16 +1,16 @@
 Package: uconsole-cloud
-Version: 0.2.1
+Version: 0.3.0
 Architecture: arm64
 Maintainer: Mike Vitelli <mike@uconsole.cloud>
 Installed-Size: 600
 Depends: python3 (>= 3.9), python3-flask (>= 2.2), python3-bcrypt, python3-socketio, curl (>= 7.64), nginx (>= 1.18), systemd, bash (>= 4.0), qrencode (>= 4.0)
 Recommends: avahi-daemon, network-manager
 Suggests: gpsd, rtl-sdr, gh
-Filename: pool/main/u/uconsole-cloud/uconsole-cloud_0.2.1_arm64.deb
-Size: 992300
-MD5sum: beb9a7e7b3f2ed05be1c284e54c083ff
-SHA1: e8bd14a0dce723d5939d6d0db7edab8a4cc497cc
-SHA256: 7c96fe9f203ad5a8d655a1c1e91188887c8af58ceec8810a560e1a90d766b809
+Filename: pool/main/u/uconsole-cloud/uconsole-cloud_0.3.0_arm64.deb
+Size: 1023376
+MD5sum: 058ab9fc9ffb1f8c31dbdea83fcf135e
+SHA1: 98bd97f088762369f48a13356914c5a45c7e33a3
+SHA256: 544c1c1050fc61c100aa4641f97af3bfe25171324e288592ae13fc5035799c9b
 Section: utils
 Priority: optional
 Homepage: https://uconsole.cloud
