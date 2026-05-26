@@ -1,1 +1,1 @@
-/opt/uconsole/lib/lib.sh
+../../lib/lib.sh
