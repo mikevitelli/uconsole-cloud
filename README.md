@@ -28,7 +28,7 @@ The [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) is a handheld L
 
 **uconsole-cloud** is a three-tier stack:
 
-- **Device** — a Debian `.deb` installs a curses TUI (`console`), a Flask web dashboard (`webdash`), an offline CLI AI agent (`uconsole-ai`), 100+ management scripts, and a handful of systemd units. Nothing leaves the device by default.
+- **Device** — a Debian `.deb` installs a curses TUI (`console`), a Flask web dashboard (`webdash`), an offline CLI AI agent (`uconsole-ai`), 50+ management scripts, and a handful of systemd units. Nothing leaves the device by default.
 - **Local network** — webdash serves at `https://uconsole.local` via nginx, self-signed TLS, and mDNS. When no known WiFi is in range, the device spins up a fallback AP (`uConsole` / `clockwork`) so your phone or laptop can always reach it.
 - **Cloud (optional)** — [uconsole.cloud](https://uconsole.cloud) is a Next.js dashboard that shows device telemetry, backup coverage, and hardware inventory from anywhere. Auth via GitHub OAuth, telemetry stored in Upstash Redis, opt-in per device.
 

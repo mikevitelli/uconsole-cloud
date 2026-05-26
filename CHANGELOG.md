@@ -1,5 +1,9 @@
 # Changelog
 
+## (unreleased)
+
+(v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
+
 ## v0.3.0 (2026-05-26)
 
 ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
@@ -227,15 +231,6 @@ CLI logs command, tab completion, test targets, and CLI refactor.
 - postinst tolerates missing systemd (Docker/chroot installs)
 - Bash completion installed to `/usr/share/bash-completion/completions/` (Debian policy)
 - Frontend devicePaths test updated for CLI refactor
-
----
-
-## What's next (v0.1.8+)
-
-- **ESP32 smart detection** — flexible chip detection, CFW compatibility
-- **Runtime tests** — curses TUI, Flask webdash, CLI integration tests
-- **Database abstraction** — support self-hosted Redis alongside Upstash
-- **CI on device** — self-hosted arm64 runner (optional)
 
 ---
 
