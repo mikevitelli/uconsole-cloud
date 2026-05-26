@@ -1,12 +1,16 @@
 # Changelog
 
-## v0.2.2 (unreleased)
+## v0.3.0 (2026-05-26)
 
 ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
 hardware fixes, TUI emoji icons, audit security closeout, a launcher
-that picks up the dev tree without `make install`, and CM5 + AIO v2
+that picks up the dev tree without `make install`, CM5 + AIO v2
 support — TUI dashboard for the new power-gated rails plus a WiFi
-radio-mode picker for the AC1200 module.
+radio-mode picker for the AC1200 module. Also adds an offline CLI AI
+agent (`uconsole-ai`), an antenna array braille ribbon monitor for
+the MT7921 chains, a hostname-aware Live Monitor header, and an
+OSS-hygiene pass that strips operator-specific snapshots from the
+source tree (the .deb payload is unchanged).
 
 ### Added
 - **MimiClaw integration** under the ESP32 hub — firmware detection, WiFi
