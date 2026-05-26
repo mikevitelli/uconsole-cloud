@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import socket
 import subprocess
 import time
 
@@ -38,6 +39,9 @@ def run_live_monitor(scr):
     scr.timeout(refresh_ms)
 
     tui.init_gauge_colors()
+    # Header name = system hostname (uppercased); falls back to "UCONSOLE".
+    host_name = (socket.gethostname() or "uconsole").upper()
+
     def net_bytes():
         rx = tx = 0
         try:
@@ -82,12 +86,13 @@ def run_live_monitor(scr):
         up_h_val = int(up_s // 3600)
         up_m_val = int((up_s % 3600) // 60)
 
-        hdr_l = f"  ◈ UCONSOLE"
+        hdr_l = f"  ◈ {host_name}"
+        hdr_overlay = f" ◈ {host_name}"
         hdr_r = f"{ts}  up {up_h_val}h{up_m_val:02d}m  "
         hdr_fill = w - len(hdr_l) - len(hdr_r)
         hdr_mid = "─" * max(1, hdr_fill)
         tui.put(scr, 0, 0, hdr_l + hdr_mid + hdr_r, w, brd)
-        tui.put(scr, 0, 2, " ◈ UCONSOLE", 11, hdr)
+        tui.put(scr, 0, 2, hdr_overlay, len(hdr_overlay), hdr)
         tui.put(scr, 0, w - len(hdr_r), hdr_r, len(hdr_r), val)
 
         # ═══════════════════════════════════════════════════════
