@@ -26,6 +26,7 @@ from tui.framework import (
     TILE_PAIR_BASE,
     apply_theme,
     build_custom_theme,
+    draw_header,
     draw_separator,
     draw_status_bar,
     load_config,
@@ -375,6 +376,64 @@ def run_viewmode_toggle(scr):
     time.sleep(0.5)
     return new_mode
 
+def run_monitor_refresh_picker(scr):
+    """Pick the live monitor refresh rate from preset values."""
+    presets = [250, 500, 1000, 2000, 3000, 5000]
+
+    def fmt(ms):
+        return f"{ms}ms" if ms < 1000 else f"{ms // 1000}s"
+
+    current = load_config().get("monitor_refresh_ms", 1000)
+    try:
+        sel = presets.index(int(current))
+    except (ValueError, TypeError):
+        sel = presets.index(1000)
+
+    js = open_gamepad()
+    scr.timeout(100)
+    while True:
+        h, w = scr.getmaxyx()
+        scr.erase()
+        draw_header(scr, w)
+        row = 6
+        title = "Monitor Refresh"
+        scr.addnstr(row, 2, title, w - 4, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        row += 2
+        for i, ms in enumerate(presets):
+            marker = " ● " if i == sel else "   "
+            attr = curses.color_pair(C_HEADER) | curses.A_BOLD if i == sel else curses.color_pair(C_ITEM)
+            scr.addnstr(row + i, 4, f"{marker}{fmt(ms)}", w - 8, attr)
+        hint = " ↑↓ Select  Enter Confirm  Esc Cancel "
+        draw_status_bar(scr, h, w, hint, curses.color_pair(C_STATUS))
+        scr.refresh()
+
+        key, gp_action = _tui_input_loop(scr, js)
+        if key == -1 and gp_action is None:
+            continue
+        if key == 27 or key in (ord("q"), ord("Q"), ord("b"), ord("B")) or gp_action == "back":
+            if js:
+                js.close()
+            scr.timeout(100)
+            return
+        elif key == curses.KEY_UP or key == ord("k"):
+            sel = (sel - 1) % len(presets)
+        elif key == curses.KEY_DOWN or key == ord("j"):
+            sel = (sel + 1) % len(presets)
+        elif key in (curses.KEY_ENTER, 10, 13) or gp_action == "enter":
+            break
+
+    if js:
+        js.close()
+
+    new_ms = presets[sel]
+    save_config("monitor_refresh_ms", new_ms)
+    h, w = scr.getmaxyx()
+    draw_status_bar(scr, h, w, f"  ✓ Monitor refresh: {fmt(new_ms)}",
+                    curses.color_pair(C_STATUS) | curses.A_BOLD)
+    scr.refresh()
+    time.sleep(1)
+
+
 def run_trackball_scroll_toggle(scr):
     """Toggle trackball scroll daemon (Select + trackball = scroll)."""
     import os
@@ -382,40 +441,56 @@ def run_trackball_scroll_toggle(scr):
     svc_src = "/opt/uconsole/share/systemd/trackball-scroll.service"
     svc_dst = os.path.expanduser("~/.config/systemd/user/trackball-scroll.service")
 
+    # systemctl can hang indefinitely if dbus or systemd-userd is wedged.
+    # 10s is a safe upper bound — these calls normally complete in <1s.
+    SYSTEMCTL_TIMEOUT = 10
+
     # Ensure service file is linked (disable removes it)
     if not os.path.exists(svc_dst) and os.path.exists(svc_src):
         os.makedirs(os.path.dirname(svc_dst), exist_ok=True)
         os.symlink(svc_src, svc_dst)
-        subprocess.run(["systemctl", "--user", "daemon-reload"],
-                       capture_output=True)
+        try:
+            subprocess.run(["systemctl", "--user", "daemon-reload"],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
 
     try:
         result = subprocess.run(
             ["systemctl", "--user", "is-enabled", svc],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=SYSTEMCTL_TIMEOUT
         )
         enabled = result.stdout.strip() == "enabled"
-    except Exception:
+    except (subprocess.TimeoutExpired, Exception):
         enabled = False
 
     h, w = scr.getmaxyx()
     if enabled:
-        subprocess.run(["systemctl", "--user", "stop", svc],
-                       capture_output=True)
-        subprocess.run(["systemctl", "--user", "disable", svc],
-                       capture_output=True)
+        try:
+            subprocess.run(["systemctl", "--user", "stop", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            subprocess.run(["systemctl", "--user", "disable", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
         draw_status_bar(scr, h, w, "  ✓ Trackball scroll: OFF",
                         curses.color_pair(C_STATUS) | curses.A_BOLD)
     else:
         # Re-link if disable removed it
         if not os.path.exists(svc_dst) and os.path.exists(svc_src):
             os.symlink(svc_src, svc_dst)
-            subprocess.run(["systemctl", "--user", "daemon-reload"],
-                           capture_output=True)
-        subprocess.run(["systemctl", "--user", "enable", svc],
-                       capture_output=True)
-        subprocess.run(["systemctl", "--user", "start", svc],
-                       capture_output=True)
+            try:
+                subprocess.run(["systemctl", "--user", "daemon-reload"],
+                               capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            subprocess.run(["systemctl", "--user", "enable", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+            subprocess.run(["systemctl", "--user", "start", svc],
+                           capture_output=True, timeout=SYSTEMCTL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
         draw_status_bar(scr, h, w, "  ✓ Trackball scroll: ON (Fn + trackball)",
                         curses.color_pair(C_STATUS) | curses.A_BOLD)
     scr.refresh()
@@ -423,3 +498,12 @@ def run_trackball_scroll_toggle(scr):
 
 
 # ── Native TUI tools ──────────────────────────────────────────────────────
+
+
+HANDLERS = {
+    "_theme":            run_theme_picker,
+    "_viewmode":         run_viewmode_toggle,
+    "_bat_gauge":        run_bat_gauge_toggle,
+    "_trackball_scroll": run_trackball_scroll_toggle,
+    "_monitor_refresh":  run_monitor_refresh_picker,
+}

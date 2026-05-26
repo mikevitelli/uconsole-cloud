@@ -7,9 +7,11 @@ Thanks for your interest in uconsole-cloud! Contributions are welcome — especi
 This repo has two products in one:
 
 1. **Cloud dashboard** (`frontend/`) — Next.js app at uconsole.cloud showing device telemetry
-2. **Device package** (`device/`) — TUI, webdash, and 46 scripts installed via `.deb` on the uConsole
+2. **Device package** (`device/`) — TUI, webdash, and 50+ scripts installed via `.deb` on the uConsole
 
 They share a repo because they ship together — the `.deb` is built from `device/` and hosted via the frontend's APT repo.
+
+For data flow and project layout, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Branching
 
@@ -41,16 +43,7 @@ cp frontend/.env.example frontend/.env.local
 npm run dev        # frontend :3000, studio :3333
 ```
 
-### Required environment variables
-
-| Variable | Purpose |
-|----------|---------|
-| `GITHUB_ID` | GitHub OAuth app ID |
-| `GITHUB_SECRET` | GitHub OAuth app secret |
-| `AUTH_SECRET` | NextAuth JWT secret (`openssl rand -base64 33`) |
-| `UPSTASH_REDIS_REST_URL` | Redis connection URL |
-| `UPSTASH_REDIS_REST_TOKEN` | Redis auth token |
-| `NEXT_PUBLIC_SANITY_PROJECT_ID` | Sanity CMS project ID (optional for dev) |
+Required env vars: `GITHUB_ID`, `GITHUB_SECRET`, `AUTH_SECRET`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`. (Sanity vars are optional for dev.)
 
 ### Device development (TUI, webdash, scripts)
 
@@ -60,88 +53,74 @@ If you have a uConsole (or any arm64 Debian device):
 # Edit source in device/
 vim device/lib/tui/framework.py
 
-# Deploy to device for testing
-make install          # rsyncs device/ → /opt/uconsole/ and ~/pkg/
-
-# Toggle between dev and package webdash
-make dev-mode         # webdash runs from your repo checkout
-make pkg-mode         # webdash runs from /opt/uconsole/ (installed .deb)
+# Just launch — no install step. The default `console` auto-detects
+# ~/uconsole-cloud/device/lib/ and uses it when present.
+console
 ```
 
-`make install` auto-restarts webdash if it's running. For TUI changes, just relaunch `console`.
+`make install` exists for packaging a `.deb` for end users — it's not part of the day-to-day edit loop on a developer's box.
 
-If you don't have a uConsole, you can still run the Python tests and lint the shell scripts — they don't require hardware.
+Three TUI launchers:
+
+| Launcher | Keybind (labwc) | Reads from | Use when |
+|----------|-----------------|------------|----------|
+| `console` | — | `~/uconsole-cloud/device/lib` if present, else `/opt/uconsole/lib` | default — works for both devs and end users |
+| `console-pkg` | Ctrl+Shift+P | `/opt/uconsole/lib` (forced) | verify what end users would see |
+| `console-dev` | Ctrl+\` | `~/uconsole-cloud/device/lib` (forced) | redundant with the new default — kept for the keybind |
+
+To point at any arbitrary tree: `UCONSOLE_DEV_LIB=/some/path console`.
+
+Toggle webdash between dev and installed: `make dev-mode` / `make pkg-mode`. `make install` auto-restarts webdash if running.
+
+If you don't have a uConsole, you can still run `make test` — most checks don't require hardware.
 
 ## Testing
 
-The project has 4 test layers, from fast/local to slow/device-specific:
+Four test layers, fast/local to slow/device-specific:
 
-### 1. Source tests (runs anywhere, no hardware needed)
-
-```bash
-make test-device                    # 821 pytest tests + bash syntax + py_compile
-make test-frontend                  # vitest + eslint + typecheck (requires Node 22)
-make test                           # both of the above
-```
-
-What these catch: broken imports, missing scripts, menu/handler mismatches, shell syntax errors, TypeScript type errors, frontend regressions.
-
-### 2. Docker install test (requires Docker, no hardware needed)
+### 1. Source tests (no hardware needed)
 
 ```bash
-make test-install                   # builds .deb, installs in arm64 Debian Bookworm container
+make test-device     # pytest + bash syntax + py_compile
+make test-frontend   # vitest + eslint + typecheck (Node 22)
+make test            # both
 ```
 
-Runs 30+ tests in a fresh Debian container via QEMU arm64 emulation:
-- Package installs cleanly
-- postinst runs (User= substitution, SSL certs, default password, nginx, config)
-- Upgrade preserves config and passwords
-- Uninstall removes CLI/completion but keeps config
-- Purge removes everything
-- Reinstall after purge works
+Catches: broken imports, missing scripts, menu/handler mismatches, shell syntax errors, TypeScript errors, frontend regressions.
 
-On Apple Silicon or arm64 Linux, this runs natively (~40s). On x86, QEMU emulates (~3 min).
-
-To explore the container interactively:
-```bash
-sudo docker run --rm -it uconsole-test bash
-```
-
-### 3. End-to-end test (requires the real device)
+### 2. Docker install test (Docker, no hardware)
 
 ```bash
-make test-e2e                       # installs .deb, tests live system
+make test-install    # builds .deb, installs in arm64 Debian Bookworm container
 ```
 
-Tests on the actual uConsole with real systemd, nginx, mDNS:
-- Installs the .deb (prompts for confirmation)
-- Runs `uconsole doctor`
-- Tests default password login
-- Tests password change + set-password guard
-- Verifies mDNS (uconsole.local resolves)
-- Verifies HTTPS (webdash responds)
-- Tests CLI commands (version, help, logs)
-- Verifies systemd services are running
+30+ tests in a fresh Debian container via QEMU arm64 emulation: install, postinst, upgrade, uninstall, purge, reinstall. Native ~40s on arm64; ~3 min on x86 with QEMU.
 
-Only runs on the device — requires sudo.
+Interactive shell into the container: `sudo docker run --rm -it uconsole-test bash`
 
-### 4. CI (automatic on every push)
+### 3. End-to-end test (real device only)
 
-GitHub Actions runs on every push to `dev` or `main`:
+```bash
+make test-e2e        # installs .deb, tests live system
+```
+
+Tests `uconsole doctor`, password change, mDNS, HTTPS, CLI, systemd. Requires sudo.
+
+### 4. CI (every push)
 
 | Job | What | Time |
 |-----|------|------|
-| `ci` | shellcheck, pytest, bash syntax, lint, typecheck, vitest, Next.js build | ~90s |
+| `ci` | shellcheck, pytest, lint, typecheck, vitest, Next.js build | ~90s |
 | `install-test` | Docker arm64 install test via QEMU | ~2.5min |
 
-The e2e test is NOT in CI (requires real hardware).
+E2E is NOT in CI (real-hardware-only).
 
-### Running a single test file
+### Single test
 
 ```bash
-python3 -m pytest tests/test_tui_integrity.py -v    # one test file
-python3 -m pytest tests/ -k "test_each_script"      # filter by name
-npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts  # one frontend test
+python3 -m pytest tests/test_tui_integrity.py -v
+python3 -m pytest tests/ -k "test_each_script"
+npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts
 ```
 
 ### When to run what
@@ -158,80 +137,28 @@ npm test -w @uconsole/frontend -- --run src/__tests__/devicePaths.test.ts  # one
 
 You don't need to manually bump versions during development.
 
-- **Dev tree**: the TUI footer auto-derives the version from `git describe --tags`, showing something like `v0.1.7-dev` (next version after the last release tag)
-- **Installed package**: reads the static `VERSION` file, showing the released version (e.g. `v0.1.6`)
-- **Releases**: maintainers run `make release` which bumps `VERSION`, builds the `.deb`, signs the APT repo, commits, and tags
+- **Installed package** (`console-pkg`, or `console` on a machine without a source tree): reads `VERSION` directly — shows the released version, e.g. `0.2.1`.
+- **Dev tree** (plain `console` on a developer's box, or `console-dev`): reads `VERSION`, patch-bumps, appends `-dev` — `0.2.1` becomes `0.2.2-dev`.
+- **Releases**: maintainers run `/publish` — bumps `VERSION`, merges `dev` → `main`, builds the `.deb`, signs the APT repo, commits, tags.
 
-The `uconsole --version` CLI command shows `(dev)` when a dev.conf systemd drop-in is detected.
-
-## Project layout
-
-```
-frontend/src/
-├── app/            Pages, API routes, server actions
-├── components/
-│   ├── dashboard/  17 sections (DeviceStatus, BackupHistory, HardwarePanel, etc.)
-│   └── viz/        7 visualizations (Sparkline, Donut, CalendarGrid, Treemap, etc.)
-├── lib/            20 modules (auth, redis, github, types, utils, etc.)
-└── __tests__/      10 test suites (parsing, security, validation, API)
-
-device/
-├── bin/            Entry points (console, webdash, uconsole-setup, uconsole-passwd)
-├── lib/tui/        TUI modules — each file is a feature area:
-│   ├── framework.py    Main loop, menus, categories, themes, gamepad
-│   ├── monitor.py      Live system monitor
-│   ├── network.py      WiFi switcher, hotspot, bluetooth
-│   ├── tools.py        Git, notes, calculator, SSH bookmarks, etc.
-│   ├── games.py        Minesweeper, snake, tetris, 2048, ROM launcher
-│   ├── radio.py        GPS globe, FM radio
-│   ├── marauder.py     ESP32 Marauder interface
-│   ├── services.py     Systemd service/timer management
-│   ├── config_ui.py    Theme picker, view mode, settings
-│   ├── files.py        File browser
-│   ├── esp32_detect.py Chip detection (utility, not a TUI handler)
-│   └── esp32_flash.py  Firmware flashing (utility, not a TUI handler)
-├── scripts/        46 shell scripts organized by category:
-│   ├── system/     backup, restore, update, push-status
-│   ├── power/      battery, charge, cpu-freq, discharge tests
-│   ├── network/    wifi, hotspot, wifi-fallback
-│   ├── radio/      sdr, lora, gps, esp32
-│   └── util/       webdash-ctl, audit, storage, diskusage
-├── webdash/        Flask app (app.py, templates, static)
-└── share/          Default configs, systemd units, keybind snippets
-
-packaging/
-├── build-deb.sh    Build script — reads from device/, outputs .deb
-├── control         Package metadata + dependencies
-├── postinst        Post-install (SSL certs, user detection, nginx, systemd)
-├── prerm           Pre-remove (stop services)
-├── postrm          Post-remove (purge configs)
-├── systemd/        7 unit files
-├── nginx/          HTTPS reverse proxy config
-└── scripts/        APT repo generation + GPG key setup
-```
-
-**Key patterns:**
-- Dashboard sections are Server Components that fetch from Redis/GitHub on page load
-- `lib/` modules handle all data access — components don't call APIs directly
-- Visualization components are client-only (`'use client'`) for interactivity
-- TUI modules export `run_*` functions that `framework.py` dispatches via menus
-- Shell scripts are organized by category and referenced in menus with subdir prefixes (e.g. `power/battery.sh`)
+The `uconsole --version` CLI reads the same `VERSION` file.
 
 ## Code style
 
 - TypeScript throughout, strict mode
 - Server Components by default — only add `'use client'` when needed
-- Tailwind CSS v4 for styling (GitHub-dark theme)
-- TUI follows existing curses patterns — read `framework.py` before adding new features
-- Shell scripts use `bash`, include a shebang, and must pass `bash -n`
+- Tailwind CSS v4 (GitHub-dark theme)
+- TUI: each feature module exports a `HANDLERS = {"_foo": fn}` dict at module scope; framework.py walks `FEATURE_MODULES` and merges them. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before adding new features.
+- Shell scripts use `bash`, include a shebang, must pass `bash -n`
 - Battery/power scripts are **safety-critical** — always flag for manual review
 
 ## What to work on
 
-- Check [open issues](https://github.com/mikevitelli/uconsole-cloud/issues) for bugs or feature requests
-- See [FEATURES.md](FEATURES.md) for the roadmap
-- See [CHANGELOG.md](CHANGELOG.md) "What's next" section for planned work
-- If you have a uConsole, testing the device scripts and CLI is especially helpful
+- [Open issues](https://github.com/mikevitelli/uconsole-cloud/issues) for bugs and feature requests
+- [docs/FEATURES.md](docs/FEATURES.md) for the roadmap
+- [CHANGELOG.md](CHANGELOG.md) "What's next" section for planned work
+
+If you have a uConsole, testing device scripts and the CLI on real hardware is especially valuable.
 
 ## Questions?
 

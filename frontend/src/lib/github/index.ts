@@ -11,6 +11,7 @@ export {
   fetchCommitDetail,
   validateUconsoleRepo,
   fetchGitHubUser,
+  fetchLatestRelease,
 } from "./fetch";
 
 export { createBootstrapRepo } from "./write";

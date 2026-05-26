@@ -1,5 +1,136 @@
 # Changelog
 
+## (unreleased)
+
+(v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
+
+## v0.3.0 (2026-05-26)
+
+ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
+hardware fixes, TUI emoji icons, audit security closeout, a launcher
+that picks up the dev tree without `make install`, CM5 + AIO v2
+support — TUI dashboard for the new power-gated rails plus a WiFi
+radio-mode picker for the AC1200 module. Also adds an offline CLI AI
+agent (`uconsole-ai`), an antenna array braille ribbon monitor for
+the MT7921 chains, a hostname-aware Live Monitor header, and an
+OSS-hygiene pass that strips operator-specific snapshots from the
+source tree (the .deb payload is unchanged).
+
+### Added
+- **MimiClaw integration** under the ESP32 hub — firmware detection, WiFi
+  config panel with IP auto-discovery over serial, post-reset hang detection,
+  DTR/RTS quiet mode. Distilled MicroPython, Marauder, and MimiClaw submenus
+  share a common footer.
+- **Meshtastic TUI client** (`tui.meshtastic`) — full mesh map visualization,
+  packet filtering, CLI wrapper alignment. Consolidated under HARDWARE radio
+  alongside LoRa, with a shared `sub:lora_mesh` submenu.
+- **Wardrive GPS-tagged AP map (BETA)** — capture engine in `tui.marauder`,
+  OSM street overlay via Overpass API, MapLibre GL viewer in webdash, demo
+  data generator. The `/wardrive` route is always reachable; it shows an
+  empty session list until a TUI marauder session writes a capture file —
+  there's no daemon and no autostart, so a fresh install does nothing
+  wardrive-related until the user explicitly opens it from the TUI. Polish
+  (signal-strength color ramp, error surfacing, config tunables, Overpass
+  mirror fallback) deferred to v0.2.3.
+- **TUI emoji icons** — per-item color emoji on every submenu and the tile
+  grid. Single-codepoint glyphs only (terminal drops ZWJ joiners).
+- **Launcher auto-detect** — `console` picks up `~/uconsole-cloud/device/lib/`
+  if present, so dev edits are live without `make install`. Escape hatches:
+  `console-pkg` / `UCONSOLE_PKG_ONLY=1` forces the deployed copy at
+  `/opt/uconsole/lib/`, and `UCONSOLE_DEV_LIB=/path` points at any tree.
+- **Documentation split** — `docs/PIPELINE.md`, `docs/ARCHITECTURE.md`,
+  `docs/API.md`, `docs/SELF-HOSTING.md` extracted from the README.
+- **AIO v2 dashboard panel** (`HARDWARE → AIO Board`) — wraps the
+  HackerGadgets `aiov2_ctl` CLI in a curses panel: live rail state for
+  GPS / LORA / SDR / USB, per-rail boot defaults, power telemetry
+  (mode / battery / current / voltage). Replaces the V1-only
+  `aio-check.sh` entry. Auto-detects v1 vs v2 hardware and falls back
+  to the legacy script on v1 boards.
+- **WiFi Radio Mode picker** (`NETWORK → WiFi → Radio Mode`) — three-mode
+  switcher (`Both active` / `CM5 onboard only` / `AC1200 only`) that
+  applies the policy via `rfkill block/unblock` on the matching phy's
+  numeric id. Persists choice to `~/.config/uconsole/wifi_radio_mode`.
+  Adds a one-line WiFi summary to the AIO dashboard footer.
+- **Auto-power-on for rail-dependent submenus** — opening
+  GPS Receiver / SDR Radio / ADS-B Map / LoRa Mesh now powers the
+  required rail first via `aiov2_ctl FEATURE on` if it's off. Best-effort,
+  silent, no-op on AIO v1 boards.
+
+### Changed
+- **ADS-B feeder migrated from dump1090-mutability to readsb + viewadsb.**
+  readsb is the actively maintained successor; viewadsb replaces dump1090's
+  interactive console. New `sync_home_to_readsb()` propagates the TUI home
+  coords into the service config so the receiver knows the antenna location.
+- **TUI framework refactor** — per-feature handler registry. Each feature
+  module owns its handlers via a `HANDLERS = {"_foo": fn}` dict; framework
+  walks `FEATURE_MODULES` and merges. Menu items conditionally hide if the
+  underlying module fails to import.
+- **Launcher version display** reads `VERSION` file directly (no `git
+  describe`); dev suffix shows the next patch version.
+
+### Fixed
+- **LoRa SX1262 silently non-functional on AIO V1.** Added the missing TCXO
+  control (`SetDIO3AsTcxoCtrl`), recalibration, regulator-mode, image-rejection
+  calibration, and DIO2-as-RF-switch commands to the init sequence. Without
+  these the synthesizer never locked and the chip had no path to the antenna,
+  so `SetRx` / `SetTx` returned command-error status with no user-visible cause.
+- **`lora.sh` failed inside venvs** that lack system `python3-spidev`. Now
+  honors a `PYTHON3` env override (default `/usr/bin/python3`).
+- **`set_mode` rfkill identifier** — util-linux 2.38.1 rejects device names
+  like `phy0`. `list_radios()` now enriches each radio dict with the numeric
+  `rfkill_id` from `rfkill list`, and `set_mode` uses that. Without this,
+  the radio mode picker silently no-ops on Bookworm.
+- **`restore.sh` left `dtoverlay=spi1-1cs` in `BOOT_EXTRAS`** persistently after
+  AIO board removal, which fought the LoRa init.
+- **`.deb` install** carried user-specific config and path leaks; CI install-test
+  now scrubs them before packaging.
+- **`crash-log` $HOME handling** — corrected for systemd unit context.
+- **Frontend vitest** failed locally on Node 18 because `std-env@4` went
+  ESM-only and vitest's CJS config bundler can't require it. Renamed
+  `vitest.config.ts` → `.mjs` so vite loads it through the ESM path.
+- **Wardrive WiGLE quota-probe cron retired** — was burning a daily 429 against
+  the WiGLE API for no actionable signal.
+
+### Security
+- **#45** — `uconsole-setup` `ask()` replaced `eval "$var=..."` with `printf -v`.
+  A default like `"; rm -rf /; #` no longer executes when re-typed by a user.
+- **#46** — `uconsole` CLI replaced `eval "$(maybe_sudo cat status.env)"` and
+  a second `source "$ENV_FILE"` in `cmd_status` with a `read_env_value()`
+  helper that grep-parses single keys.
+- **#47** — `push-status.sh` (runs every 5 min via systemd timer) replaced
+  `source "$ENV_FILE"` with explicit per-key parsing.
+- **`lora.sh`** replaced `source "$LORA_CONF"` with a type-validated parser
+  (numeric/hex regex per field) — same-pattern audit Must-Fix.
+- **#48** — `config_ui.py` trackball-scroll handler added `timeout=10` to all
+  7 systemctl calls so a wedged dbus or systemd-userd can't freeze the TUI.
+- **#49 (subset)** — `set -euo pipefail` on safety-critical PMU scripts
+  (`charge.sh`, `cpu-freq-cap.sh`, `pmu-voltage-min.sh`). Remaining ~32
+  scripts deferred to v0.2.3.
+- **Backup blob rejection** — `git_sync_guard_blob_size` refuses to commit
+  files >95MB before they hit GitHub's 100MB hard limit.
+
+### Tests
+- Frontend regex updated for 5-tuple TUI menu items and no-space emoji icons.
+- HARDWARE radio submenu assertion now expects `sub:lora_mesh`.
+- `backup.sh` exempted from `devicePaths` existence checks (system file).
+- Pytest: orphan handler wiring and private-script exemptions.
+
+## v0.2.1
+
+Push Interval improvements.
+
+### Added
+- **Push Interval → off** — new option in CONFIG that disables the
+  `uconsole-status.timer` user-scope systemd timer (`systemctl --user
+  disable --now`), letting users opt out of cloud telemetry pushes
+  entirely without uninstalling the package. Reversible — picking any
+  interval from `30s` to `30min` re-enables the timer.
+
+### Changed
+- **Push Interval moved from SERVICES to CONFIG** — the entry now lives
+  alongside other persistent preferences (theme, view mode, keybinds)
+  rather than under one-off service controls.
+
 ## v0.2.0 (2026-04-15)
 
 Watch Dogs Go TUI launcher, ADS-B global basemap, Telegram TUI client,
@@ -100,15 +231,6 @@ CLI logs command, tab completion, test targets, and CLI refactor.
 - postinst tolerates missing systemd (Docker/chroot installs)
 - Bash completion installed to `/usr/share/bash-completion/completions/` (Debian policy)
 - Frontend devicePaths test updated for CLI refactor
-
----
-
-## What's next (v0.1.8+)
-
-- **ESP32 smart detection** — flexible chip detection, CFW compatibility
-- **Runtime tests** — curses TUI, Flask webdash, CLI integration tests
-- **Database abstraction** — support self-hosted Redis alongside Upstash
-- **CI on device** — self-hosted arm64 runner (optional)
 
 ---
 

@@ -22,14 +22,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/wifi-fallback"
+STATE_DIR="/var/lib/wifi-fallback"
 STATE_FILE="$STATE_DIR/enabled"
 COOLDOWN_FILE="$STATE_DIR/last_action"
 COOLDOWN_SECS=30
-IFACE="wlan0"
+[ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+IFACE="${WIFI_IFACE:-wlan0}"
 LOG_TAG="wifi-fallback"
 DISPATCHER_LINK="/etc/NetworkManager/dispatcher.d/90-wifi-fallback"
-IPHONE_CON="PhoneHotspot"
+IPHONE_CON="${WIFI_IPHONE_CON:-}"
 HOTSPOT_SCRIPT="$SCRIPT_DIR/hotspot.sh"
 IPHONE_SSID_WAIT=15
 IPHONE_RETRIES=3
@@ -60,6 +61,10 @@ active_connection() {
 }
 
 try_iphone_hotspot() {
+    if [ -z "$IPHONE_CON" ]; then
+        log "iPhone hotspot fallback skipped (WIFI_IPHONE_CON not set in /etc/uconsole/wifi.conf)"
+        return 1
+    fi
     log "trying iPhone hotspot (wait ${IPHONE_SSID_WAIT}s for SSID, ${IPHONE_RETRIES} retries)"
 
     # Get the SSID for this connection profile
@@ -232,6 +237,7 @@ cmd_status() {
 
 cmd_enable() {
     source_lib
+    [ "$(id -u)" -eq 0 ] || exec sudo "$0" enable
     mkdir -p "$STATE_DIR"
     echo "1" > "$STATE_FILE"
     log "fallback enabled"
@@ -240,6 +246,7 @@ cmd_enable() {
 
 cmd_disable() {
     source_lib
+    [ "$(id -u)" -eq 0 ] || exec sudo "$0" disable
     mkdir -p "$STATE_DIR"
     echo "0" > "$STATE_FILE"
     log "fallback disabled"

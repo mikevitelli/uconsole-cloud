@@ -16,6 +16,7 @@ import threading
 import tty
 import termios
 import re
+import glob
 
 # Allow importing tui_lib from multiple locations
 for _p in [os.path.dirname(os.path.realpath(__file__)),
@@ -30,38 +31,42 @@ _PKG_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 SCRIPT_DIR = os.environ.get('UCONSOLE_SCRIPTS',
     os.path.join(_PKG_ROOT, 'scripts') if os.path.isdir(os.path.join(_PKG_ROOT, 'scripts'))
     else '/opt/uconsole/scripts')
-CONFIG_FILE = os.path.join(SCRIPT_DIR, ".console-config.json")
 
-# Package version — dev mode uses git describe, package mode reads VERSION file
-_IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
+# CONFIG_FILE: writable per-user JSON. Lives in $XDG_CONFIG_HOME/uconsole/
+# (default ~/.config/uconsole/). Was previously SCRIPT_DIR/.console-config.json,
+# which is root-owned in /opt/uconsole/scripts/ on a packaged install — every
+# save_config() PermissionError'd silently for end users.
+_XDG_CONFIG_HOME = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
+CONFIG_DIR = os.path.join(_XDG_CONFIG_HOME, 'uconsole')
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'console.json')
+
+# Package version — always read VERSION (updated by /publish). Append '-dev'
+# when running from a non-installed tree so you can tell at a glance whether
+# the TUI you're looking at is a published build or a dev checkout. The old
+# git-describe logic read tags from _PKG_ROOT, which could be ~/pkg — whose
+# tags don't track uconsole-cloud releases — so it reported stale versions.
+_VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
+if not os.path.isfile(_VERSION_FILE):
+    _VERSION_FILE = '/opt/uconsole/VERSION'
 PKG_VERSION = ""
-if _IS_DEV:
+try:
+    with open(_VERSION_FILE) as _f:
+        PKG_VERSION = _f.read().strip()
+except OSError:
+    pass
+_IS_DEV = not os.environ.get('UCONSOLE_PKG_ONLY') and _PKG_ROOT != '/opt/uconsole'
+if _IS_DEV and PKG_VERSION and not PKG_VERSION.endswith('-dev'):
+    # Show the *next* patch version. VERSION tracks what was last released;
+    # dev work is always building toward the next one, so e.g. 0.2.1 becomes
+    # 0.2.2-dev until /publish cuts the real 0.2.2 and VERSION advances.
     try:
-        _desc = subprocess.check_output(
-            ["git", "describe", "--tags", "--always"],
-            cwd=_PKG_ROOT, stderr=subprocess.DEVNULL, text=True,
-        ).strip()
-        # v0.1.6-3-gabc1234 → 0.1.7-dev | v0.1.6 → 0.1.6-dev
-        _desc = _desc.lstrip('v')
-        _parts = _desc.split('-')
-        if len(_parts) >= 3:
-            # Ahead of tag — bump patch to show next version
-            _ver = _parts[0].split('.')
-            _ver[-1] = str(int(_ver[-1]) + 1)
-            PKG_VERSION = '.'.join(_ver) + '-dev'
-        else:
-            PKG_VERSION = f"{_desc}-dev"
-    except (OSError, subprocess.SubprocessError):
-        PKG_VERSION = "dev"
+        _parts = PKG_VERSION.split('.')
+        _parts[-1] = str(int(_parts[-1]) + 1)
+        PKG_VERSION = '.'.join(_parts) + '-dev'
+    except (ValueError, IndexError):
+        PKG_VERSION += '-dev'
 if not PKG_VERSION:
-    _VERSION_FILE = os.path.join(_PKG_ROOT, 'VERSION')
-    if not os.path.isfile(_VERSION_FILE):
-        _VERSION_FILE = '/opt/uconsole/VERSION'
-    try:
-        with open(_VERSION_FILE) as _f:
-            PKG_VERSION = _f.read().strip()
-    except OSError:
-        pass
+    PKG_VERSION = "dev"
 
 # ── Menu structure ──────────────────────────────────────────────────────────
 # Display modes:
@@ -75,147 +80,212 @@ if not PKG_VERSION:
 
 SUBMENUS = {
     "sub:updates": [
-        ("Update All",       "system/update.sh all",       "apt + flatpak + firmware + repo sync",   "stream"),
-        ("Update APT",       "system/update.sh apt",       "update apt packages",                    "stream"),
-        ("Update Flatpak",   "system/update.sh flatpak",   "update flatpak apps",                    "stream"),
-        ("Update Status",    "system/update.sh status",    "check what's outdated",                  "panel"),
-        ("Update Log",       "system/update.sh log",       "show update history",                    "panel"),
+        ("Update All",       "system/update.sh all",       "apt + flatpak + firmware + repo sync",   "stream", "🌍"),
+        ("Update APT",       "system/update.sh apt",       "update apt packages",                    "stream", "📦"),
+        ("Update Flatpak",   "system/update.sh flatpak",   "update flatpak apps",                    "stream", "🧩"),
+        ("Update Status",    "system/update.sh status",    "check what's outdated",                  "panel",  "🔎"),
+        ("Update Log",       "system/update.sh log",       "show update history",                    "panel",  "📜"),
     ],
     "sub:backups": [
-        ("Backup All",       "system/backup.sh all",       "run all backup categories",              "stream"),
-        ("Backup Git",       "system/backup.sh git",       "git config and SSH keys",                "stream"),
-        ("Backup System",    "system/backup.sh system",    "etc configs, hostname, fstab, crontab",  "stream"),
-        ("Backup Packages",  "system/backup.sh packages",  "snapshot all package managers",          "stream"),
-        ("Backup Status",    "system/backup.sh status",    "show backup coverage overview",          "panel"),
+        ("Backup All",       "system/backup.sh all",       "run all backup categories",              "stream", "💾"),
+        ("Backup Git",       "system/backup.sh git",       "git config and SSH keys",                "stream", "🌿"),
+        ("Backup System",    "system/backup.sh system",    "etc configs, hostname, fstab, crontab",  "stream", "🖥️"),
+        ("Backup Packages",  "system/backup.sh packages",  "snapshot all package managers",          "stream", "📦"),
+        ("Backup Status",    "system/backup.sh status",    "show backup coverage overview",          "panel",  "🔎"),
     ],
     "sub:cell_health": [
-        ("Quick Check",      "power/cellhealth.sh quick",  "quick voltage sag check",               "stream"),
-        ("Full Test",        "power/cellhealth.sh",        "full 18650 sag and recovery test",      "stream"),
-        ("History",          "power/cellhealth.sh log",    "show cell health history",               "panel"),
+        ("Quick Check",      "power/cellhealth.sh quick",  "quick voltage sag check",               "stream", "⚡"),
+        ("Full Test",        "power/cellhealth.sh",        "full 18650 sag and recovery test",      "stream", "🧪"),
+        ("History",          "power/cellhealth.sh log",    "show cell health history",               "panel", "📜"),
     ],
     "sub:disk": [
-        ("Disk Overview",    "util/diskusage.sh",        "filesystem usage summary",               "panel"),
-        ("Big Files",        "util/diskusage.sh big",    "largest files on disk",                  "panel"),
-        ("Top Directories",  "util/diskusage.sh dirs",   "top directories by size",                "panel"),
+        ("Disk Overview",    "util/diskusage.sh",        "filesystem usage summary",               "panel", "💽"),
+        ("Big Files",        "util/diskusage.sh big",    "largest files on disk",                  "panel", "🐘"),
+        ("Top Directories",  "util/diskusage.sh dirs",   "top directories by size",                "panel", "🏔️"),
     ],
     "sub:storage": [
-        ("Overview",         "util/storage.sh",          "filesystems, blocks, I/O",               "panel"),
-        ("Block Devices",    "util/storage.sh devices",  "block device details",                   "panel"),
-        ("USB Devices",      "util/storage.sh usb",      "connected USB devices",                  "panel"),
-        ("Drive Temps",      "util/storage.sh temp",     "drive temperatures",                     "panel"),
+        ("Overview",         "util/storage.sh",          "filesystems, blocks, I/O",               "panel", "💽"),
+        ("Block Devices",    "util/storage.sh devices",  "block device details",                   "panel", "🧱"),
+        ("USB Devices",      "util/storage.sh usb",      "connected USB devices",                  "panel", "🔌"),
+        ("Drive Temps",      "util/storage.sh temp",     "drive temperatures",                     "panel", "🌡️"),
     ],
     "sub:audit": [
-        ("Junk Files",       "util/audit.sh junk",       "detect junk files in repo",              "panel"),
-        ("Untracked Files",  "util/audit.sh untracked",  "show untracked files",                   "panel"),
-        ("Category Coverage","util/audit.sh categories",  "backup category coverage",              "panel"),
+        ("Junk Files",       "util/audit.sh junk",       "detect junk files in repo",              "panel", "🗑️"),
+        ("Untracked Files",  "util/audit.sh untracked",  "show untracked files",                   "panel", "👻"),
+        ("Category Coverage","util/audit.sh categories",  "backup category coverage",              "panel", "🗂️"),
     ],
     "sub:webdash": [
-        ("Status",           "util/webdash-info.sh",         "service, nginx, SSL, auth status",   "panel"),
-        ("Config",           "_webdash_config",              "change username and password",       "action"),
-        ("Start",            "util/webdash-ctl.sh start",    "start webdash service",              "action"),
-        ("Stop",             "util/webdash-ctl.sh stop",     "stop webdash service",               "action"),
-        ("Restart",          "util/webdash-ctl.sh restart",  "restart webdash service",            "action"),
-        ("Logs",             "util/webdash-ctl.sh logs",     "recent webdash log output",          "panel"),
-        ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action"),
+        ("Status",           "util/webdash-info.sh",         "service, nginx, SSL, auth status",   "panel",  "🩺"),
+        ("Config",           "_webdash_config",              "change username and password",       "action", "🔑"),
+        ("Start",            "util/webdash-ctl.sh start",    "start webdash service",              "action", "▶️"),
+        ("Stop",             "util/webdash-ctl.sh stop",     "stop webdash service",               "action", "⏹️"),
+        ("Restart",          "util/webdash-ctl.sh restart",  "restart webdash service",            "action", "🔁"),
+        ("Logs",             "util/webdash-ctl.sh logs",     "recent webdash log output",          "panel",  "📜"),
+        ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action", "☁️"),
     ],
     "sub:hw_config": [
-        ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel"),
-        ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action"),
-        ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action"),
-        ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action"),
-        ("CPU Freq Cap",     "power/cpu-freq-cap.sh",     "cap CPU at 1.2 GHz for battery",        "action"),
-        ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen"),
+        ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel",      "🩹"),
+        ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action",      "📥"),
+        ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action",      "📤"),
+        ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action",     "⚡"),
+        ("CPU Freq",         "_cpu_freq",                 "set min/max — 1.5–2.4 GHz",             "action",     "🎚️"),
+        ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen", "🔌"),
     ],
     "sub:power_ctl": [
-        ("Power Status",     "power/power.sh status",     "current power state",                    "panel"),
-        ("Low Batt Status",  "power/low-battery-shutdown.sh status", "voltage vs shutdown threshold", "panel"),
-        ("Reboot",           "power/power.sh reboot",     "reboot with 3s delay",                   "fullscreen"),
-        ("Shutdown",         "power/power.sh shutdown",   "power off with 3s delay",                "fullscreen"),
+        ("Power Status",     "power/power.sh status",     "current power state",                    "panel",      "🔋"),
+        ("Low Batt Status",  "power/low-battery-shutdown.sh status", "voltage vs shutdown threshold", "panel",    "🪫"),
+        ("Reboot",           "power/power.sh reboot",     "reboot with 3s delay",                   "fullscreen", "🔁"),
+        ("Shutdown",         "power/power.sh shutdown",   "power off with 3s delay",                "fullscreen", "🛑"),
     ],
     "sub:wifi": [
-        ("WiFi Switcher",    "_wifi",               "scan and connect to networks",           "action"),
-        ("WiFi Scan",        "network/network.sh scan",     "nearby WiFi networks",                   "panel"),
-        ("Hotspot Toggle",   "_hotspot_toggle",     "start/stop WiFi hotspot",                "action"),
-        ("Hotspot Config",   "_hotspot_config",     "change AP name and password",            "action"),
-        ("WiFi Fallback",    "_wifi_fallback",      "auto iPhone hotspot → AP on WiFi loss",  "action"),
+        ("WiFi Switcher",    "_wifi",               "scan and connect to networks",           "action", "🔀"),
+        ("Radio Mode",       "_wifi_radio",         "switch onboard / AC1200 / both",         "action", "📡"),
+        ("Antenna Array",    "_antenna_array",      "live per-chain MT7921 2x2 ribbon monitor", "action", "📈"),
+        ("WiFi Scan",        "network/network.sh scan",     "nearby WiFi networks",                   "panel",  "🔎"),
+        ("Hotspot Toggle",   "_hotspot_toggle",     "start/stop WiFi hotspot",                "action", "🔥"),
+        ("Hotspot Config",   "_hotspot_config",     "change AP name and password",            "action", "🔑"),
+        ("WiFi Fallback",    "_wifi_fallback",      "auto iPhone hotspot → AP on WiFi loss",  "action", "🪂"),
     ],
     "sub:diagnostics": [
-        ("Network Info",     "network/network.sh",          "connection overview",                    "panel"),
-        ("Speed Test",       "network/network.sh speed",    "download and upload speed",              "stream"),
-        ("Ping Test",        "network/network.sh ping",     "latency test (1.1.1.1)",                "panel"),
-        ("Traceroute",       "network/network.sh trace",    "network path trace",                    "panel"),
-        ("Network Log",      "network/network.sh log",      "append entry to network.log",           "action"),
+        ("Network Info",     "network/network.sh",          "connection overview",                    "panel",  "ℹ️"),
+        ("Speed Test",       "network/network.sh speed",    "download and upload speed",              "stream", "🏎️"),
+        ("Ping Test",        "network/network.sh ping",     "latency test (1.1.1.1)",                "panel",  "📍"),
+        ("Traceroute",       "network/network.sh trace",    "network path trace",                    "panel",  "🛤️"),
+        ("Network Log",      "network/network.sh log",      "append entry to network.log",           "action", "📜"),
     ],
     "sub:battest": [
-        ("Start: Nitecore-3400",  "power/battery-test.sh start nitecore-3400",  "control — 3400mAh",           "action"),
-        ("Start: Panasonic-GA",   "power/battery-test.sh start panasonic-ga",   "3450mAh 10A",                 "action"),
-        ("Start: Samsung-35E",    "power/battery-test.sh start samsung-35e",    "3500mAh 8A",                  "action"),
-        ("Start: Samsung-30Q",    "power/battery-test.sh start samsung-30q",    "3000mAh 15A",                 "action"),
-        ("Stop Test",             "power/battery-test.sh stop",                 "stop active test",            "action"),
-        ("Status",                "power/battery-test.sh status",               "show active test info",       "panel"),
-        ("Live View",             "power/battery-test.sh live",                 "tail active test log",        "fullscreen"),
-        ("List Tests",            "power/battery-test.sh list",                 "all completed tests",         "panel"),
-        ("Compare",               "power/battery-test.sh compare",             "side-by-side comparison",     "panel"),
-        ("Voltage Chart",         "power/battery-test.sh chart",               "ASCII voltage curves",        "panel"),
-        ("Health Report",         "power/battery-test.sh health",              "capacity, energy, temp stats", "panel"),
-        ("Stress: Samsung-35E",   "power/battery-test.sh stress samsung-35e",  "max CPU load + logging",      "stream"),
-        ("Stress: Nitecore",      "power/battery-test.sh stress nitecore-3400","max CPU load + logging",      "stream"),
-        ("Calibrate Gauge",       "power/battery-test.sh calibrate",           "AXP228 fuel gauge reset",     "stream"),
-        ("Discharge: Nitecore",   "util/discharge-test.sh nitecore-3400",      "overnight 30s log + git push","stream"),
-        ("Discharge: Samsung-35E","util/discharge-test.sh samsung-35e",        "overnight 30s log + git push","stream"),
-        ("Discharge: Samsung-30Q","util/discharge-test.sh samsung-30q",        "overnight 30s log + git push","stream"),
-        ("Discharge: Panasonic",  "util/discharge-test.sh panasonic-ga",       "overnight 30s log + git push","stream"),
+        ("Start: Nitecore-3400",  "power/battery-test.sh start nitecore-3400",  "control — 3400mAh",           "action",     "▶️"),
+        ("Start: Panasonic-GA",   "power/battery-test.sh start panasonic-ga",   "3450mAh 10A",                 "action",     "▶️"),
+        ("Start: Samsung-35E",    "power/battery-test.sh start samsung-35e",    "3500mAh 8A",                  "action",     "▶️"),
+        ("Start: Samsung-30Q",    "power/battery-test.sh start samsung-30q",    "3000mAh 15A",                 "action",     "▶️"),
+        ("Stop Test",             "power/battery-test.sh stop",                 "stop active test",            "action",     "⏹️"),
+        ("Status",                "power/battery-test.sh status",               "show active test info",       "panel",      "🩺"),
+        ("Live View",             "power/battery-test.sh live",                 "tail active test log",        "fullscreen", "📺"),
+        ("List Tests",            "power/battery-test.sh list",                 "all completed tests",         "panel",      "📋"),
+        ("Compare",               "power/battery-test.sh compare",             "side-by-side comparison",     "panel",      "📊"),
+        ("Voltage Chart",         "power/battery-test.sh chart",               "ASCII voltage curves",        "panel",      "📈"),
+        ("Health Report",         "power/battery-test.sh health",              "capacity, energy, temp stats", "panel",     "❤️"),
+        ("Stress: Samsung-35E",   "power/battery-test.sh stress samsung-35e",  "max CPU load + logging",      "stream",     "🔥"),
+        ("Stress: Nitecore",      "power/battery-test.sh stress nitecore-3400","max CPU load + logging",      "stream",     "🔥"),
+        ("Calibrate Gauge",       "power/battery-test.sh calibrate",           "AXP228 fuel gauge reset",     "stream",     "⚖️"),
+        ("Discharge: Nitecore",   "util/discharge-test.sh nitecore-3400",      "overnight 30s log + git push","stream",     "🔻"),
+        ("Discharge: Samsung-35E","util/discharge-test.sh samsung-35e",        "overnight 30s log + git push","stream",     "🔻"),
+        ("Discharge: Samsung-30Q","util/discharge-test.sh samsung-30q",        "overnight 30s log + git push","stream",     "🔻"),
+        ("Discharge: Panasonic",  "util/discharge-test.sh panasonic-ga",       "overnight 30s log + git push","stream",     "🔻"),
     ],
     "sub:esp32": [
-        ("Marauder",         "_marauder",                 "WiFi/BLE attack toolkit (ESP32)",        "action"),
-        ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel"),
-        ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action"),
-        ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen"),
-        ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen"),
-        ("Flash",            "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream"),
-        ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action"),
-        ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action"),
-        ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel"),
+        ("Marauder",         "_marauder",                 "WiFi/BLE attack toolkit (ESP32)",        "action",     "💀"),
+        ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel",      "🩺"),
+        ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📈"),
+        ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "🔌"),
+        ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "🐚"),
+        ("Flash",            "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⚡"),
+        ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action",     "🔄"),
+        ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "📝"),
+        ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel",      "🧩"),
     ],
     "sub:gps": [
-        ("Status",           "radio/gps.sh status",       "position, altitude, satellites",          "panel"),
-        ("Live Dashboard",   "radio/gps.sh live",         "real-time GPS display",                  "fullscreen"),
-        ("Satellite Globe",  "_gps_globe",                "wireframe globe with satellites",         "action"),
-        ("Start Tracking",   "radio/gps.sh track",        "log position to GPX file",               "action"),
-        ("Stop Tracking",    "radio/gps.sh stop",         "stop active track log",                  "action"),
-        ("NMEA Stream",      "radio/gps.sh nmea",         "raw NMEA sentence output",               "fullscreen"),
-        ("Time Compare",     "radio/gps.sh time",         "GPS vs system vs RTC time",              "panel"),
-        ("Log Position",     "radio/gps.sh log",          "append fix to gps.log",                  "action"),
+        ("Status",           "radio/gps.sh status",       "position, altitude, satellites",          "panel",      "🩺"),
+        ("Live Dashboard",   "radio/gps.sh live",         "real-time GPS display",                  "fullscreen", "📊"),
+        ("Satellite Globe",  "_gps_globe",                "wireframe globe with satellites",         "action",    "🌐"),
+        ("Start Tracking",   "radio/gps.sh track",        "log position to GPX file",               "action",     "🟢"),
+        ("Stop Tracking",    "radio/gps.sh stop",         "stop active track log",                  "action",     "🔴"),
+        ("NMEA Stream",      "radio/gps.sh nmea",         "raw NMEA sentence output",               "fullscreen", "📡"),
+        ("Time Compare",     "radio/gps.sh time",         "GPS vs system vs RTC time",              "panel",      "⏰"),
+        ("Log Position",     "radio/gps.sh log",          "append fix to gps.log",                  "action",     "📍"),
+        ("PyGPSClient (GUI)","_gui:pygpsclient",          "NMEA/UBX decoder with charts",           "action",     "🖥️"),
     ],
     "sub:sdr": [
-        ("Status",           "radio/sdr.sh status",       "RTL2838 device check",                   "panel"),
-        ("Device Test",      "radio/sdr.sh test",         "tuner and sample rate test",             "stream"),
-        ("Device Info",      "radio/sdr.sh info",         "detailed device capabilities",           "panel"),
-        ("FM Radio",         "_fm_radio",                 "FM receiver with waveform",              "action"),
-        ("ADS-B Aircraft",   "radio/sdr.sh adsb",         "track aircraft (dump1090)",              "fullscreen"),
-        ("Freq Scan",        "radio/sdr.sh scan",         "power spectrum scan",                    "stream"),
-        ("IoT Scanner",      "radio/sdr.sh 433",          "rtl_433 device decoder",                 "fullscreen"),
-        ("Pager Decode",     "radio/sdr.sh decode",       "POCSAG/pager decoding",                  "fullscreen"),
-        ("Record IQ",        "radio/sdr.sh record",       "capture raw IQ samples",                 "stream"),
+        ("Status",           "radio/sdr.sh status",       "RTL2838 device check",                   "panel",      "🩺"),
+        ("Device Test",      "radio/sdr.sh test",         "tuner and sample rate test",             "stream",     "🧪"),
+        ("Device Info",      "radio/sdr.sh info",         "detailed device capabilities",           "panel",      "ℹ️"),
+        ("FM Radio",         "_fm_radio",                 "FM receiver with waveform",              "action",     "📻"),
+        ("ADS-B Aircraft",   "radio/sdr.sh adsb",         "track aircraft (readsb)",                "fullscreen", "✈️"),
+        ("Freq Scan",        "radio/sdr.sh scan",         "power spectrum scan",                    "stream",     "🔭"),
+        ("IoT Scanner",      "radio/sdr.sh 433",          "rtl_433 device decoder",                 "fullscreen", "🌡️"),
+        ("Pager Decode",     "radio/sdr.sh decode",       "POCSAG/pager decoding",                  "fullscreen", "📟"),
+        ("Record IQ",        "radio/sdr.sh record",       "capture raw IQ samples",                 "stream",     "🎙️"),
+        ("SDR++ (GUI)",      "_gui:sdrpp",                "SDR++ Brown — full-band GUI receiver",   "action",     "🖥️"),
+        ("SatDump (GUI)",    "_gui:satdump",              "decode NOAA / Meteor / GOES imagery",    "action",     "🛰️"),
+        ("SDRTrunk (GUI)",   "_gui:sdrtrunk",             "P25/DMR/trunked voice decoder",          "action",     "🚓"),
+        ("WSJT-X (GUI)",     "_gui:wsjtx",                "FT8 / JT65 weak-signal digital modes",   "action",     "🌌"),
     ],
     "sub:adsb": [
-        ("Live Map",          "_adsb_map",          "real-time aircraft map with headings",    "action"),
-        ("Aircraft Table",    "_adsb_table",        "sorted list by distance",                 "action"),
-        ("Set Home (GPS)",    "_adsb_set_home",     "record current GPS fix as map center",    "action"),
-        ("Set Home (Manual)", "_adsb_home_picker",  "type lat/lon or pick a preset metro",     "action"),
-        ("Layer Config",      "_adsb_layers",       "pick which overlay layers to draw",       "action"),
-        ("Fetch Hi-Res",      "_adsb_fetch_hires",  "download 1:10m basemap for your region",  "action"),
-        ("Basemap Info",      "_adsb_basemap_info", "loaded files, feature counts, cache",     "action"),
-        ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch dump1090 interactive",             "fullscreen"),
+        ("Live Map",          "_adsb_map",          "real-time aircraft map with headings",    "action",     "🗺️"),
+        ("Aircraft Table",    "_adsb_table",        "sorted list by distance",                 "action",     "📋"),
+        ("Feeder (readsb)",   "_adsb_feeder",       "start/stop SDR feeder, claims RTL-SDR",   "action",     "📡"),
+        ("Set Home (GPS)",    "_adsb_set_home",     "GPS fix → TUI map + readsb feeder",       "action",     "🏠"),
+        ("Set Home (Manual)", "_adsb_home_picker",  "lat/lon or preset → TUI map + readsb",    "action",     "✏️"),
+        ("Layer Config",      "_adsb_layers",       "pick which overlay layers to draw",       "action",     "🗂️"),
+        ("Fetch Hi-Res",      "_adsb_fetch_hires",  "download 1:10m basemap for your region",  "action",     "⬇️"),
+        ("Basemap Info",      "_adsb_basemap_info", "loaded files, feature counts, cache",     "action",     "ℹ️"),
+        ("Receiver (raw)",    "radio/sdr.sh adsb",  "launch viewadsb (connects to readsb)",    "fullscreen", "✈️"),
+        ("Web Map (tar1090)", "_url:http://uconsole.local:8504", "browser map via lighttpd",   "action",     "🌐"),
     ],
-    "sub:lora": [
-        ("Status",           "radio/lora.sh status",      "SX1262 SPI check + config",              "panel"),
-        ("Configuration",    "radio/lora.sh config",      "frequency, BW, SF, power",               "panel"),
-        ("Send Message",     "radio/lora.sh send test",   "transmit test message",                  "action"),
-        ("Listen",           "radio/lora.sh listen",      "receive incoming messages",               "fullscreen"),
-        ("Ping / Range",     "radio/lora.sh ping",        "range test with RSSI",                   "stream"),
-        ("Chat",             "radio/lora.sh chat",        "interactive LoRa chat",                  "fullscreen"),
-        ("Bridge to Web",    "radio/lora.sh bridge",      "forward messages to webdash",            "fullscreen"),
+    "sub:lora_mesh": [
+        ("Map",              "_mesh_map",                           "live mesh nodes on a world map",         "action",     "🗺️"),
+        ("Chat (Web UI)",    "radio/meshtastic.sh web",             "open https://uconsole.local:9443",       "panel",      "💬"),
+        ("GUI (mesh-ui)",    "_gui:meshtastic-ui",                  "desktop Meshtastic GUI",                 "action",     "🖥️"),
+        ("Broadcast",        "radio/meshtastic.sh send",            "text to primary channel",                "fullscreen", "📣"),
+        ("Direct Message",   "radio/meshtastic.sh send-dm",         "DM a specific !nodeid (prompts)",        "fullscreen", "📬"),
+        ("Broadcast + ACK",  "radio/meshtastic.sh send-ack",        "broadcast with --ack request",           "fullscreen", "📨"),
+        ("Send on Channel",  "radio/meshtastic.sh send-ch",         "send to a specific channel index",       "fullscreen", "📤"),
+        ("Nodes",            "radio/meshtastic.sh nodes",           "mesh nodes table",                       "panel",      "🕸️"),
+        ("Listen",           "radio/meshtastic.sh listen",          "stream incoming packets (filtered)",     "fullscreen", "👂"),
+        ("Auto-Reply",       "radio/meshtastic.sh reply",           "listen + echo packet info to senders",   "fullscreen", "🤖"),
+        ("Status",           "radio/meshtastic.sh status",          "node info, region, frequency",           "panel",      "🩺"),
+        ("Config",           "sub:lora_config",                     "privacy, MQTT, position, name, region",  "submenu",    "⚙️"),
+        ("Channels",         "sub:lora_channels",                   "primary + secondary channels, PSKs",     "submenu",    "🎚️"),
+        ("Service",          "sub:lora_service",                    "start, stop, restart, logs, web URL",    "submenu",    "🛠️"),
+        ("Power",            "sub:lora_power",                      "reboot, shutdown, factory-reset",        "submenu",    "🔌"),
+        ("Direct LoRa (P2P)","sub:lora_p2p",                        "raw SX1262 — stops meshtasticd",         "submenu",    "📡"),
+    ],
+    "sub:lora_config": [
+        ("Show Config",      "radio/meshtastic.sh config show",              "current MQTT/position/region",           "panel",      "📋"),
+        ("Privacy: Stealth", "radio/meshtastic.sh config privacy stealth",   "MQTT off, position off, anon name",      "action",     "🥷"),
+        ("Privacy: Public",  "radio/meshtastic.sh config privacy public",    "MQTT on, position low, uConsole name",   "action",     "📢"),
+        ("MQTT: Toggle",     "radio/meshtastic.sh config mqtt toggle",       "flip MQTT enabled state",                "action",     "🔀"),
+        ("MQTT: On",         "radio/meshtastic.sh config mqtt on",           "enable MQTT (public broker)",            "action",     "✅"),
+        ("MQTT: Off",        "radio/meshtastic.sh config mqtt off",          "disable MQTT",                           "action",     "❌"),
+        ("Position: Off",    "radio/meshtastic.sh config position off",      "disable all position broadcasts",        "action",     "🚫"),
+        ("Position: Low",    "radio/meshtastic.sh config position low",      "~10km grid, hourly",                     "action",     "📍"),
+        ("Position: Full",   "radio/meshtastic.sh config position full",     "precise, 15min + smart",                 "action",     "📌"),
+        ("Position: Clear",  "radio/meshtastic.sh config position clear",    "wipe cached position",                   "action",     "🧹"),
+        ("Rename Node",      "radio/meshtastic.sh config rename",            "set long + short name (prompts)",        "fullscreen", "✏️"),
+        ("Set Region",       "radio/meshtastic.sh config region",            "US, EU_433, EU_868, ...",                "fullscreen", "🌍"),
+        ("Channel Name",     "radio/meshtastic.sh config channel-name",      "set default channel name",               "fullscreen", "🏷️"),
+    ],
+    "sub:lora_service": [
+        ("Status",           "radio/meshtastic.sh service status",           "systemctl status",                       "panel",      "🩺"),
+        ("Start",            "radio/meshtastic.sh service start",            "start meshtasticd (claims SPI1)",        "action",     "▶️"),
+        ("Stop",             "radio/meshtastic.sh service stop",             "stop meshtasticd (frees SPI1)",          "action",     "⏹️"),
+        ("Restart",          "radio/meshtastic.sh service restart",          "restart meshtasticd",                    "action",     "🔁"),
+        ("Logs",             "radio/meshtastic.sh logs",                     "tail meshtasticd journal",               "fullscreen", "📜"),
+        ("Web UI info",      "radio/meshtastic.sh web",                      "https://uconsole.local:9443",            "panel",      "🌐"),
+    ],
+    "sub:lora_channels": [
+        ("List",             "radio/meshtastic.sh channel list",             "primary + secondary, PSK type, flags",   "panel",      "📋"),
+        ("Add Secondary",    "radio/meshtastic.sh channel add",              "create secondary channel (prompts)",     "fullscreen", "➕"),
+        ("Delete",           "radio/meshtastic.sh channel del",              "delete channel by idx (prompts)",        "fullscreen", "🗑️"),
+        ("Set PSK",          "radio/meshtastic.sh channel psk",              "none|default|random|<hex> per channel",  "fullscreen", "🔑"),
+        ("Channel Name",     "radio/meshtastic.sh config channel-name",      "rename a channel (prompts)",             "fullscreen", "🏷️"),
+    ],
+    "sub:lora_power": [
+        ("Reboot",           "radio/meshtastic.sh power reboot",             "soft reboot the Meshtastic node",        "fullscreen", "🔁"),
+        ("Shutdown",         "radio/meshtastic.sh power shutdown",           "power off the node",                     "fullscreen", "🛑"),
+        ("Factory Reset",    "radio/meshtastic.sh power factory-reset",      "WIPE all config — requires RESET confirm","fullscreen","⚠️"),
+    ],
+    "sub:lora_p2p": [
+        ("Status",           "radio/lora.sh status",                         "SX1262 SPI check + config",              "panel",      "🩺"),
+        ("Configuration",    "radio/lora.sh config",                         "frequency, BW, SF, power",               "panel",      "⚙️"),
+        ("Send Test",        "radio/lora.sh send test",                      "transmit test message",                  "action",     "🧪"),
+        ("Listen",           "radio/lora.sh listen",                         "receive incoming messages",              "fullscreen", "👂"),
+        ("Ping / Range",     "radio/lora.sh ping",                           "range test with RSSI",                   "stream",     "📡"),
+        ("Chat (P2P)",       "radio/lora.sh chat",                           "P2P — stop meshtasticd first",           "fullscreen", "💬"),
+        ("Bridge to Web",    "radio/lora.sh bridge",                         "forward messages to webdash",            "fullscreen", "🌉"),
+    ],
+    "sub:mimiclaw:settings": [
+        ("WiFi",             "_mimiclaw_wifi",     "scan, copy from uConsole, manual entry", "action", "📶"),
     ],
 }
 
@@ -223,98 +293,99 @@ CATEGORIES = [
     {
         "name": "SYSTEM",
         "items": [
-            ("Updates",          "sub:updates",         "apt, flatpak, firmware",                 "submenu"),
-            ("Backups",          "sub:backups",         "git, system, packages",                  "submenu"),
-            ("Webdash",          "sub:webdash",         "dashboard, cloud push, logs",            "submenu"),
-            ("Cron / Timers",    "_cron",               "view scheduled tasks",                   "action"),
+            ("Updates",          "sub:updates",         "apt, flatpak, firmware",                 "submenu", "🔄"),
+            ("Backups",          "sub:backups",         "git, system, packages",                  "submenu", "💾"),
+            ("Webdash",          "sub:webdash",         "dashboard, cloud push, logs",            "submenu", "🌐"),
+            ("Cron / Timers",    "_cron",               "view scheduled tasks",                   "action",  "⏰"),
         ],
     },
     {
         "name": "MONITOR",
         "items": [
-            ("Live Monitor",     "_monitor",            "real-time CPU, RAM, temp, battery",      "action"),
-            ("Processes",        "_processes",           "view and kill running processes",        "action"),
-            ("System Logs",      "_syslog",             "live journalctl log viewer",             "action"),
-            ("Crash Log",        "util/crash-log.sh",   "recent crash and boot errors",           "panel"),
+            ("Live Monitor",     "_monitor",            "real-time CPU, RAM, temp, battery",      "action", "📈"),
+            ("Processes",        "_processes",           "view and kill running processes",        "action", "🧮"),
+            ("System Logs",      "_syslog",             "live journalctl log viewer",             "action", "📜"),
+            ("Crash Log",        "util/crash-log.sh",   "recent crash and boot errors",           "panel",  "💥"),
         ],
     },
     {
         "name": "FILES",
         "items": [
-            ("File Browser",     "_filebrowser",        "navigate directories and files",         "action"),
-            ("Audit",            "sub:audit",           "junk, untracked, coverage",              "submenu"),
-            ("Disk Usage",       "sub:disk",            "usage, big files, directories",          "submenu"),
-            ("Storage",          "sub:storage",         "filesystems, devices, USB, temps",       "submenu"),
+            ("File Browser",     "_filebrowser",        "navigate directories and files",         "action",  "📂"),
+            ("Audit",            "sub:audit",           "junk, untracked, coverage",              "submenu", "🔍"),
+            ("Disk Usage",       "sub:disk",            "usage, big files, directories",          "submenu", "📊"),
+            ("Storage",          "sub:storage",         "filesystems, devices, USB, temps",       "submenu", "💽"),
         ],
     },
     {
         "name": "POWER",
         "items": [
-            ("Battery Status",   "power/battery.sh",    "voltage, current, capacity",             "panel"),
-            ("Cell Health",      "sub:cell_health",     "voltage sag and recovery tests",         "submenu"),
-            ("Battery Test",     "sub:battest",         "log, compare, discharge curves",         "submenu"),
-            ("Power Control",    "sub:power_ctl",       "status, low-battery, reboot, shutdown",  "submenu"),
-            ("Power Config",     "sub:hw_config",       "PMU, CPU, charge rate tuning",           "submenu"),
+            ("Battery Status",   "power/battery.sh",    "voltage, current, capacity",             "panel",   "🔋"),
+            ("Cell Health",      "sub:cell_health",     "voltage sag and recovery tests",         "submenu", "🫀"),
+            ("Battery Test",     "sub:battest",         "log, compare, discharge curves",         "submenu", "🧪"),
+            ("Power Control",    "sub:power_ctl",       "status, low-battery, reboot, shutdown",  "submenu", "🎚️"),
+            ("Power Config",     "sub:hw_config",       "PMU, CPU, charge rate tuning",           "submenu", "⚙️"),
         ],
     },
     {
         "name": "NETWORK",
         "items": [
-            ("Connect iPhone",   "network/wifi.sh iphone",      "join iPhone hotspot",            "stream"),
-            ("WiFi",             "sub:wifi",            "switcher, scan, hotspot, fallback",      "submenu"),
-            ("Diagnostics",      "sub:diagnostics",     "info, speed, ping, traceroute",          "submenu"),
-            ("Bluetooth",        "_bluetooth",          "manage paired BT devices",               "action"),
-            ("SSH Bookmarks",    "_ssh",                "connect to saved SSH hosts",              "action"),
+            ("Connect iPhone",   "network/wifi.sh iphone",      "join iPhone hotspot",            "stream",  "📱"),
+            ("WiFi",             "sub:wifi",            "switcher, scan, hotspot, fallback",      "submenu", "📶"),
+            ("Diagnostics",      "sub:diagnostics",     "info, speed, ping, traceroute",          "submenu", "🩺"),
+            ("Bluetooth",        "_bluetooth",          "manage paired BT devices",               "action",  "🦷"),
+            ("SSH Bookmarks",    "_ssh",                "connect to saved SSH hosts",              "action", "🔐"),
         ],
     },
     {
         "name": "HARDWARE",
         "items": [
-            ("AIO Board Check",  "radio/aio-check.sh",  "V1 board component status",              "panel"),
-            ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu"),
-            ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu"),
-            ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu"),
-            ("LoRa Radio",       "sub:lora",            "send, receive, range test",              "submenu"),
-            ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action"),
+            ("AIO Board",        "_aio_board",          "rails, power, boot defaults",            "action",  "🧩"),
+            ("GPS Receiver",     "sub:gps",             "position, tracking, satellites",          "submenu","🛰️"),
+            ("SDR Radio",        "sub:sdr",             "FM, ADS-B, scanning, decoding",          "submenu", "📻"),
+            ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu", "✈️"),
+            ("LoRa Mesh",        "sub:lora_mesh",       "Meshtastic + direct LoRa — chat, config, service", "submenu", "🕸️"),
+            ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action",  "🤖"),
         ],
     },
     {
         "name": "TOOLS",
         "items": [
-            ("Git Panel",        "_git",                "repo status, commits, remote",           "action"),
-            ("Quick Notes",      "_notes",              "scratchpad — view and add notes",        "action"),
-            ("Calculator",       "_calc",               "math expression evaluator",              "action"),
-            ("Stopwatch",        "_stopwatch",          "start, stop, reset timer",               "action"),
-            ("Pomodoro",         "_pomodoro",           "focus timer with work/break cycles",     "action"),
-            ("Weather",          "_weather",            "local forecast and conditions",          "action"),
-            ("Hacker News",      "_hackernews",         "top stories from HN",                    "action"),
-            ("uConsole Forum",   "_forum",              "ClockworkPi community topics",           "action"),
-            ("Telegram",         "_telegram",           "terminal chat client (tg)",              "action"),
-            ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action"),
-            ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action"),
+            ("Git Panel",        "_git",                "repo status, commits, remote",           "action", "🌿"),
+            ("Quick Notes",      "_notes",              "scratchpad — view and add notes",        "action", "📝"),
+            ("Calculator",       "_calc",               "math expression evaluator",              "action", "🧮"),
+            ("Stopwatch",        "_stopwatch",          "start, stop, reset timer",               "action", "⏱️"),
+            ("Pomodoro",         "_pomodoro",           "focus timer with work/break cycles",     "action", "🍅"),
+            ("Weather",          "_weather",            "local forecast and conditions",          "action", "⛅"),
+            ("Hacker News",      "_hackernews",         "top stories from HN",                    "action", "🗞️"),
+            ("uConsole Forum",   "_forum",              "ClockworkPi community topics",           "action", "💬"),
+            ("Telegram",         "_telegram",           "terminal chat client (tg)",              "action", "📨"),
+            ("Markdown Viewer",  "_mdviewer",           "render markdown notes",                  "action", "📄"),
+            ("Screenshot",       "_screenshot",         "capture screen to PNG",                  "action", "📸"),
         ],
     },
     {
         "name": "GAMES",
         "items": [
-            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action"),
-            ("Minesweeper",      "_minesweeper",        "classic mine-clearing game",             "action"),
-            ("Snake",            "_snake",              "eat food, grow, don't hit walls",        "action"),
-            ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action"),
-            ("2048",             "_2048",               "slide and merge number tiles",           "action"),
-            ("ROM Launcher",     "_romlauncher",        "launch Game Boy / N64 ROMs",             "action"),
+            ("Watch Dogs Go",    "_watchdogs",          "wardriving hacking sim (ESP32/WiFi/SDR)", "action", "🐺"),
+            ("Minesweeper",      "_minesweeper",        "classic mine-clearing game",             "action", "💣"),
+            ("Snake",            "_snake",              "eat food, grow, don't hit walls",        "action", "🐍"),
+            ("Tetris",           "_tetris",             "stack and clear falling blocks",         "action", "🧱"),
+            ("2048",             "_2048",               "slide and merge number tiles",           "action", "🔢"),
+            ("ROM Launcher",     "_romlauncher",        "launch Game Boy / N64 ROMs",             "action", "🕹️"),
         ],
     },
     {
         "name": "CONFIG",
         "items": [
-            ("TUI Theme",        "_theme",              "change color theme",                     "action"),
-            ("View Mode",        "_viewmode",           "switch between list and tile view",      "action"),
-            ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action"),
-            ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action"),
-            ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action"),
-            ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action"),
-            ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action"),
+            ("TUI Theme",        "_theme",              "change color theme",                     "action", "🎨"),
+            ("View Mode",        "_viewmode",           "switch between list and tile view",      "action", "🪟"),
+            ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action", "⌨️"),
+            ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action", "⚖️"),
+            ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action",     "🖱️"),
+            ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action", "☁️"),
+            ("Monitor Refresh",  "_monitor_refresh",    "live monitor update rate",               "action", "⏱️"),
+            ("Watch Dogs Config", "_watchdogs_config",  "install path, auto-update, repo",         "action","🐺"),
         ],
     },
 ]
@@ -330,16 +401,22 @@ HEADER = [
 
 FOOTER_HELP = " ↑↓ Navigate │ ←→ Category │ A Run │ B Back │ X Refresh │ Y Quit "
 
-# ── Gamepad (js0) ─────────────────────────────────────────────────────────
-JS_PATH = "/dev/input/js0"
-JS_FMT = "IhBB"
-JS_SIZE = struct.calcsize(JS_FMT)
+# ── Gamepad (evdev on ZMK keyboard) ───────────────────────────────────────
+# The ZMK firmware emits ABXY as F21–F24 over the keyboard HID interface
+# (no joystick device). We side-channel-read the keyboard's evdev node
+# without grabbing it, so curses still gets normal text input.
+EVDEV_FMT = "llHHi"  # struct input_event: timeval(16) + type(2) + code(2) + value(4)
+EVDEV_SIZE = struct.calcsize(EVDEV_FMT)
+EV_KEY = 1
+_KBD_GLOB = "/dev/input/by-id/usb-ZMK_Project_*-event-kbd"
 
-# Button mapping: Y=3, X=0, B=2, A=1
 GP_A = 1       # Enter / run
 GP_B = 2       # Back (previous category)
 GP_X = 0       # Refresh
 GP_Y = 3       # Quit
+
+# F-key code → GP_ button. F21=Y, F22=X, F23=B, F24=A.
+_KEY_TO_GP = {191: GP_Y, 192: GP_X, 193: GP_B, 194: GP_A}
 
 # Gamepad ownership uses two layers:
 # 1. Workspace detection — workspace-monitor daemon writes active workspace name
@@ -391,13 +468,15 @@ def _is_gamepad_owner():
 
 
 def open_gamepad():
-    """Open js0 in non-blocking mode. Returns file object or None."""
-    try:
-        f = open(JS_PATH, "rb")
-        os.set_blocking(f.fileno(), False)
-        return f
-    except (OSError, FileNotFoundError):
-        return None
+    """Open the ZMK keyboard's evdev node non-blocking. Returns file or None."""
+    for path in glob.glob(_KBD_GLOB):
+        try:
+            f = open(path, "rb")
+            os.set_blocking(f.fileno(), False)
+            return f
+        except (OSError, PermissionError):
+            continue
+    return None
 
 
 def close_gamepad(js=None):
@@ -416,14 +495,15 @@ def read_gamepad(js):
         return pressed
     try:
         while True:
-            data = js.read(JS_SIZE)
-            if not data or len(data) < JS_SIZE:
+            data = js.read(EVDEV_SIZE)
+            if not data or len(data) < EVDEV_SIZE:
                 break
-            _ts, val, typ, num = struct.unpack(JS_FMT, data)
-            if typ & 0x80:
-                continue  # skip init events
-            if typ == 1 and val == 1:
-                pressed.append(num)
+            _sec, _usec, typ, code, val = struct.unpack(EVDEV_FMT, data)
+            if typ != EV_KEY or val != 1:
+                continue  # only key-down on EV_KEY
+            btn = _KEY_TO_GP.get(code)
+            if btn is not None:
+                pressed.append(btn)
     except (OSError, BlockingIOError):
         pass
     if not _is_gamepad_owner():
@@ -550,6 +630,7 @@ def load_config():
 
 def _save_config_locked(updates):
     """Atomically read-modify-write config with file locking."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     fd = os.open(CONFIG_FILE, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -746,7 +827,7 @@ def wait_for_input():
     js = open_gamepad()
     if js:
         try:
-            while js.read(JS_SIZE):
+            while js.read(EVDEV_SIZE):
                 pass  # drain
         except (OSError, BlockingIOError):
             pass
@@ -762,10 +843,10 @@ def wait_for_input():
                     sys.stdin.read(1)
                     return
                 elif js and r == js.fileno():
-                    data = js.read(JS_SIZE)
-                    if data and len(data) >= JS_SIZE:
-                        _ts, val, typ, num = struct.unpack(JS_FMT, data)
-                        if typ == 1 and val == 1:
+                    data = js.read(EVDEV_SIZE)
+                    if data and len(data) >= EVDEV_SIZE:
+                        _sec, _usec, typ, code, val = struct.unpack(EVDEV_FMT, data)
+                        if typ == EV_KEY and val == 1 and code in _KEY_TO_GP:
                             return
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
@@ -1116,6 +1197,47 @@ def run_action(scr, script_name, title):
     time.sleep(1.5)
 
 
+def run_gui_launch(scr, binary, title):
+    """Spawn a detached GUI app and flash status in the TUI."""
+    import shutil
+    from tui.launcher import launch_gui
+    h, w = scr.getmaxyx()
+    argv = binary.split()
+    path = shutil.which(argv[0])
+    if not path:
+        draw_status_bar(scr, h, w, f"  ✗ {argv[0]} not found in PATH",
+                        curses.color_pair(C_HEADER) | curses.A_BOLD)
+        scr.refresh()
+        time.sleep(1.5)
+        return
+    try:
+        launch_gui([path] + argv[1:])
+        msg = f"  ▶ Launched {title}"
+        attr = curses.color_pair(C_STATUS) | curses.A_BOLD
+    except Exception as e:
+        msg = f"  ✗ {title} — {e}"
+        attr = curses.color_pair(C_HEADER) | curses.A_BOLD
+    draw_status_bar(scr, h, w, msg, attr)
+    scr.refresh()
+    time.sleep(1.0)
+
+
+def run_url_open(scr, url, title):
+    """Open a URL via xdg-open, detached."""
+    from tui.launcher import launch_gui
+    h, w = scr.getmaxyx()
+    try:
+        launch_gui(["xdg-open", url])
+        msg = f"  ▶ Opening {title}"
+        attr = curses.color_pair(C_STATUS) | curses.A_BOLD
+    except Exception as e:
+        msg = f"  ✗ {title} — {e}"
+        attr = curses.color_pair(C_HEADER) | curses.A_BOLD
+    draw_status_bar(scr, h, w, msg, attr)
+    scr.refresh()
+    time.sleep(1.0)
+
+
 def run_fullscreen(scr, script_name):
     """Drop to terminal for interactive scripts."""
     path, cmd = _resolve_cmd(script_name)
@@ -1405,102 +1527,19 @@ def _tui_input_loop(scr, js, map_y_quit=False):
     return key, gp_action
 
 
-def run_process_manager(scr):
-    """Interactive process viewer with kill support."""
-    js = open_gamepad()
-    scr.timeout(2000)
-    sel = 0
-    sort_by = "cpu"  # "cpu" or "mem"
-
-    while True:
-        h, w = scr.getmaxyx()
-        scr.erase()
-
-        title = f" Process Manager (sort: {sort_by}) "
-        scr.addnstr(0, 0, title.center(w), w, curses.color_pair(C_HEADER) | curses.A_BOLD)
-
-        # Get processes
-        try:
-            sf = "--sort=-%cpu" if sort_by == "cpu" else "--sort=-rss"
-            out = subprocess.check_output(
-                ["ps", "aux", sf], timeout=3
-            ).decode()
-            lines = out.splitlines()
-            header = lines[0] if lines else ""
-            procs = lines[1:] if len(lines) > 1 else []
-        except Exception:
-            procs = []
-            header = ""
-
-        # Header
-        try:
-            scr.addnstr(1, 1, header[:w - 2], w - 2, curses.color_pair(C_CAT) | curses.A_BOLD)
-        except curses.error:
-            pass
-
-        view_h = h - 4
-        sel = min(sel, max(0, len(procs) - 1))
-
-        for i in range(view_h):
-            if i >= len(procs):
-                break
-            attr = curses.color_pair(C_SEL) | curses.A_BOLD if i == sel else curses.color_pair(C_ITEM)
-            marker = "▸" if i == sel else " "
-            try:
-                scr.addnstr(i + 2, 0, f" {marker} {procs[i][:w - 4]}", w, attr)
-            except curses.error:
-                pass
-
-        bar = _footer_bar(" ↑↓ Select │ A Kill │ X Sort │ B Back ", w)
-        try:
-            scr.addnstr(h - 1, 0, bar.ljust(w), w, curses.color_pair(C_FOOTER))
-        except curses.error:
-            pass
-        scr.refresh()
-
-        key, gp = _tui_input_loop(scr, js)
-        if key == -1 and gp is None:
-            continue
-        if key == ord("q") or key == ord("Q") or gp == "back":
-            break
-        elif key == curses.KEY_UP or key == ord("k"):
-            sel = max(0, sel - 1)
-        elif key == curses.KEY_DOWN or key == ord("j"):
-            sel = min(len(procs) - 1, sel + 1)
-        elif gp == "refresh" or key == ord("x") or key == ord("X"):
-            sort_by = "mem" if sort_by == "cpu" else "cpu"
-        elif key in (curses.KEY_ENTER, 10, 13) or gp == "enter":
-            if procs and sel < len(procs):
-                pid = procs[sel].split()[1] if len(procs[sel].split()) > 1 else None
-                if pid and pid.isdigit() and 2 <= int(pid) <= 4194304:
-                    try:
-                        os.kill(int(pid), signal.SIGTERM)
-                        draw_status_bar(scr, h, w, f"  ✓ Sent SIGTERM to PID {pid}")
-                    except ProcessLookupError:
-                        draw_status_bar(scr, h, w, f"  ✗ Process {pid} not found")
-                    except PermissionError:
-                        draw_status_bar(scr, h, w, f"  ✗ Permission denied for PID {pid}")
-                    scr.refresh()
-                    time.sleep(1)
-
-    if js:
-        close_gamepad(js)
-    scr.timeout(100)
-
-
 TILE_W_MIN = 22
 TILE_H = 5
 
 CAT_ICONS = {
-    "SYSTEM": "\u2699",
-    "MONITOR": "\u25c9",
-    "FILES": "\u25a4",
-    "POWER": "\u26a1",
-    "NETWORK": "\u25ce",
-    "HARDWARE": "\u2301",
-    "TOOLS": "\u2605",
-    "GAMES": "\u265f",
-    "CONFIG": "\u2630",
+    "SYSTEM":   "\U0001F9F0",  # \ud83e\uddf0  toolbox \u2014 updates, backups, webdash, cron
+    "MONITOR":  "\U0001F4CA",  # \ud83d\udcca  bar chart \u2014 live monitor, processes, logs
+    "FILES":    "\U0001F4C1",  # \ud83d\udcc1  folder \u2014 file browser, audit, disk usage
+    "POWER":    "\U0001F50B",  # \ud83d\udd0b  battery \u2014 battery, cell health, power ctl
+    "NETWORK":  "\U0001F4F6",  # \ud83d\udcf6  signal bars \u2014 wifi, hotspot, BT, SSH
+    "HARDWARE": "\U0001F4E1",  # \ud83d\udce1  satellite dish \u2014 GPS, SDR, ADS-B, LoRa, ESP32
+    "TOOLS":    "\U0001F6E0",  # \ud83d\udee0   hammer + wrench \u2014 calc, notes, weather, telegram
+    "GAMES":    "\U0001F3AE",  # \ud83c\udfae  game pad \u2014 Watch Dogs, Tetris, ROM launcher
+    "CONFIG":   "\U0001F39B",  # \ud83c\udf9b   control knobs \u2014 theme, viewmode, keybinds
 }
 
 CAT_DESCS = {
@@ -1843,389 +1882,149 @@ def main_tiles(scr):
     return None
 
 
-# ── ESP32 dynamic submenu items ──────────────────────────────────────────
+# ── Feature handler registry ────────────────────────────────────────────────
+#
+# Each feature module under tui/ exports a HANDLERS = {"_foo": fn, ...} dict
+# mapping handler keys to callables that take (scr).  framework.py walks the
+# FEATURE_MODULES list below, imports each, and merges their HANDLERS.  A
+# module that fails to import is logged to ~/crash.log and skipped — its
+# menu items resolve to silent no-ops at dispatch (see run_script).
 
-_ESP32_MICROPYTHON_ITEMS = [
-    ("Status",           "radio/esp32.sh status",     "latest sensor reading",                  "panel",      "📡"),
-    ("Live Monitor",     "_esp32_monitor",            "real-time sensor dashboard",             "action",     "📊"),
-    ("Serial Monitor",   "radio/esp32.sh serial",     "raw serial output",                      "fullscreen", "⌨"),
-    ("REPL",             "radio/esp32.sh repl",       "MicroPython interactive shell",          "fullscreen", "⟩⟩"),
-    ("Flash Scripts",    "radio/esp32.sh flash",      "upload boot.py + main.py",               "stream",     "⇪"),
-    ("Reset",            "radio/esp32.sh reset",      "hard-reset ESP32",                       "action",     "⟳"),
-    ("Log Entry",        "radio/esp32.sh log",        "append reading to esp32.log",            "action",     "✎"),
-    ("Chip Info",        "radio/esp32.sh info",       "chip type, features, MAC",               "panel",      "ℹ"),
+FEATURE_MODULES = [
+    "tui.aio",
+    "tui.config_ui",
+    "tui.cpu_freq",
+    "tui.tools",
+    "tui.games",
+    "tui.monitor",
+    "tui.files",
+    "tui.network",
+    "tui.services",
+    "tui.radio",
+    "tui.antenna",
+    "tui.adsb",
+    "tui.adsb_home_picker",
+    "tui.adsb_basemap_info",
+    "tui.adsb_menu",
+    "tui.meshtastic_map",
+    "tui.marauder",
+    "tui.mimiclaw",
+    "tui.telegram",
+    "tui.watchdogs",
+    "tui.processes",
+    "tui.esp32_hub",
+    "tui.wifi_radio",
 ]
 
-_ESP32_MARAUDER_ITEMS = [
-    ("Marauder",         "_marauder",                      "WiFi/BLE attack toolkit",                "action",     "☠"),
-    ("Serial Monitor",   "radio/esp32-marauder.sh serial", "raw Marauder output",                    "fullscreen", "⌨"),
-    ("Scan APs",         "radio/esp32-marauder.sh scan ap", "scan nearby access points",             "stream",     "◎"),
-    ("Device Info",      "radio/esp32-marauder.sh info",    "firmware, MAC, hardware",               "panel",      "ℹ"),
-    ("Settings",         "radio/esp32-marauder.sh settings","Marauder settings",                     "panel",      "⚙"),
-    ("Reboot",           "radio/esp32-marauder.sh reboot",  "reboot ESP32",                          "action",     "⟳"),
-]
-
-_ESP32_COMMON_ITEMS = [
-    ("USB Reset",        "_esp32_usb_reset",          "power cycle ESP32 via USB reset",        "action",     "⚡"),
-    ("Switch Firmware",  "_esp32_flash",              "flash MicroPython or Marauder",          "action",     "⇄"),
-    ("Re-detect",        "_esp32_redetect",           "re-probe firmware handshake",            "action",     "⟲"),
-]
+_HANDLERS_CACHE = None
 
 
-def _esp32_menu_for(firmware):
-    """Return submenu items for the detected firmware mode."""
-    from tui.esp32_detect import Firmware
-    if firmware == Firmware.MICROPYTHON:
-        items = list(_ESP32_MICROPYTHON_ITEMS)
-    elif firmware == Firmware.MARAUDER:
-        items = list(_ESP32_MARAUDER_ITEMS)
-    else:
-        items = [
-            ("Manual: MicroPython", "_esp32_force_mp",  "assume MicroPython firmware",  "action", "🐍"),
-            ("Manual: Marauder",    "_esp32_force_mrd", "assume Marauder firmware",     "action", "☠"),
-        ]
-    items.extend(_ESP32_COMMON_ITEMS)
-    return items
-
-
-def run_esp32_hub(scr):
-    """ESP32 hub — detect firmware, show appropriate submenu."""
-    from tui.esp32_detect import Firmware, detect, invalidate_cache
-
-    # Release Marauder serial connection if held (so detect() can open the port)
+def _log_feature_failure(mod_name, exc):
+    """Append a timestamped line to ~/crash.log noting a feature import failure."""
+    import datetime
     try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
+        with open(os.path.expanduser("~/crash.log"), "a") as f:
+            f.write(
+                f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}  "
+                f"feature-import-failed  {mod_name}  "
+                f"{type(exc).__name__}: {exc}\n"
+            )
+    except OSError:
         pass
 
-    h, w = scr.getmaxyx()
-    scr.erase()
 
-    # Detection splash
-    msg = " Detecting ESP32 firmware... "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
+def _load_handlers():
+    """Import every FEATURE_MODULES entry, merge their HANDLERS dicts.
 
-    firmware = detect()
-
-    # Build dynamic submenu
-    SUBMENUS["sub:esp32"] = _esp32_menu_for(firmware)
-
-    # Show mode badge in title
-    badge = {
-        Firmware.MICROPYTHON: "MicroPython",
-        Firmware.MARAUDER: "Marauder",
-        Firmware.UNKNOWN: "Unknown",
-    }.get(firmware, "Unknown")
-
-    run_submenu(scr, "sub:esp32", f"ESP32 [{badge}]")
-
-
-def run_esp32_flash_picker(scr):
-    """Switch firmware — pick target and flash with safety gates."""
-    from tui.esp32_detect import Firmware, detect, invalidate_cache
-    from tui.esp32_flash import FlashError, flash
-
-    current = detect()
-
-    # Determine target (opposite of current)
-    if current == Firmware.MICROPYTHON:
-        target = Firmware.MARAUDER
-        target_name = "Marauder"
-    elif current == Firmware.MARAUDER:
-        target = Firmware.MICROPYTHON
-        target_name = "MicroPython"
-    else:
-        # Unknown — ask user to pick
-        target = Firmware.MARAUDER
-        target_name = "Marauder"
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-
-    # Confirmation
-    msg = f" Flash {target_name}? (Y/N) "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
-    scr.timeout(-1)
-    key = scr.getch()
-    scr.timeout(100)
-    if key not in (ord("y"), ord("Y")):
-        return
-
-    # Flash with progress
-    scr.erase()
-    lines = []
-
-    def on_output(line):
-        lines.append(line)
-        y = min(len(lines), h - 2)
+    Modules that fail to import are logged and skipped — handler keys they
+    would have provided remain absent from the result.
+    """
+    import importlib
+    handlers = {}
+    for mod_name in FEATURE_MODULES:
         try:
-            scr.addnstr(y, 1, line[:w - 2], w - 2, curses.color_pair(C_DIM))
-            scr.refresh()
-        except curses.error:
-            pass
-
-    try:
-        scr.addnstr(0, 0, f" Flashing {target_name}... ".center(w), w,
-                    curses.color_pair(C_HEADER) | curses.A_BOLD)
-        scr.refresh()
-        flash(target, on_output=on_output)
-        msg = f" Flash complete — {target_name} installed. Press any key. "
-    except FlashError as e:
-        msg = f" Flash failed: {e} "
-
-    scr.addnstr(h - 1, 0, msg[:w], w,
-                curses.color_pair(C_STATUS) | curses.A_BOLD)
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
-
-    # Invalidate cache so hub re-detects on return
-    invalidate_cache()
+            mod = importlib.import_module(mod_name)
+        except Exception as e:
+            _log_feature_failure(mod_name, e)
+            continue
+        handlers.update(getattr(mod, "HANDLERS", {}))
+    return handlers
 
 
-def run_esp32_force(scr, firmware):
-    """Force-set detection to a specific firmware and re-enter hub."""
-    from tui.esp32_detect import Firmware, invalidate_cache, _cache
-    import time as _time
-    # Manually populate cache with forced value
-    _cache["firmware"] = firmware
-    _cache["port"] = "/dev/esp32"
-    _cache["timestamp"] = _time.time()
-    run_esp32_hub(scr)
+def _filter_menus(handlers):
+    """Drop menu items whose _foo target has no registered handler.
+
+    Mutates SUBMENUS and CATEGORIES in place. Items with shell-script targets,
+    sub:foo drilldowns, or _gui:/_url: prefixes are kept untouched. The point
+    is to hide menu items belonging to feature modules that failed to import,
+    so the user sees a clean menu without dead entries.
+    """
+    def keep(target):
+        if not isinstance(target, str):
+            return True
+        if target.startswith(("_gui:", "_url:")) or not target.startswith("_"):
+            return True
+        return target in handlers
+
+    for key, items in list(SUBMENUS.items()):
+        SUBMENUS[key] = [item for item in items if keep(item[1])]
+
+    for cat in CATEGORIES:
+        cat["items"] = [item for item in cat["items"] if keep(item[1])]
 
 
-def _esp32_usb_reset(scr):
-    """USB-reset the ESP32 to recover from a hung state."""
-    from tui.esp32_detect import invalidate_cache
-    import subprocess
-
-    h, w = scr.getmaxyx()
-    scr.erase()
-    msg = " Resetting ESP32 via USB... "
-    scr.addnstr(h // 2, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_HEADER) | curses.A_BOLD)
-    scr.refresh()
-
-    # Close Marauder connection if held
-    try:
-        from tui.marauder import _inst as _mrd_inst
-        if _mrd_inst and getattr(_mrd_inst, 'port', None):
-            _mrd_inst.close()
-    except Exception:
-        pass
-
-    try:
-        result = subprocess.run(
-            ["usbreset", "CP2102 USB to UART Bridge Controller"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            import time
-            time.sleep(2)  # wait for device to re-enumerate
-            invalidate_cache()
-            msg = " ESP32 reset OK "
-        else:
-            msg = f" Reset failed: {result.stderr.strip()[:40]} "
-    except FileNotFoundError:
-        msg = " usbreset not installed "
-    except subprocess.TimeoutExpired:
-        msg = " Reset timed out "
-
-    scr.addnstr(h // 2 + 1, max(0, (w - len(msg)) // 2), msg, w,
-                curses.color_pair(C_STATUS) | curses.A_BOLD)
-    scr.refresh()
-    scr.timeout(-1)
-    scr.getch()
-    scr.timeout(100)
+def _get_handlers():
+    """Return cached merged handlers dict, loading + filtering menus on first call."""
+    global _HANDLERS_CACHE
+    if _HANDLERS_CACHE is None:
+        _HANDLERS_CACHE = _load_handlers()
+        _filter_menus(_HANDLERS_CACHE)
+    return _HANDLERS_CACHE
 
 
-def _esp32_redetect(scr):
-    """Invalidate cache and re-enter ESP32 hub."""
-    from tui.esp32_detect import invalidate_cache
-    invalidate_cache()
-    run_esp32_hub(scr)
+# Mapping of menu-item key → AIO rail to power on first
+_RAIL_DEPENDENT = {
+    "sub:gps":       "GPS",
+    "sub:sdr":       "SDR",
+    "sub:adsb":      "SDR",
+    "sub:lora_mesh": "LORA",
+}
 
 
-def _Firmware_MP():
-    from tui.esp32_detect import Firmware
-    return Firmware.MICROPYTHON
-
-
-def _Firmware_MRD():
-    from tui.esp32_detect import Firmware
-    return Firmware.MARAUDER
-
-
-def _get_native_tools():
-    """Lazy-load native tools from submodules to avoid circular imports."""
-    from tui.config_ui import run_theme_picker, run_viewmode_toggle, run_bat_gauge_toggle, run_trackball_scroll_toggle
-    from tui.tools import (run_keybinds, run_git_panel, run_notes, run_calculator,
-                           run_stopwatch, run_screenshot, run_syslog_viewer, run_ssh_bookmarks,
-                           run_pomodoro, run_weather, run_hackernews, run_forum, run_mdviewer)
-    from tui.games import (run_minesweeper, run_snake, run_tetris, run_2048, run_romlauncher)
-    from tui.monitor import run_live_monitor, run_esp32_monitor
-    from tui.files import run_file_browser
-    from tui.network import (run_wifi_switcher, run_hotspot_toggle, run_hotspot_config,
-                             run_wifi_fallback, run_bluetooth)
-    from tui.services import run_cron_viewer, run_webdash_config, run_push_interval
-    from tui.radio import run_gps_globe, run_fm_radio
-    from tui.adsb import run_adsb_map, run_adsb_table, run_adsb_set_home
-    from tui.adsb_home_picker import run_home_picker_action
-    from tui.adsb_layer_picker import run_layer_picker
-    from tui.adsb_basemap_info import run_basemap_info
-    from tui import adsb_hires as _adsb_hires_mod
-    from tui import adsb as _adsb_mod
-    from tui.marauder import run_marauder
-    from tui.telegram import run_telegram
-    # Watchdogs is wrapped in try/except so a broken submodule (e.g. missing
-    # launcher.py on a deployed device) can't brick the entire native-tools
-    # registry. On import failure both entries short-circuit to a stub via
-    # the ternaries below.
-    try:
-        from tui.watchdogs import run_watchdogs, run_watchdogs_config
-        _have_watchdogs = True
-    except ImportError:
-        _have_watchdogs = False
-        def _watchdogs_missing_stub(scr):
-            import curses
-            try:
-                scr.addstr(0, 0, "Watch Dogs Go module unavailable (import failed)")
-                scr.refresh()
-                scr.getch()
-            except curses.error:
-                pass
-        run_watchdogs = _watchdogs_missing_stub
-        run_watchdogs_config = _watchdogs_missing_stub
-    return {
-        "_theme":       lambda scr: run_theme_picker(scr),
-        "_viewmode":    lambda scr: run_viewmode_toggle(scr),
-        "_bat_gauge":   lambda scr: run_bat_gauge_toggle(scr),
-        "_keybinds":    lambda scr: run_keybinds(scr),
-        "_trackball_scroll": lambda scr: run_trackball_scroll_toggle(scr),
-        "_monitor":     lambda scr: run_live_monitor(scr),
-        "_processes":   lambda scr: run_process_manager(scr),
-        "_syslog":      lambda scr: run_syslog_viewer(scr),
-        "_filebrowser": lambda scr: run_file_browser(scr),
-        "_wifi":        lambda scr: run_wifi_switcher(scr),
-        "_hotspot_toggle": lambda scr: run_hotspot_toggle(scr),
-        "_hotspot_config": lambda scr: run_hotspot_config(scr),
-        "_webdash_config": lambda scr: run_webdash_config(scr),
-        "_push_interval": lambda scr: run_push_interval(scr),
-        "_wifi_fallback": lambda scr: run_wifi_fallback(scr),
-        "_bluetooth":   lambda scr: run_bluetooth(scr),
-        "_ssh":         lambda scr: run_ssh_bookmarks(scr),
-        "_git":         lambda scr: run_git_panel(scr),
-        "_notes":       lambda scr: run_notes(scr),
-        "_calc":        lambda scr: run_calculator(scr),
-        "_stopwatch":   lambda scr: run_stopwatch(scr),
-        "_pomodoro":    lambda scr: run_pomodoro(scr),
-        "_weather":     lambda scr: run_weather(scr),
-        "_hackernews":  lambda scr: run_hackernews(scr),
-        "_forum":       lambda scr: run_forum(scr),
-        "_telegram":    lambda scr: run_telegram(scr),
-        "_mdviewer":    lambda scr: run_mdviewer(scr),
-        "_cron":        lambda scr: run_cron_viewer(scr),
-        "_screenshot":  lambda scr: run_screenshot(scr),
-        "_minesweeper": lambda scr: run_minesweeper(scr),
-        "_snake":       lambda scr: run_snake(scr),
-        "_tetris":      lambda scr: run_tetris(scr),
-        "_2048":        lambda scr: run_2048(scr),
-        "_romlauncher": lambda scr: run_romlauncher(scr),
-        "_watchdogs":          lambda scr: run_watchdogs(scr),
-        "_watchdogs_config":   lambda scr: run_watchdogs_config(scr),
-        "_esp32_monitor": lambda scr: run_esp32_monitor(scr),
-        "_esp32_hub":     lambda scr: run_esp32_hub(scr),
-        "_esp32_flash":   lambda scr: run_esp32_flash_picker(scr),
-        "_esp32_usb_reset": lambda scr: _esp32_usb_reset(scr),
-        "_esp32_redetect": lambda scr: _esp32_redetect(scr),
-        "_esp32_force_mp":  lambda scr: run_esp32_force(scr, _Firmware_MP()),
-        "_esp32_force_mrd": lambda scr: run_esp32_force(scr, _Firmware_MRD()),
-        "_marauder":      lambda scr: run_marauder(scr),
-        "_gps_globe":     lambda scr: run_gps_globe(scr),
-        "_fm_radio":      lambda scr: run_fm_radio(scr),
-        "_adsb_map":          lambda scr: run_adsb_map(scr),
-        "_adsb_table":        lambda scr: run_adsb_table(scr),
-        "_adsb_set_home":     lambda scr: run_adsb_set_home(scr),
-        "_adsb_home_picker":  lambda scr: run_home_picker_action(scr),
-        "_adsb_layers":       lambda scr: _adsb_layers_menu_entry(scr, run_layer_picker),
-        "_adsb_fetch_hires":  lambda scr: _adsb_fetch_hires_entry(scr, _adsb_hires_mod, _adsb_mod),
-        "_adsb_basemap_info": lambda scr: run_basemap_info(scr),
-    }
-
-
-def _adsb_layers_menu_entry(scr, run_layer_picker):
-    from tui.adsb import DEFAULT_LAYERS
-    cfg = load_config()
-    cur = int(cfg.get("adsb_layers", DEFAULT_LAYERS))
-    new_mask = run_layer_picker(scr, cur)
-    if new_mask is not None:
-        save_config("adsb_layers", new_mask)
-
-
-def _adsb_fetch_hires_entry(scr, hires_mod, adsb_mod):
-    """Menu wrapper for hi-res fetch — runs synchronously with progress in this screen."""
-    import curses
-    import time
-    cfg = load_config()
-    home_lat = cfg.get("adsb_home_lat")
-    home_lon = cfg.get("adsb_home_lon")
-    h, w = scr.getmaxyx()
-    scr.erase()
-    dim = curses.color_pair(C_DIM)
-    hdr = curses.color_pair(C_CAT) | curses.A_BOLD
-    ok_attr = curses.color_pair(C_OK) | curses.A_BOLD if hasattr(curses, 'color_pair') else 0
-    crit = curses.color_pair(C_CRIT)
-    if home_lat is None:
-        tui.put(scr,2, 2, "Set home location first.", w - 4, crit)
-        tui.put(scr,h - 1, 2, "press any key", w - 4, dim)
-        scr.refresh()
-        scr.timeout(-1)
-        scr.getch()
+def _maybe_power_rail(key):
+    """Best-effort: power on the AIO rail this submenu depends on."""
+    rail = _RAIL_DEPENDENT.get(key)
+    if not rail:
         return
-    tui.put(scr,1, 2, "FETCH HI-RES BASEMAP", w - 4, hdr)
-    tui.put(scr,3, 2, f"Region: {home_lat:.3f}, {home_lon:.3f}  (±5° lat, ±7° lon)", w - 4, dim)
-    tui.put(scr,4, 2, "Source: github.com/nvkelso/natural-earth-vector (1:10m)", w - 4, dim)
-    tui.put(scr,5, 2, "Layers: coastlines, countries, states, lakes, rivers, airports", w - 4, dim)
-    tui.put(scr,7, 2, "Background fetch — you can return to the map immediately.", w - 4, dim)
-    tui.put(scr,9, 2, "y = start fetch    n = cancel", w - 4, hdr)
-    scr.refresh()
-    scr.timeout(-1)
-    while True:
-        k = scr.getch()
-        if k in (ord('y'), ord('Y')):
-            state = {"status": "idle", "msg": "", "banner_dismissed": False}
-            hires_mod.start_fetch(home_lat, home_lon, state)
-            tui.put(scr,11, 2, "Fetch started in background. Returning to menu.",
-                w - 4, curses.color_pair(C_OK) | curses.A_BOLD)
-            scr.refresh()
-            time.sleep(1)
-            scr.timeout(100)
-            return
-        if k in (ord('n'), ord('N'), ord('q'), 27):
-            scr.timeout(100)
-            return
-
-NATIVE_TOOLS = None
+    try:
+        from tui.aio import ensure_rail
+        ensure_rail(rail)
+    except Exception:
+        # Auto-power is best-effort; never block the submenu open.
+        pass
 
 
 def run_script(scr, script_name, title, mode):
     """Dispatch to the appropriate runner based on mode. Returns 'switch_view' or None."""
-    global NATIVE_TOOLS
-    if NATIVE_TOOLS is None:
-        NATIVE_TOOLS = _get_native_tools()
     if mode == "submenu":
+        _maybe_power_rail(script_name)
         return run_submenu(scr, script_name, title)
-    if script_name in NATIVE_TOOLS:
-        result = NATIVE_TOOLS[script_name](scr)
+    if script_name.startswith("_gui:"):
+        run_gui_launch(scr, script_name[5:], title)
+        return None
+    if script_name.startswith("_url:"):
+        run_url_open(scr, script_name[5:], title)
+        return None
+    handlers = _get_handlers()
+    if script_name in handlers:
+        handlers[script_name](scr)
         if script_name == "_viewmode":
             return "switch_view"
+        return None
+    # An underscored target with no registered handler means the feature
+    # module failed to import — silently no-op (the failure was already
+    # logged to ~/crash.log by _load_handlers).
+    if script_name.startswith("_"):
         return None
     # Confirmation gate for dangerous commands at top level
     if script_name in CONFIRM_SCRIPTS:
@@ -2485,13 +2284,38 @@ def main(scr):
     return None
 
 
+def _migrate_legacy_config():
+    """Copy older config files into CONFIG_FILE on first run.
+
+    Two legacy locations, both inside SCRIPT_DIR (root-owned post-deploy):
+      - .console-theme.json   (0.1.x — theme only)
+      - .console-config.json  (0.2.x — full config)
+
+    Copy rather than rename, since the old file lives in a root-owned tree
+    on packaged installs and rename would fail. The orphan stays put; it's
+    no longer read once CONFIG_FILE exists.
+    """
+    if os.path.isfile(CONFIG_FILE):
+        return
+    for legacy in (
+        os.path.join(SCRIPT_DIR, ".console-config.json"),
+        os.path.join(SCRIPT_DIR, ".console-theme.json"),
+    ):
+        if not os.path.isfile(legacy):
+            continue
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(legacy) as src, open(CONFIG_FILE, "w") as dst:
+                dst.write(src.read())
+            return
+        except OSError:
+            continue
+
+
 def entry(scr):
     """Entry point that switches between list and tile views."""
     _init_workspace()
-    # Migrate old config
-    old_config = os.path.join(SCRIPT_DIR, ".console-theme.json")
-    if os.path.isfile(old_config) and not os.path.isfile(CONFIG_FILE):
-        os.rename(old_config, CONFIG_FILE)
+    _migrate_legacy_config()
 
     while True:
         mode = load_view_mode()

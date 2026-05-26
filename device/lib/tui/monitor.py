@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import socket
 import subprocess
 import time
 
@@ -31,9 +32,16 @@ def run_live_monitor(scr):
     prev_rx = prev_tx = prev_time = 0
 
     js = open_gamepad()
-    scr.timeout(1000)
+    refresh_ms = int(load_config().get("monitor_refresh_ms", 1000))
+    if refresh_ms < 100 or refresh_ms > 60000:
+        refresh_ms = 1000
+    refresh_label = f"{refresh_ms}ms" if refresh_ms < 1000 else f"{refresh_ms // 1000}s"
+    scr.timeout(refresh_ms)
 
     tui.init_gauge_colors()
+    # Header name = system hostname (uppercased); falls back to "UCONSOLE".
+    host_name = (socket.gethostname() or "uconsole").upper()
+
     def net_bytes():
         rx = tx = 0
         try:
@@ -78,12 +86,13 @@ def run_live_monitor(scr):
         up_h_val = int(up_s // 3600)
         up_m_val = int((up_s % 3600) // 60)
 
-        hdr_l = f"  ◈ UCONSOLE"
+        hdr_l = f"  ◈ {host_name}"
+        hdr_overlay = f" ◈ {host_name}"
         hdr_r = f"{ts}  up {up_h_val}h{up_m_val:02d}m  "
         hdr_fill = w - len(hdr_l) - len(hdr_r)
         hdr_mid = "─" * max(1, hdr_fill)
         tui.put(scr, 0, 0, hdr_l + hdr_mid + hdr_r, w, brd)
-        tui.put(scr, 0, 2, " ◈ UCONSOLE", 11, hdr)
+        tui.put(scr, 0, 2, hdr_overlay, len(hdr_overlay), hdr)
         tui.put(scr, 0, w - len(hdr_r), hdr_r, len(hdr_r), val)
 
         # ═══════════════════════════════════════════════════════
@@ -198,19 +207,45 @@ def run_live_monitor(scr):
         except Exception:
             pass
 
-        # WiFi
-        ssid = ip_addr = signal = ""
+        # Primary network — follow the lowest-metric default route so ethernet
+        # wins display when plugged in, falling back to wifi otherwise.
+        primary_iface = primary_kind = ssid = ip_addr = signal = ""
         try:
-            ssid = subprocess.check_output(["iwgetid", "-r"], stderr=subprocess.DEVNULL, timeout=1).decode().strip()
-            ip_addr = subprocess.check_output(["hostname", "-I"], timeout=1).decode().split()[0]
+            routes = json.loads(subprocess.check_output(
+                ["ip", "-j", "-4", "route", "show", "default"],
+                stderr=subprocess.DEVNULL, timeout=1).decode())
+            routes.sort(key=lambda r: r.get("metric", 0))
+            for r in routes:
+                dev = r.get("dev", "")
+                if dev.startswith("eth"):
+                    primary_iface, primary_kind = dev, "ethernet"; break
+                if dev.startswith("wlan") or dev.startswith("wlp"):
+                    primary_iface, primary_kind = dev, "wifi"; break
         except Exception:
             pass
-        try:
-            iwout = subprocess.check_output(["iwconfig", "wlan0"], stderr=subprocess.DEVNULL, timeout=1).decode()
-            m = re.search(r'Signal level=(\S+)', iwout)
-            signal = f"{m.group(1)}dBm" if m else ""
-        except Exception:
-            pass
+        if primary_iface:
+            try:
+                addrs = json.loads(subprocess.check_output(
+                    ["ip", "-j", "-4", "addr", "show", "dev", primary_iface],
+                    stderr=subprocess.DEVNULL, timeout=1).decode())
+                ip_addr = addrs[0]["addr_info"][0]["local"]
+            except Exception:
+                pass
+        if primary_kind == "wifi":
+            try:
+                ssid = subprocess.check_output(
+                    ["iwgetid", primary_iface, "-r"],
+                    stderr=subprocess.DEVNULL, timeout=1).decode().strip()
+            except Exception:
+                pass
+            try:
+                iwout = subprocess.check_output(
+                    ["iwconfig", primary_iface],
+                    stderr=subprocess.DEVNULL, timeout=1).decode()
+                m = re.search(r'Signal level=(\S+)', iwout)
+                signal = f"{m.group(1)}dBm" if m else ""
+            except Exception:
+                pass
 
         # TOP processes
         top_procs = []
@@ -420,9 +455,12 @@ def run_live_monitor(scr):
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, "⠉ rx  ", 6, curses.color_pair(C_STATUS))
         tui.put(scr, ry, rx + 9, "⠉ tx", 4, curses.color_pair(C_CAT))
-        if ssid:
-            wifi_info = f"  {ssid}  {ip_addr}  {signal}"
-            tui.put(scr, ry, rx + 14, wifi_info, pw_r - 16, dim)
+        if primary_kind == "ethernet":
+            net_info = f"  Wired  {ip_addr}"
+            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
+        elif ssid:
+            net_info = f"  {ssid}  {ip_addr}  {signal}"
+            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
         ry += 1
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, f"total ↓{rx_now // (1024**2)}MB ↑{tx_now // (1024**2)}MB", pw_r - 4, dim)
@@ -430,7 +468,7 @@ def run_live_monitor(scr):
         tui.panel_bot(scr, ry, rx, pw_r)
 
         # ── Footer ──
-        footer = f" ◈ t{tick}  1s refresh  B Back "
+        footer = f" ◈ t{tick}  {refresh_label} refresh  B Back "
         tui.put(scr, h - 1, 0, "─" * w, w, brd)
         fx = (w - len(footer)) // 2
         tui.put(scr, h - 1, fx, footer, len(footer), brd)
@@ -580,7 +618,7 @@ def run_esp32_monitor(scr):
         tui.put(scr, y, lx + 2, f"last update: {age_str}", pw_l - 4, dim)
         y += 1
         tui.panel_side(scr, y, lx, pw_l)
-        tui.put(scr, y, lx + 2, "WiFi: HomeWiFi - 2.4GHz", pw_l - 4, dim)
+        tui.put(scr, y, lx + 2, "WiFi: -", pw_l - 4, dim)
         y += 1
         tui.panel_bot(scr, y, lx, pw_l)
 
@@ -652,3 +690,9 @@ def run_esp32_monitor(scr):
     if js:
         js.close()
     scr.timeout(100)
+
+
+HANDLERS = {
+    "_monitor":       run_live_monitor,
+    "_esp32_monitor": run_esp32_monitor,
+}

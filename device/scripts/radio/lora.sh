@@ -9,6 +9,8 @@ SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SPI_DEV="/dev/spidev1.0"
 LORA_CONF="$HOME/.config/uconsole/lora.conf"
 WEBDASH_API="http://localhost:8080/api/lora"
+# python3-spidev is system-only; user shells may sit in venvs that lack it
+PYTHON3="${PYTHON3:-/usr/bin/python3}"
 
 usage() {
     cat <<EOF
@@ -50,10 +52,24 @@ load_config() {
     LORA_CR=5
     LORA_SYNC=0x12
 
-    if [ -f "$LORA_CONF" ]; then
-        # shellcheck source=/dev/null
-        source "$LORA_CONF"
-    fi
+    [ -f "$LORA_CONF" ] || return 0
+
+    # Parse known keys explicitly. The config is user-writable; sourcing it
+    # would let any future write-path (typo, bad merge, malicious diff) turn
+    # it into RCE. Each value is type-checked before it overrides a default.
+    local _v
+    _lora_read() {
+        grep -E "^[[:space:]]*$1=" "$LORA_CONF" 2>/dev/null \
+            | tail -n1 \
+            | sed -E "s/^[[:space:]]*$1=//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/"
+    }
+    _v=$(_lora_read LORA_FREQ);  [[ "$_v" =~ ^[0-9]+(\.[0-9]+)?$ ]]      && LORA_FREQ="$_v"
+    _v=$(_lora_read LORA_BW);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_BW="$_v"
+    _v=$(_lora_read LORA_SF);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_SF="$_v"
+    _v=$(_lora_read LORA_POWER); [[ "$_v" =~ ^-?[0-9]+$ ]]               && LORA_POWER="$_v"
+    _v=$(_lora_read LORA_CR);    [[ "$_v" =~ ^[0-9]+$ ]]                 && LORA_CR="$_v"
+    _v=$(_lora_read LORA_SYNC);  [[ "$_v" =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] && LORA_SYNC="$_v"
+    unset -f _lora_read
 }
 
 save_config() {
@@ -70,7 +86,7 @@ EOF
 }
 
 lora_py() {
-    python3 "$SCRIPTS_DIR/lora_helper.py" "$@"
+    "$PYTHON3" "$SCRIPTS_DIR/lora_helper.py" "$@"
 }
 
 cmd_status() {
@@ -92,9 +108,9 @@ cmd_status() {
     printf "  Config file:     %s\n" "$LORA_CONF"
 
     # Try to read SX1262 chip version
-    if [ -e "$SPI_DEV" ] && command -v python3 &>/dev/null; then
+    if [ -e "$SPI_DEV" ] && [ -x "$PYTHON3" ]; then
         printf "\nHardware check:\n"
-        python3 -c "
+        "$PYTHON3" -c "
 import spidev, subprocess, time
 def gpioset(pin, val):
     subprocess.run(['gpioset','-m','exit','gpiochip0',f'{pin}={val}'],capture_output=True)

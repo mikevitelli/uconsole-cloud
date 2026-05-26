@@ -5,6 +5,7 @@ import json
 import math
 import os
 import subprocess
+import time
 
 from tui.framework import (
     C_BORDER,
@@ -22,7 +23,108 @@ from tui.framework import (
 )
 import tui_lib as tui
 
-ADSB_JSON = "/run/dump1090-mutability/aircraft.json"
+ADSB_JSON = "/run/readsb/aircraft.json"
+_SERVICE = "readsb"
+
+
+def _alt(ac):
+    """Aircraft altitude — readsb uses alt_baro, dump1090-mutability used altitude."""
+    return ac.get("alt_baro", ac.get("altitude"))
+
+
+def _spd(ac):
+    """Aircraft ground speed — readsb uses gs, dump1090-mutability used speed."""
+    return ac.get("gs", ac.get("speed"))
+
+
+READSB_DEFAULTS = "/etc/default/readsb"
+
+
+def sync_home_to_readsb(lat, lon):
+    """Write --lat/--lon into /etc/default/readsb's DECODER_OPTIONS and restart readsb if running.
+
+    Returns (msg, ok) — msg is a short status string suitable for display,
+    ok is True on success. Silently no-ops if readsb is not installed.
+    """
+    import re
+    if not os.path.exists(READSB_DEFAULTS):
+        return ("readsb not installed — skipped", True)
+    try:
+        with open(READSB_DEFAULTS) as f:
+            text = f.read()
+    except OSError as e:
+        return (f"read failed: {e}", False)
+
+    new_args = f"--lat {lat:.6f} --lon {lon:.6f}"
+    line_re = re.compile(r'^DECODER_OPTIONS=.*$', re.MULTILINE)
+    m = line_re.search(text)
+    if m:
+        line = m.group(0)
+        # Strip existing --lat/--lon (with their numeric arg) and trailing whitespace inside the quotes
+        stripped = re.sub(r'\s*--lat\s+[-\d.]+', '', line)
+        stripped = re.sub(r'\s*--lon\s+[-\d.]+', '', stripped)
+        # Inject new lat/lon before the closing quote
+        if stripped.endswith('"'):
+            new_line = stripped[:-1].rstrip() + f' {new_args}"'
+        else:
+            new_line = stripped.rstrip() + f' {new_args}'
+        new_text = text[:m.start()] + new_line + text[m.end():]
+    else:
+        new_text = text.rstrip() + f'\nDECODER_OPTIONS="{new_args}"\n'
+
+    if new_text == text:
+        return ("readsb already at this location", True)
+
+    # sudo tee — write atomically as root
+    try:
+        proc = subprocess.run(
+            ["sudo", "-n", "tee", READSB_DEFAULTS],
+            input=new_text, capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            return (f"sudo tee failed: {(proc.stderr or '').strip()[:60]}", False)
+    except Exception as e:
+        return (f"write failed: {e}", False)
+
+    # Restart only if currently running — config will be picked up next start either way
+    if subprocess.run(["systemctl", "is-active", "--quiet", _SERVICE]).returncode == 0:
+        r = subprocess.run(
+            ["sudo", "-n", "systemctl", "restart", _SERVICE],
+            capture_output=True, text=True, timeout=15,
+        )
+        if r.returncode == 0:
+            return ("synced to readsb + restarted", True)
+        return (f"config saved but restart failed: {(r.stderr or '').strip()[:40]}", False)
+    return ("synced to readsb (will apply at next start)", True)
+
+
+def _ensure_dump1090():
+    """Start the feeder service if not already running. Returns True if we started it."""
+    try:
+        rc = subprocess.run(
+            ["systemctl", "is-active", "--quiet", _SERVICE]
+        ).returncode
+        if rc == 0:
+            return False
+        subprocess.run(
+            ["sudo", "-n", "systemctl", "start", _SERVICE],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.5)  # let readsb begin writing aircraft.json
+        return True
+    except Exception:
+        return False
+
+
+def _stop_dump1090():
+    """Stop dump1090 service."""
+    try:
+        subprocess.run(
+            ["sudo", "-n", "systemctl", "stop", _SERVICE],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 BASEMAP_GLOBAL = os.path.join(os.path.dirname(__file__), "adsb_basemap_global.json")
 BASEMAP_LEGACY = os.path.join(os.path.dirname(__file__), "adsb_basemap.json")  # backwards compat
 HIRES_CACHE_DIR = os.path.expanduser("~/.config/uconsole")
@@ -91,27 +193,48 @@ def _load_global_basemap():
 
 
 def _load_hires_basemap(home_lat, home_lon):
+    """Load the hires bundle for the current home. If no bundle exists for
+    this key, keep whatever was previously loaded so panning away from home
+    doesn't wipe out hires detail (global-lite still fills in beyond its
+    bbox via _iter_layer combining sources)."""
     key = _hires_key(home_lat, home_lon)
     if _BASEMAP["hires_key"] == key:
         return _BASEMAP["hires"]
-    _BASEMAP["hires_key"] = key
     path = _hires_path_for(key)
     try:
         with open(path) as f:
             _BASEMAP["hires"] = json.load(f)
+            _BASEMAP["hires_key"] = key
     except Exception:
-        _BASEMAP["hires"] = None
+        # No bundle for this key — keep prior cache. The panned viewport's
+        # bbox cull will hide hires features outside their region.
+        pass
     return _BASEMAP["hires"]
 
 
-def _iter_layer(layer_name, home_lat, home_lon):
-    """Yield items from the named layer, hires preferred over global."""
-    hires = _load_hires_basemap(home_lat, home_lon)
+def _iter_layer(layer_name, view_lat, view_lon):
+    """Pick hires when view is inside the loaded hires bundle's coverage,
+    else fall back to global-lite. This avoids stacking the coarse 1:110m
+    global over hires's 1:10m data — overlap looked like random extra
+    lines cutting through features (e.g. a state border sliced through
+    Staten Island at 1:110m resolution)."""
+    hires = _load_hires_basemap(view_lat, view_lon)
     if hires:
-        items = hires.get("layers", {}).get(layer_name)
-        if items:
-            yield from items
-            return
+        # Is the current view inside the hires bundle's coverage area?
+        # hires_key is "{home_lat}_{home_lon}" (rounded ints); coverage
+        # is ±5° lat, ±7° lon (matches adsb_hires.BBOX_PAD).
+        key = _BASEMAP.get("hires_key")
+        if key:
+            try:
+                hlat_str, hlon_str = key.split("_")
+                hlat, hlon = int(hlat_str), int(hlon_str)
+                if abs(view_lat - hlat) <= 6 and abs(view_lon - hlon) <= 8:
+                    items = hires.get("layers", {}).get(layer_name)
+                    if items:
+                        yield from items
+                        return
+            except (ValueError, AttributeError):
+                pass
     g = _load_global_basemap()
     items = g.get("layers", {}).get(layer_name) or []
     yield from items
@@ -221,7 +344,7 @@ def _load_aircraft():
             data = json.load(f)
         return data.get("aircraft", []), None
     except FileNotFoundError:
-        return [], "no receiver data — is dump1090 running?"
+        return [], "no receiver data — is readsb running?"
     except Exception as e:
         return [], f"read error: {e}"
 
@@ -348,6 +471,9 @@ def _set_home_from_gps(scr):
     else:
         save_config_multi({"adsb_home_lat": lat, "adsb_home_lon": lon})
         tui.put(scr, 6, 2, f"Home set: {lat:.5f}, {lon:.5f}", w - 4, ok)
+        sync_msg, sync_ok = sync_home_to_readsb(lat, lon)
+        sync_attr = ok if sync_ok else crit
+        tui.put(scr, 7, 2, f"readsb: {sync_msg}", w - 4, sync_attr)
 
     tui.put(scr, h - 1, 2, "press any key", w - 4, dim)
     scr.refresh()
@@ -361,6 +487,7 @@ def run_adsb_set_home(scr):
 
 def run_adsb_map(scr):
     """Real-time ADS-B aircraft map using BrailleCanvas."""
+    we_started = _ensure_dump1090()
     js = open_gamepad()
     scr.timeout(1000)
     tui.init_gauge_colors()
@@ -372,6 +499,11 @@ def run_adsb_map(scr):
     ring_count = int(_cfg.get("adsb_rings", 2))
     show_overlay = bool(_cfg.get("adsb_overlay", True))
     layers = int(_cfg.get("adsb_layers", DEFAULT_LAYERS))
+
+    # Pan offset (arrow keys) — view center = home + pan. Persists for session,
+    # cleared on 'c' (center). Not saved to config.
+    pan_lat = 0.0
+    pan_lon = 0.0
 
     # Session-local fetch state (set by adsb_hires.fetch_in_background)
     fetch_state = {"status": "idle", "msg": "", "banner_dismissed": False}
@@ -412,6 +544,10 @@ def run_adsb_map(scr):
 
         aircraft, err = _load_aircraft()
 
+        # View center = home + pan (arrows adjust). Clamp lat, wrap lon.
+        view_lat = max(-85.0, min(85.0, home_lat + pan_lat))
+        view_lon = ((home_lon + pan_lon + 180.0) % 360.0) - 180.0
+
         # Full-screen map: occupy entire terminal minus 1-row header and 1-row footer
         map_x = 0
         map_y = 1
@@ -421,7 +557,7 @@ def run_adsb_map(scr):
         canvas = tui.BrailleCanvas(map_w, map_h)
         active_layers = layers if show_overlay else 0
         if active_layers:
-            _draw_basemap_canvas(canvas, home_lat, home_lon, range_nm, active_layers)
+            _draw_basemap_canvas(canvas, view_lat, view_lon, range_nm, active_layers)
         if show_overlay and (active_layers & LAYER_RINGS):
             _draw_range_rings(canvas, range_nm, ring_count)
 
@@ -435,17 +571,17 @@ def run_adsb_map(scr):
             lon = ac.get("lon")
             if lat is None or lon is None:
                 continue
-            px, py, dx, dy = _project(lat, lon, home_lat, home_lon, range_nm, canvas.pw, canvas.ph)
+            px, py, dx, dy = _project(lat, lon, view_lat, view_lon, range_nm, canvas.pw, canvas.ph)
             dist = math.sqrt(dx * dx + dy * dy)
             if not (0 <= px < canvas.pw and 0 <= py < canvas.ph):
                 continue
             track = ac.get("track")
-            spd = ac.get("speed")
+            spd = _spd(ac)
             _draw_speed_vector(canvas, px, py, track, spd, vec_scale)
             visible.append({
                 "hex": (ac.get("hex") or "------").upper(),
                 "flight": (ac.get("flight") or "").strip() or "—",
-                "alt": ac.get("altitude"),
+                "alt": _alt(ac),
                 "spd": spd,
                 "trk": track,
                 "sqk": ac.get("squawk"),
@@ -463,7 +599,7 @@ def run_adsb_map(scr):
             tui.put(scr, map_y + i, map_x, row, map_w, map_attr)
 
         if show_overlay and (active_layers & LAYER_AIRPORTS):
-            _draw_airport_labels(scr, map_y, map_x, home_lat, home_lon, range_nm,
+            _draw_airport_labels(scr, map_y, map_x, view_lat, view_lon, range_nm,
                                  canvas.pw, canvas.ph,
                                  curses.color_pair(tui.C_WARN) | curses.A_BOLD)
         if show_overlay and (active_layers & LAYER_CARDINALS):
@@ -521,18 +657,39 @@ def run_adsb_map(scr):
             tui.put(scr, h - 2, 1, "✓ hi-res basemap ready  (x dismiss)", w - 2,
                     curses.color_pair(tui.C_OK) | curses.A_BOLD)
 
-        foot = "↑↓ sel  +/- zoom  l layers  r rings  o overlay  f hi-res  h home  q back"
+        # Pan indicator if off-home
+        if pan_lat or pan_lon:
+            pan_s = f"pan: {view_lat:+.2f},{view_lon:+.2f}  (c=center)"
+            tui.put(scr, 0, max(1, (w - len(pan_s)) // 2), pan_s, len(pan_s), dim)
+
+        foot = "arrows pan  +/- zoom  j/k sel  c center  l layers  r rings  o overlay  f hi-res  h home  q back"
         tui.put(scr, h - 1, 1, foot, w - 2, dim)
+
+        # Pan step: 40% of current view half-range
+        pan_step_nm = range_nm * 0.4
+        pan_step_lat = pan_step_nm / 60.0
+        pan_step_lon = pan_step_nm / (60.0 * max(0.01, math.cos(math.radians(view_lat))))
 
         scr.refresh()
         key, gp = _tui_input_loop(scr, js)
         if key in (ord("q"), ord("Q")) or gp == "back":
             break
         elif key == curses.KEY_UP or gp == "up":
-            selected = max(0, selected - 1)
+            pan_lat += pan_step_lat
         elif key == curses.KEY_DOWN or gp == "down":
+            pan_lat -= pan_step_lat
+        elif key == curses.KEY_LEFT or gp == "left":
+            pan_lon -= pan_step_lon
+        elif key == curses.KEY_RIGHT or gp == "right":
+            pan_lon += pan_step_lon
+        elif key in (ord("c"), ord("C")):
+            pan_lat = 0.0
+            pan_lon = 0.0
+        elif key in (ord("j"), ord("J")):
             if visible:
                 selected = min(len(visible) - 1, selected + 1)
+        elif key in (ord("k"), ord("K")):
+            selected = max(0, selected - 1)
         elif key in (ord("+"), ord("=")):
             zoom_idx = max(0, zoom_idx - 1)
             save_config("adsb_zoom_idx", zoom_idx)
@@ -571,11 +728,14 @@ def run_adsb_map(scr):
 
     if js:
         close_gamepad(js)
+    if we_started:
+        _stop_dump1090()
     scr.timeout(100)
 
 
 def run_adsb_table(scr):
     """Sorted table view of all visible aircraft."""
+    we_started = _ensure_dump1090()
     js = open_gamepad()
     scr.timeout(1000)
     top = 0
@@ -608,8 +768,8 @@ def run_adsb_table(scr):
             rows.append((
                 (ac.get("flight") or "").strip() or "—",
                 (ac.get("hex") or "------").upper(),
-                ac.get("altitude"),
-                ac.get("speed"),
+                _alt(ac),
+                _spd(ac),
                 ac.get("track"),
                 dist,
                 ac.get("squawk") or "—",
@@ -642,4 +802,13 @@ def run_adsb_table(scr):
 
     if js:
         close_gamepad(js)
+    if we_started:
+        _stop_dump1090()
     scr.timeout(100)
+
+
+HANDLERS = {
+    "_adsb_map":      run_adsb_map,
+    "_adsb_table":    run_adsb_table,
+    "_adsb_set_home": run_adsb_set_home,
+}

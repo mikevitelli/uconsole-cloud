@@ -1,6 +1,7 @@
 import { DeviceStatus } from "@/components/dashboard/DeviceStatus";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import type { DeviceStatusPayload, WifiFallbackStatus } from "@/lib/deviceStatus";
+import { buildLocalDashboardUrl } from "@/lib/network";
 
 interface DeviceStatusContent {
   heading?: string;
@@ -34,10 +35,10 @@ export function LocalModeShell({
 }: LocalModeShellProps) {
   // Support both new (deviceLocalIp) and legacy (deviceIp) prop names
   const deviceLocalIp = deviceLocalIpProp ?? deviceIp ?? null;
-  const webdashUrl =
-    deviceLocalIp && deviceLocalIp !== "none"
-      ? `https://${deviceLocalIp}`
-      : null;
+  // Only build the link when the value is a literal IP. Device-pushed
+  // values are not trusted — a compromised token could push a hostname
+  // (phishing) or characters that misparse the URL.
+  const webdashUrl = buildLocalDashboardUrl(deviceLocalIp);
 
   return (
     <>
@@ -86,7 +87,7 @@ export function LocalModeShell({
           </p>
 
           {/* Quick links */}
-          <QuickActions deviceLocalIp={deviceLocalIp!} />
+          <QuickActions baseUrl={webdashUrl} />
         </section>
       )}
 

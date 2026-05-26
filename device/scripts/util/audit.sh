@@ -6,8 +6,11 @@
 #        audit.sh untracked    Show files that will be picked up by next git add -A
 #        audit.sh categories   Show tracked files grouped by backup category
 
-# source lib.sh relative to this script's actual location
+# source lib.sh relative to this script's actual location.
+# Set BACKUP_TOOL=1 so lib.sh asserts REPO_DIR is the real backup repo —
+# audit.sh writes .gitignore and does git rm, so a wrong REPO_DIR would corrupt state.
 _AUDIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_TOOL=1
 source "$_AUDIT_DIR/lib.sh"
 
 # ── junk patterns ──

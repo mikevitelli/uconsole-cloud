@@ -10,7 +10,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-IFACE="wlan0"
+[ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+IFACE="${WIFI_IFACE:-wlan0}"
 
 # --- helpers ---
 

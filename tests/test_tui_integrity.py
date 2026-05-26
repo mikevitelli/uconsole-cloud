@@ -42,19 +42,6 @@ def get_framework_source():
         return f.read()
 
 
-def extract_imports_from_function(tree, func_name):
-    """Extract all 'from X import Y' statements inside a function."""
-    imports = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            for child in ast.walk(node):
-                if isinstance(child, ast.ImportFrom):
-                    module = child.module
-                    names = [alias.name for alias in child.names]
-                    imports.append((module, names))
-    return imports
-
-
 def extract_all_toplevel_imports(tree):
     """Extract all top-level 'from X import Y' and 'import X' statements."""
     imports = []
@@ -94,7 +81,7 @@ def _collect_script_refs(node, scripts):
     elif isinstance(node, ast.List):
         for elt in node.elts:
             _collect_script_refs(elt, scripts)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         # (label, script, desc, mode)
         script_node = node.elts[1]
         mode_node = node.elts[3]
@@ -109,17 +96,14 @@ def _collect_script_refs(node, scripts):
 
 
 def extract_native_tool_keys(source):
-    """Extract all native tool keys from _get_native_tools return dict."""
-    tree = ast.parse(source)
-    keys = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == '_get_native_tools':
-            for child in ast.walk(node):
-                if isinstance(child, ast.Return) and isinstance(child.value, ast.Dict):
-                    for key in child.value.keys:
-                        if isinstance(key, ast.Constant):
-                            keys.append(key.value)
-    return keys
+    """Return all handler keys registered via the FEATURE_MODULES → HANDLERS chain.
+
+    Loads the live handlers dict at runtime — covers everything any feature
+    module declares in its module-level HANDLERS export.  The *source* arg is
+    accepted for backwards compatibility but unused.
+    """
+    from tui.framework import _load_handlers
+    return list(_load_handlers().keys())
 
 
 def extract_menu_native_refs(source):
@@ -142,7 +126,7 @@ def _collect_native_refs(node, refs):
     elif isinstance(node, ast.List):
         for elt in node.elts:
             _collect_native_refs(elt, refs)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         script_node = node.elts[1]
         if isinstance(script_node, ast.Constant) and isinstance(script_node.value, str):
             if script_node.value.startswith('_'):
@@ -150,14 +134,31 @@ def _collect_native_refs(node, refs):
 
 
 def extract_submenu_refs(source):
-    """Extract all sub:xxx references from CATEGORIES."""
+    """Extract all sub:xxx references from CATEGORIES + SUBMENUS in framework.py
+    *plus* every _ESP32_*_ITEMS list in esp32_hub.py.
+
+    Reachability is transitive: if sub:foo only appears as a drilldown from
+    sub:bar, that's still a real reference. Limiting to CATEGORIES would
+    flag legitimately nested submenus (lora_mesh → lora_config) as orphans.
+    """
     refs = set()
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == 'CATEGORIES':
+                if isinstance(target, ast.Name) and target.id in ('CATEGORIES', 'SUBMENUS'):
                     _collect_submenu_refs(node.value, refs)
+
+    # Also scan esp32_hub.py — its _ESP32_*_ITEMS lists feed runtime SUBMENUS
+    esp32_hub_path = os.path.join(TUI_DIR, 'esp32_hub.py')
+    if os.path.isfile(esp32_hub_path):
+        with open(esp32_hub_path) as f:
+            hub_tree = ast.parse(f.read())
+        for node in ast.iter_child_nodes(hub_tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id.startswith('_ESP32_'):
+                        _collect_submenu_refs(node.value, refs)
     return refs
 
 
@@ -169,7 +170,7 @@ def _collect_submenu_refs(node, refs):
     elif isinstance(node, ast.Dict):
         for value in node.values:
             _collect_submenu_refs(value, refs)
-    elif isinstance(node, ast.Tuple) and len(node.elts) == 4:
+    elif isinstance(node, ast.Tuple) and len(node.elts) in (4, 5):
         script_node = node.elts[1]
         mode_node = node.elts[3]
         if (isinstance(script_node, ast.Constant) and isinstance(mode_node, ast.Constant)
@@ -213,46 +214,65 @@ class TestFrameworkSyntax:
 
 # ── Test: all imports in _get_native_tools resolve ─────────────────────────
 
-class TestNativeToolImports:
+class TestFeatureModuleImports:
+    """Every entry in framework.FEATURE_MODULES must import cleanly and expose HANDLERS."""
+
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.tree = parse_framework()
-        self.imports = extract_imports_from_function(self.tree, '_get_native_tools')
+        from tui.framework import FEATURE_MODULES
+        self.feature_modules = FEATURE_MODULES
 
-    def test_has_imports(self):
-        """_get_native_tools must have import statements."""
-        assert len(self.imports) > 0, "_get_native_tools has no imports"
+    def test_has_modules(self):
+        assert len(self.feature_modules) > 0, "FEATURE_MODULES is empty"
 
-    def test_each_import_resolves(self):
-        """Every 'from tui.X import Y' in _get_native_tools must resolve."""
+    def test_each_module_imports(self):
+        """Every entry in FEATURE_MODULES must be importable."""
         failures = []
-        for module, names in self.imports:
+        for mod_name in self.feature_modules:
             try:
-                mod = importlib.import_module(module)
-                for name in names:
-                    if not hasattr(mod, name):
-                        failures.append(f"{module}.{name} not found")
+                importlib.import_module(mod_name)
             except ImportError as e:
-                failures.append(f"Cannot import {module}: {e}")
+                failures.append(f"Cannot import {mod_name}: {e}")
         if failures:
-            pytest.fail("Import failures in _get_native_tools:\n" + "\n".join(f"  - {f}" for f in failures))
+            pytest.fail("Import failures in FEATURE_MODULES:\n" + "\n".join(f"  - {f}" for f in failures))
+
+    def test_each_module_exposes_handlers(self):
+        """Every entry in FEATURE_MODULES must export a non-empty HANDLERS dict."""
+        failures = []
+        for mod_name in self.feature_modules:
+            try:
+                mod = importlib.import_module(mod_name)
+            except ImportError:
+                continue  # covered by test_each_module_imports
+            handlers = getattr(mod, "HANDLERS", None)
+            if not isinstance(handlers, dict) or not handlers:
+                failures.append(f"{mod_name} missing or empty HANDLERS")
+        if failures:
+            pytest.fail("HANDLERS export failures:\n" + "\n".join(f"  - {f}" for f in failures))
 
 
-# Handlers that are dispatched dynamically at runtime (not statically referenced
-# in SUBMENUS or CATEGORIES) and are therefore exempt from the static-ref check.
-DYNAMIC_HANDLERS = {
-    # ESP32 handlers injected at runtime by _esp32_menu_for() / run_esp32_hub().
-    # These live in _ESP32_MICROPYTHON_ITEMS, _ESP32_MARAUDER_ITEMS, or
-    # _ESP32_COMMON_ITEMS and are written into SUBMENUS["sub:esp32"] dynamically,
-    # so the static AST checker cannot see them referenced in SUBMENUS/CATEGORIES.
-    "_esp32_monitor",    # in _ESP32_MICROPYTHON_ITEMS (MicroPython path)
-    "_marauder",         # in _ESP32_MARAUDER_ITEMS (Marauder path)
-    "_esp32_force_mp",   # injected by _esp32_menu_for() when firmware is UNKNOWN
-    "_esp32_force_mrd",  # injected by _esp32_menu_for() when firmware is UNKNOWN
-    "_esp32_usb_reset",  # in _ESP32_COMMON_ITEMS (all firmware paths)
-    "_esp32_flash",      # in _ESP32_COMMON_ITEMS (all firmware paths)
-    "_esp32_redetect",   # in _ESP32_COMMON_ITEMS (all firmware paths)
-}
+# Handlers dispatched dynamically at runtime (not statically referenced in
+# SUBMENUS or CATEGORIES) and therefore exempt from the static-ref check.
+# Sourced from esp32_hub at runtime so adding a new dynamic menu item doesn't
+# silently fall through to test_all_handlers_are_referenced as an "orphan".
+
+def _dynamic_handlers():
+    from tui import esp32_hub
+    keys = set()
+    for items in (esp32_hub._ESP32_MICROPYTHON_ITEMS,
+                  esp32_hub._ESP32_MARAUDER_ITEMS,
+                  esp32_hub._ESP32_COMMON_ITEMS,
+                  esp32_hub._ESP32_MIMICLAW_ITEMS):
+        for item in items:
+            target = item[1]
+            if isinstance(target, str) and target.startswith("_") and not target.startswith("_gui:") and not target.startswith("_url:"):
+                keys.add(target)
+    # Manual: * entries injected when firmware is UNKNOWN
+    keys.update({"_esp32_force_mp", "_esp32_force_mrd", "_esp32_force_mc"})
+    return keys
+
+
+DYNAMIC_HANDLERS = _dynamic_handlers()
 
 
 # ── Test: all native tool keys in menus have handlers ──────────────────────
@@ -265,10 +285,15 @@ class TestNativeToolCoverage:
         self.menu_refs = extract_menu_native_refs(self.source)
 
     def test_all_menu_refs_have_handlers(self):
-        """Every underscore-prefixed ref in menus must exist in _get_native_tools."""
-        missing = self.menu_refs - self.tool_keys
+        """Every underscore-prefixed ref in menus must resolve to a registered handler.
+
+        Skips _gui: and _url: prefixes (handled separately by run_script).
+        """
+        skipped_prefixes = ("_gui:", "_url:")
+        actionable = {r for r in self.menu_refs if not r.startswith(skipped_prefixes)}
+        missing = actionable - self.tool_keys
         if missing:
-            pytest.fail(f"Menu references with no handler in _get_native_tools: {missing}")
+            pytest.fail(f"Menu references with no registered handler: {missing}")
 
     def test_all_handlers_are_referenced(self):
         """Every handler in _get_native_tools should be referenced in a menu.
@@ -321,6 +346,27 @@ class TestSubmenuIntegrity:
 
 # ── Test: all script paths resolve to real files ───────────────────────────
 
+# Scripts that the menu references but that are intentionally NOT shipped
+# in the public tree. They live in private repos (e.g. ~/pkg) and land in
+# /opt/uconsole/scripts/ at install time, so the menu reference is correct
+# from a runtime perspective. The test must skip them so CI doesn't false-
+# fail on the absence.
+#
+# Single source of truth: packaging/private_scripts.txt — also consumed by
+# packaging/build-deb.sh to scrub + post-build assert.
+def _load_private_scripts():
+    path = os.path.join(os.path.dirname(__file__), '..', 'packaging', 'private_scripts.txt')
+    out = set()
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                out.add(line)
+    return out
+
+KNOWN_PRIVATE_SCRIPTS = _load_private_scripts()
+
+
 class TestScriptPaths:
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -332,9 +378,14 @@ class TestScriptPaths:
         assert len(self.script_refs) > 0
 
     def test_each_script_exists(self):
-        """Every script path referenced in menus must exist in device/scripts/."""
+        """Every script path referenced in menus must exist in device/scripts/.
+
+        Skips KNOWN_PRIVATE_SCRIPTS — see above.
+        """
         missing = []
         for script_path in self.script_refs:
+            if script_path in KNOWN_PRIVATE_SCRIPTS:
+                continue
             full_path = os.path.join(SCRIPTS_DIR, script_path)
             if not os.path.isfile(full_path):
                 missing.append(script_path)

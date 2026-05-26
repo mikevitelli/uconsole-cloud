@@ -6,7 +6,7 @@
 
 <br/>
 
-**Remote monitoring and management for the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole).**
+**A complete software stack for the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) — TUI, web dashboard, and optional cloud telemetry.**
 
 [![Live](https://img.shields.io/badge/live-uconsole.cloud-58a6ff?style=for-the-badge)](https://uconsole.cloud)
 
@@ -24,13 +24,17 @@
 
 ## What is this?
 
-A three-tier platform for managing the [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) — an RPi CM4 handheld Linux terminal running Debian Bookworm.
+The [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) is a handheld Linux terminal built around a Raspberry Pi CM4 or CM5 — a tiny keyboard, a 5" widescreen panel, a battery, and an expansion bay. Out of the box it's a stock Debian Bookworm install with a few ClockworkPi-specific tweaks. This repo turns it into a daily driver.
 
-- **Device** — a `.deb` installs a curses TUI (9 categories, 53 native tools — FM radio, global ADS-B map, Marauder, Telegram, Watch Dogs Go, ROM launcher, and more), a Flask web dashboard, 46 management scripts, and systemd services.
-- **Local network** — the webdash serves at `https://uconsole.local` via nginx + self-signed TLS + mDNS. No known WiFi? The device spins up a fallback AP (`uConsole`) so your phone or laptop can always reach it.
-- **Cloud** — [uconsole.cloud](https://uconsole.cloud) is a Next.js app that shows live device telemetry, backup coverage, system inventory, and hardware info from anywhere. Fully optional — everything works offline.
+**uconsole-cloud** is a three-tier stack:
 
-Hardware-optional features (RTL-SDR, LoRa, GPS, RTC, ESP32) gracefully degrade when the [HackerGadgets AIO expansion](https://www.hackergadgets.com/) isn't installed.
+- **Device** — a Debian `.deb` installs a curses TUI (`console`), a Flask web dashboard (`webdash`), an offline CLI AI agent (`uconsole-ai`), 50+ management scripts, and a handful of systemd units. Nothing leaves the device by default.
+- **Local network** — webdash serves at `https://uconsole.local` via nginx, self-signed TLS, and mDNS. When no known WiFi is in range, the device spins up a fallback AP (`uConsole` / `clockwork`) so your phone or laptop can always reach it.
+- **Cloud (optional)** — [uconsole.cloud](https://uconsole.cloud) is a Next.js dashboard that shows device telemetry, backup coverage, and hardware inventory from anywhere. Auth via GitHub OAuth, telemetry stored in Upstash Redis, opt-in per device.
+
+Hardware-optional features (RTL-SDR, LoRa, GPS, RTC, ESP32, dual-radio AC1200 WiFi) gracefully degrade when the [HackerGadgets AIO board](https://www.hackergadgets.com/) isn't installed. Everything works on both **AIO v1** and **AIO v2**, on both **CM4** and **CM5**.
+
+This is the public software half of a two-repo setup. The companion repo, `mikevitelli/uconsole` (private), captures the full installed device state — configs, dotfiles, WiFi profiles, SSH keys, package manifests — as a backup/restore reference.
 
 ---
 
@@ -92,191 +96,85 @@ curl -s https://uconsole.cloud/install | sudo bash
 uconsole setup
 ```
 
-The bootstrap adds the GPG-signed APT repo and installs the `uconsole-cloud` package. `uconsole setup` walks through hardware detection, passwords, SSL certs, and optional cloud linking. `sudo apt upgrade` handles future updates.
-
----
-
-## Polling and data flow
-
-Three independent data paths. Only one actually *polls*; the other two are event-driven or on-demand.
-
-### 1. Device → Cloud telemetry (systemd timer)
-
-This is the only real polling loop. A user-scope systemd timer fires `push-status.sh` on an interval (default 5 min, configurable via the TUI from `30s` to `30min`, or **off** to opt out entirely).
-
-```mermaid
-flowchart LR
-  Timer["<b>uconsole-status.timer</b><br/>OnUnitActiveSec (default 5min)"] --> Script["push-status.sh"]
-  Script --> Collect["Collect from sysfs/procfs<br/>battery · cpu · mem · disk<br/>wifi · aio board · hardware"]
-  Collect --> HTTP["POST /api/device/push<br/>Bearer <device_token>"]
-  HTTP --> Redis[("Upstash Redis<br/>persistent, keyed by user+device")]
-  Redis -. "read on page load" .-> Dashboard["Next.js Server Component"]
-
-  TUI["<b>TUI</b><br/>CONFIG → Push Interval"] -.->|rewrites OnUnitActiveSec<br/>or disables timer| Timer
-
-  classDef user fill:#1e3a5f,stroke:#58a6ff,color:#fff;
-  classDef cloud fill:#2d1a3d,stroke:#d67aff,color:#fff;
-  class TUI,Timer,Script,Collect user
-  class HTTP,Redis,Dashboard cloud
-```
-
-Collected every tick: battery (capacity, voltage, current, health), CPU (temp, load, cores), memory, disk, WiFi (SSID, signal, IP), screen brightness, AIO board presence (SDR, LoRa, GPS, RTC), hardware manifest, webdash status, hostname/kernel/uptime.
-
-**Opting out:** pick **Push Interval → off** in the TUI under `CONFIG`. The timer gets disabled via `systemctl --user disable --now uconsole-status.timer`. Reversible — picking any interval re-enables it.
-
-### 2. Cloud dashboard reads (no polling)
-
-The Next.js dashboard uses React Server Components. Redis is queried **once per page load**, on the server. No client-side setInterval, no WebSocket, no long-poll. Data refreshes when you navigate or reload.
-
-```mermaid
-flowchart LR
-  Browser["Browser"] -->|GET /<br/>(on load / nav)| Edge["Vercel Edge"]
-  Edge --> RSC["React Server Component<br/>app/page.tsx"]
-  RSC --> Redis[("Upstash Redis")]
-  Redis --> RSC
-  RSC -->|streamed HTML| Edge
-  Edge -->|streamed HTML| Browser
-
-  classDef cloud fill:#2d1a3d,stroke:#d67aff,color:#fff;
-  class Browser,Edge,RSC,Redis cloud
-```
-
-This means the dashboard is always "as fresh as the last push". If your device has pushed in the last 5 minutes you see live state; if it's offline you see the last-known snapshot with a staleness indicator.
-
-### 3. Local webdash (on-demand + SSE)
-
-The Flask webdash at `https://uconsole.local` reads sysfs and runs shell scripts **on request**. The Live Monitor panel uses Server-Sent Events for a 1-second push from Flask → browser while the panel is open; closing the panel ends the stream.
-
-```mermaid
-flowchart LR
-  Phone["Phone / Laptop<br/>on same WiFi"] -->|https://uconsole.local| Avahi["Avahi<br/>mDNS"]
-  Avahi --> Nginx["nginx :443<br/>TLS + reverse proxy"]
-  Nginx -->|proxy_pass| Flask["Flask webdash :8080"]
-  Flask -->|read on request| Sysfs["sysfs / procfs"]
-  Flask -->|run on request| Scripts["46 scripts<br/>(power, net, radio, util)"]
-  Flask -. "SSE push 1s<br/>while Live Monitor open" .-> Nginx
-  Nginx -. "SSE push 1s" .-> Phone
-
-  classDef device fill:#1e3a5f,stroke:#58a6ff,color:#fff;
-  class Phone,Avahi,Nginx,Flask,Sysfs,Scripts device
-```
-
-No scheduled background polling from the webdash itself — scripts only run when you click them.
-
----
-
-## Device telemetry payload
-
-`push-status.sh` collects from sysfs and procfs on each tick:
-
-| Category | Source | Metrics |
-|----------|--------|---------|
-| Battery | `/sys/class/power_supply/axp20x-battery/` | capacity, voltage, current, status, health |
-| CPU | `/sys/class/thermal/`, `/proc/loadavg` | temperature, load average, core count |
-| Memory | `/proc/meminfo` | total, used, available |
-| Disk | `df` | total, used, available, percent |
-| WiFi | `iwconfig wlan0` | SSID, signal dBm, quality, bitrate, IP |
-| Screen | `/sys/class/backlight/` | brightness, max brightness |
-| AIO Board | `lsusb`, `/dev/spidev4.0`, `i2cdetect` | SDR, LoRa, GPS fix, RTC sync |
-| Hardware | `/etc/uconsole/hardware.json` | expansion module, component detection |
-| Webdash | `systemctl` | running, port |
-| System | `hostname`, `uname`, `/proc/uptime` | hostname, kernel, uptime |
-
----
-
-## uconsole CLI
-
-```
-uconsole setup       Interactive setup wizard (hardware detect, passwords, SSL, cloud link)
-uconsole link        Link device to uconsole.cloud (code auth + QR, no wizard)
-uconsole push        Push status to cloud now
-uconsole status      Show config, timer status, last push time
-uconsole doctor      Diagnose services, SSL, nginx, connectivity, cron/timer conflicts
-uconsole restore     Run restore.sh from backup repo
-uconsole unlink      Remove cloud config and stop timer
-uconsole update      Update via APT
-uconsole logs [svc]  Tail systemd logs for a service (defaults to webdash)
-uconsole version     Show installed version
-uconsole help        Show all commands
-```
-
----
-
-## .deb package
-
-```
-uconsole-cloud_x.y.z_arm64.deb
-├── /opt/uconsole/
-│   ├── bin/         uconsole CLI, console TUI launcher
-│   ├── lib/         tui_lib.py, ascii_logos.py, tui/ submodules
-│   ├── scripts/     46 scripts (system, power, network, radio, util)
-│   ├── webdash/     Flask app (app.py, templates, static, docs)
-│   └── share/       themes, battery-data, esp32 firmware, defaults
-├── /etc/uconsole/           uconsole.conf, hardware.json, ssl/
-├── /etc/systemd/system/     7 unit files (not auto-enabled)
-├── /etc/nginx/sites-available/  uconsole-webdash
-├── /etc/avahi/services/     mDNS advertisement
-└── /usr/bin/uconsole, /usr/bin/console  symlinks into /opt/uconsole/bin/
-```
-
-**Dependencies:** `python3`, `python3-flask`, `python3-bcrypt`, `python3-socketio`, `curl`, `nginx`, `systemd`, `qrencode`
-**Recommends:** `avahi-daemon`, `network-manager`
-**Suggests:** `gpsd`, `rtl-sdr`, `gh`
-
-Services install but **do not auto-start** — `uconsole setup` enables them after interactive configuration.
+The bootstrap adds the GPG-signed APT repo and installs the `uconsole-cloud` package. `uconsole setup` walks through hardware detection, passwords, SSL cert generation, and optional cloud linking. From there, `sudo apt upgrade` handles future updates like any other Debian package.
 
 ---
 
 ## TUI (`console`)
 
 ```
-SYSTEM   MONITOR   FILES   POWER   NETWORK   RADIO   SERVICES   TOOLS   GAMES   CONFIG
+SYSTEM   MONITOR   FILES   POWER   NETWORK   HARDWARE   TOOLS   GAMES   CONFIG
 ```
 
-53 native tools wired into 9 categories, plus direct-run shell scripts. Gamepad and keyboard input (curses). Highlights:
+A curses launcher with full gamepad + keyboard input, organized into 9 categories backed by 23 feature modules. Each module is import-isolated, so a broken module hides only its own menu entry — the rest of the TUI keeps working.
 
-- **MONITOR** — 1-second live gauges for CPU, memory, disk, temperature, battery, network
-- **RADIO** — FM radio, GPS globe, global ADS-B map with layered basemap and hi-res fetch, ESP32 Marauder hub
-- **TOOLS** — git panel, notes, calculator, stopwatch, Telegram client (tg + tdlib), weather, Hacker News, uConsole forum
-- **GAMES** — Watch Dogs Go (auto-installs on first launch), minesweeper, snake, tetris, 2048, ROM launcher
-- **CONFIG** — theme picker, view mode, keybinds, battery gauge, trackball scroll, push interval, Watch Dogs config
+Highlights from across the categories:
 
-External programs (emulators, Watch Dogs Go) launch through a shared `tui.launcher` helper that uses `start_new_session=True` + `DEVNULL` stdio, so a child exit or crash can't signal the curses parent.
+- **MONITOR** — 1-second live gauges for CPU, memory, disk, temperature, battery, and network; hostname-aware header, configurable refresh rate
+- **POWER** — battery health curves tuned for Samsung INR18650-35E cells, CPU frequency caps, PMU voltage floor, low-battery shutdown
+- **NETWORK** — WiFi connect/scan/hotspot/iPhone-tether, WiFi Radio Mode picker (CM5 onboard / AC1200 / both), antenna array braille ribbon monitor for the MT7921 2x2 chains
+- **HARDWARE** — AIO v2 rail dashboard (GPS / LoRa / SDR / USB power gating + telemetry), GPS globe, FM radio, global ADS-B map with hi-res basemap fetch (powered by readsb + viewadsb), Meshtastic mesh map (SX1262 LoRa, with the TCXO init fix that was missing upstream), ESP32 hub for Marauder / MicroPython / MimiClaw firmware flashing and chat
+- **TOOLS** — git panel, notes, calculator, stopwatch, Telegram client (tdlib), weather, Hacker News, uConsole forum browser, offline AI agent shell (`uconsole-ai`)
+- **GAMES** — Watch Dogs Go (auto-installs on first launch), minesweeper, snake, tetris, 2048, ROM launcher with crash-safe detached spawn
+- **CONFIG** — theme picker, view mode, keybinds, cloud push interval, Watch Dogs config
 
----
-
-## API routes (cloud)
-
-| Route | Method | Auth | Purpose |
-|-------|--------|------|---------|
-| `/api/device/code` | POST | No | Generate device code (rate-limited 5/min/IP) |
-| `/api/device/code/confirm` | POST | Session | Confirm code, issue device token |
-| `/api/device/poll/[secret]` | GET | No | Poll for code confirmation |
-| `/api/device/push` | POST | Bearer | Accept device telemetry |
-| `/api/device/status` | GET | Session | Fetch cached status + online flag |
-| `/api/github/*` | GET/POST | Session | GitHub API proxy |
-| `/api/settings` | GET/POST/DELETE | Session | User settings, repo linking |
-| `/api/scripts/[name]` | GET | No | Serve allowlisted scripts |
-| `/api/health` | GET | No | Redis health check |
-| `/install` | GET | No | APT bootstrap script |
-| `/apt/*` | GET | No | GPG-signed APT repository |
-
-See [docs/DEVICE-LINKING.md](docs/DEVICE-LINKING.md) for the full device auth flow.
+External programs (emulators, Watch Dogs Go, terminal apps) launch through a shared `tui.launcher` helper, so a child crash can never signal the curses parent.
 
 ---
 
-## Security
+## Subsystem highlights
 
-| Protection | Implementation |
-|------------|----------------|
-| Auth | NextAuth v5 + GitHub OAuth, middleware-enforced on all API routes |
-| Device auth | Bearer tokens (90-day UUIDs), rate-limited code generation (5/min/IP) |
-| Input validation | Path traversal blocks, SHA regex, strict repo format validation |
-| Headers | CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy |
-| Data isolation | Redis keys scoped by repo, device tokens scoped by user |
-| Local TLS | Self-signed cert at `/etc/uconsole/ssl/` (generated at install) |
-| Secrets | `status.env` is chmod 600, owned by device user |
-| APT repo | GPG-signed `Release` files, key distributed via HTTPS |
+**Offline AI agent** — `uconsole-ai` is a stdlib-only Python CLI that talks to a local Ollama daemon (default model `qwen2.5:7b`). It has `run_bash`, `read_file`, `write_file`, and `list_dir` tools, with confirmation prompts on mutating commands. System prompt is built from `CLAUDE.md` so the model has the device's full context. Works fully offline.
+
+**MimiClaw chat portal** — a TUI client for the MimiClaw ESP32 AI gadget. Serial-based IP auto-discovery (no static config), WebSocket chat on port 18789, markdown rendering, WiFi config panel that can copy credentials from the host uConsole or scan and enter manually.
+
+**ESP32 Marauder + wardrive (beta)** — full Marauder control over serial: scan/select/attack workflow with live braille RSSI waveforms, GPS-tagged AP capture, OSM street overlay via Overpass API, MapLibre GL replay viewer in webdash.
+
+**Meshtastic** — wrapper aligned to the canonical Meshtastic CLI, packet listener that filters into one-line summaries, full mesh-map visualization in the TUI. Ships with the SX1262 init fixes (TCXO control, image-rejection cal, DIO2-as-RF-switch) that AIO v1 boards need to actually transmit.
+
+**ADS-B** — migrated from the legacy `dump1090-mutability` to the actively-maintained `readsb` + `viewadsb`. Global layered basemap with hi-res fetch, layer picker, home picker, antenna-location sync.
+
+**Antenna Array monitor** — live braille ribbon for the AC1200 MT7921 2x2 chains. Per-chain RSSI on top/bottom traces with the band between them filled and colored by the A−B delta — flaky u.FL connectors show up as the ribbon fattening and going red.
+
+**Battery + power hygiene** — battery-safety units (opt-in, default off), AC-gated apt upgrades, CPU frequency caps, PMU voltage floor tuning, low-battery shutdown thresholds calibrated for INR18650-35E cells.
+
+**WiFi suite** — connect / scan / hotspot / iPhone-tether, plus `wifi-fallback.sh` (NetworkManager dispatcher that auto-creates the `uConsole` AP when no known network is around, tears it down when one appears) and the dual-radio mode picker for boards running both CM5 onboard WiFi and AC1200.
+
+---
+
+## `uconsole` CLI
+
+```
+uconsole setup       Interactive setup wizard
+uconsole link        Link device to uconsole.cloud (code auth + QR)
+uconsole push        Push status to cloud now
+uconsole status      Show config, timer status, last push time
+uconsole doctor      Diagnose services, SSL, nginx, connectivity
+uconsole restore     Run restore.sh from backup repo
+uconsole unlink      Remove cloud config and stop timer
+uconsole update      Update via APT
+uconsole logs [svc]  Tail systemd logs (default: webdash)
+uconsole version
+uconsole help
+```
+
+Tab completion is installed under `/usr/share/bash-completion/completions/`.
+
+---
+
+## Hardware target
+
+- **Compute:** ClockworkPi uConsole with RPi CM4 or CM5 (CM5 + AIO v2 + AC1200 verified)
+- **OS:** Debian Bookworm, aarch64
+- **Required:** nothing beyond stock — the package degrades cleanly without expansion hardware
+- **Supported peripherals:**
+  - HackerGadgets AIO v1 / v2 expansion (auto-detected)
+  - SX1262 LoRa over SPI1 (Meshtastic + raw LoRa)
+  - RTL-SDR USB dongles (ADS-B, FM radio)
+  - GPS over UART (gpsd)
+  - ESP32 / ESP32-S3 over USB serial (Marauder, MicroPython, MimiClaw)
+  - MT7921-based AC1200 dual-band WiFi card
+- **PCIe NVMe:** the project documents the `dtparam=pciex1_gen=2` derate required for the SN770M on the CM5 carrier — Gen 3 is unstable on the uConsole's PCIe routing.
 
 ---
 
@@ -284,17 +182,37 @@ See [docs/DEVICE-LINKING.md](docs/DEVICE-LINKING.md) for the full device auth fl
 
 | Layer | Technology |
 |-------|------------|
-| Framework | Next.js 16 (App Router, Server Components, Server Actions) |
+| Frontend framework | Next.js 16 (App Router, Server Components, Server Actions) |
 | Auth | NextAuth v5 (GitHub OAuth, JWT) |
 | Data | Upstash Redis (device telemetry, device codes) |
-| Backup data | GitHub REST API |
+| Backup data source | GitHub REST API |
 | CMS | Sanity v3 |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest 4 (frontend, 117 tests) + pytest (device, 997 tests) |
+| Testing | Vitest 4 (frontend) + pytest (device, ~1000 tests) |
 | Hosting | Vercel |
-| CI/CD | GitHub Actions (.deb build, APT publish) |
-| Device | Bash + Python, Flask webdash, curses TUI, systemd |
-| Packaging | dpkg + APT (arm64, GPG-signed repo on Vercel CDN) |
+| CI/CD | GitHub Actions (.deb build, APT publish, arm64 install test via QEMU) |
+| Device | Bash + Python 3, Flask webdash, curses TUI, systemd user + system units |
+| Packaging | dpkg + APT (arm64, GPG-signed `Release` files, repo hosted on Vercel CDN) |
+
+---
+
+## Security
+
+| Protection | Implementation |
+|------------|----------------|
+| Cloud auth | NextAuth v5 + GitHub OAuth, middleware-enforced on all API routes |
+| Device auth | Bearer tokens (90-day UUIDs), rate-limited code generation (5/min/IP) |
+| Push endpoint | Rate-limited + size-capped + shape-checked at `/api/device/push` |
+| Input validation | Path traversal blocks, SHA regex, strict repo format validation, device-pushed `wifi.ip` validated before href interpolation |
+| Headers | CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy |
+| Data isolation | Redis keys scoped by repo, device tokens scoped by user |
+| Local TLS | Self-signed cert at `/etc/uconsole/ssl/` (generated at install) |
+| Local secrets | `status.env` is chmod 600, owned by the device user |
+| APT repo | GPG-signed `Release` files, key distributed via HTTPS |
+| Shell hardening | `eval`/`source` of config files replaced with typed parsers; safety-critical PMU scripts run under `set -euo pipefail` |
+| CI | Third-party Actions pinned by SHA, workflow permissions locked down |
+
+Vulnerability disclosure: see [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -305,60 +223,48 @@ git clone https://github.com/mikevitelli/uconsole-cloud.git
 cd uconsole-cloud
 npm install
 
-cp frontend/.env.example frontend/.env.local
-# Fill in GITHUB_ID, GITHUB_SECRET, AUTH_SECRET,
-#         UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+cp frontend/.env.example frontend/.env.local   # GITHUB_ID, AUTH_SECRET, UPSTASH_*
 
 npm run dev            # frontend :3000, studio :3333
-npm test               # vitest
 make test              # pytest + frontend + lint
-make test-install      # .deb install verification in Debian arm64 Docker
+make test-install      # .deb install verification in arm64 Docker
 ```
 
-### Branching and release
+**Branching:** `dev` for active work (PRs target this), `main` for released state. Tagged releases are cut by merging `dev` → `main`, bumping `VERSION`, and running `make build-deb publish-apt`.
 
-- `main` — released state, tagged for GitHub Releases
-- `dev` — active development, CI runs on push
-- Feature branches branch from and merge back to `dev`
+**Working on the device package without packaging:** edit in `device/lib/`. The `console` launcher auto-detects `~/uconsole-cloud/device/lib/` and runs straight from the source tree — no `make install` needed for day-to-day TUI work. To force the deployed `/opt/uconsole/` copy, use `console-pkg` or `UCONSOLE_PKG_ONLY=1 console`. To point at an arbitrary tree, `UCONSOLE_DEV_LIB=/path console`.
 
-Publishing merges `dev` → `main`, bumps `VERSION`, builds the `.deb`, signs the APT repo, tags, and pushes.
-
-### Makefile
-
-```
-make install        Rsync device/ → /opt/uconsole/ and ~/pkg/
-make dev-mode       Webdash runs from repo source (dev.conf override)
-make pkg-mode       Webdash runs from /opt/uconsole/
-make bump-patch     Bump version x.y.z → x.y.z+1
-make bump-minor     Bump version x.y.z → x.y+1.0
-make build-deb      Build .deb → dist/
-make publish-apt    Update APT repo from latest .deb
-make release        Bump + build + publish + commit + tag
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor flow.
 
 ---
 
-## Self-hosting
+## Documentation
 
-Run your own cloud dashboard instead of using `uconsole.cloud`.
+- [Architecture and project layout](docs/ARCHITECTURE.md) — data flow diagrams, repo structure
+- [API and telemetry](docs/API.md) — device payload schema, cloud routes
+- [Self-hosting](docs/SELF-HOSTING.md) — run your own dashboard
+- [Device linking](docs/DEVICE-LINKING.md) — auth flow detail
+- [Release pipeline](docs/PIPELINE.md) — edit → `/publish` → end-user
+- [Features overview](docs/FEATURES.md)
+- [Changelog](CHANGELOG.md)
 
-1. **Deploy the Next.js app** to Vercel / Netlify / any Next.js host. Required env vars:
+---
 
-   | Variable | Purpose |
-   |---|---|
-   | `GITHUB_ID` / `GITHUB_SECRET` | GitHub OAuth app credentials |
-   | `AUTH_SECRET` | NextAuth JWT secret (`openssl rand -base64 33`) |
-   | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Redis credentials (Upstash free tier works) |
+## Related repos
 
-2. **Point your device at it.** After `apt install uconsole-cloud`, edit `/etc/uconsole/status.env` and set `DEVICE_API_URL=https://your-domain.com/api/device/push`, then run `uconsole setup`.
-
-3. **Host your own APT repo (optional).** `make build-deb && make publish-apt` — the signed repo lives in `frontend/public/apt/` and is served by whatever hosts your frontend. Generate a GPG key first with `bash packaging/scripts/generate-gpg-key.sh`.
+- **[mikevitelli/uconsole](https://github.com/mikevitelli/uconsole)** (private) — full device backup: dotfiles, WiFi profiles, SSH keys, apt manifests, RetroPie layout, hardware driver snapshots. Captures the installed state of the device for restore.
+- **HackerGadgets AIO** — expansion board this software supports ([hackergadgets.com](https://www.hackergadgets.com/))
+- **ClockworkPi** — the upstream hardware ([clockworkpi.com](https://www.clockworkpi.com/))
 
 ---
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — especially from uConsole owners who can test device-side changes on real hardware.
+
+## License
+
+[MIT](LICENSE).
 
 ---
 

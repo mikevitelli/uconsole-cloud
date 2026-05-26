@@ -625,13 +625,12 @@ class TestFrameworkWiring:
 
     def test_telegram_key_resolves_to_run_telegram_at_runtime(self):
         import tui.framework as fw
-        if fw.NATIVE_TOOLS is None:
-            fw.NATIVE_TOOLS = fw._get_native_tools()
-        assert "_telegram" in fw.NATIVE_TOOLS
-        import inspect
-        src = inspect.getsource(fw._get_native_tools)
-        assert '"_telegram":' in src
-        assert 'run_telegram' in src
+        handlers = fw._load_handlers()
+        assert "_telegram" in handlers
+        # The handler should be the run_telegram function from tui.telegram
+        from tui.telegram import run_telegram, HANDLERS
+        assert HANDLERS["_telegram"] is run_telegram
+        assert handlers["_telegram"] is run_telegram
 
 
 # ── Bridge connect edge cases ────────────────────────────────────────────

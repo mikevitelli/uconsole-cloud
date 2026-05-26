@@ -4,7 +4,7 @@
 # clean shutdown (stamp removed by ExecStop) from crash (stamp remains).
 set -u
 
-STAMP="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/.uconsole-running"
+STAMP="$HOME/.uconsole-running"
 LOG="$HOME/crash.log"
 
 case "${1:-boot}" in

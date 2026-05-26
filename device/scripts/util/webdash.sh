@@ -10,7 +10,8 @@ case "${1:-}" in
         pkill -f "python3.*webdash.py" && echo "Stopped." || echo "Not running."
         ;;
     *)
-        IP=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+        [ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+        IP=$(ip -4 -o addr show "${WIFI_IFACE:-wlan0}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
         echo "Starting uConsole dashboard..."
         echo "  http://${IP:-localhost}:8080"
         echo ""

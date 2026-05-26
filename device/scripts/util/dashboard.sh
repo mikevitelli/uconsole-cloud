@@ -3,9 +3,8 @@
 # Usage: dashboard.sh          Status overview + script launcher
 #        dashboard.sh status   Status only (no menu)
 
-SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-
 source "$(dirname "$0")/lib.sh"
+# lib.sh sets SCRIPTS_DIR=$REPO_DIR/scripts (whole tree, not just this subdir)
 
 # ── data collection ──
 
@@ -49,13 +48,14 @@ gather_stats() {
     ac_online="$BAT_AC_ONLINE"
 
     # wifi
-    iw_out=$(iwconfig wlan0 2>/dev/null)
+    [ -r /etc/uconsole/wifi.conf ] && . /etc/uconsole/wifi.conf
+    iw_out=$(iwconfig "${WIFI_IFACE:-wlan0}" 2>/dev/null)
     wifi_ssid=$(echo "$iw_out" | grep -oP 'ESSID:"\K[^"]+')
     wifi_signal=$(echo "$iw_out" | grep -oP 'Signal level=\K[-\d]+')
     wifi_quality=$(echo "$iw_out" | grep -oP 'Link Quality=\K\d+')
     wifi_quality_max=$(echo "$iw_out" | grep -oP 'Link Quality=\d+/\K\d+')
     wifi_rate=$(echo "$iw_out" | grep -oP 'Bit Rate=\K[\d.]+')
-    wifi_ip=$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+    wifi_ip=$(ip -4 -o addr show "${WIFI_IFACE:-wlan0}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
 
     # antenna (Bookworm uses /boot/firmware/)
     if grep -q '^dtparam=ant2' /boot/firmware/config.txt /boot/config.txt 2>/dev/null; then
@@ -136,15 +136,18 @@ print_menu() {
     local i=1
     declare -gA script_map
 
-    for script in "$SCRIPTS_DIR"/*.sh; do
-        [ "$script" = "$SCRIPTS_DIR/dashboard.sh" ] && continue
-        [ "$script" = "$SCRIPTS_DIR/myscript.sh" ] && continue
-        local name=$(basename "$script" .sh)
+    while IFS= read -r -d '' script; do
+        # skip self, lib.sh symlinks, and placeholders
+        case "$(basename "$script")" in
+            dashboard.sh|myscript.sh|lib.sh) continue ;;
+        esac
+        local rel="${script#$SCRIPTS_DIR/}"          # e.g. network/wifi.sh
+        local name="${rel%.sh}"                       # e.g. network/wifi
         local desc=$(head -3 "$script" | grep -oP '(?<=# ).*' | head -1)
         script_map[$i]="$script"
-        printf "  ${BOLD}${GREEN}%d${RESET}  %-12s ${DIM}%s${RESET}\n" "$i" "$name" "$desc"
+        printf "  ${BOLD}${GREEN}%2d${RESET}  %-22s ${DIM}%s${RESET}\n" "$i" "$name" "$desc"
         i=$((i + 1))
-    done
+    done < <(find "$SCRIPTS_DIR" -type f -name '*.sh' -not -path '*/__pycache__/*' -print0 | sort -z)
 
     script_count=$((i - 1))
 

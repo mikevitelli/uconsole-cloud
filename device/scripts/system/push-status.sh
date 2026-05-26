@@ -6,12 +6,26 @@
 set -euo pipefail
 
 # ── Load config ─────────────────────────────────────────
+# Parse status.env explicitly instead of `source`-ing it. The file is
+# owned and written by uconsole-setup, but it's still rotated through
+# user-controlled flows (re-link, manual edits) so treating it as
+# executable code would let any future write-path turn it into RCE.
 ENV_FILE="${HOME}/.config/uconsole/status.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "Missing $ENV_FILE" >&2
     exit 1
 fi
-source "$ENV_FILE"
+
+env_value() {
+    local key="$1"
+    grep -E "^[[:space:]]*${key}=" "$ENV_FILE" 2>/dev/null \
+        | tail -n1 \
+        | sed -E "s/^[[:space:]]*${key}=//; s/^\"(.*)\"\$/\1/; s/^'(.*)'\$/\1/"
+}
+
+DEVICE_API_URL=$(env_value DEVICE_API_URL)
+DEVICE_TOKEN=$(env_value DEVICE_TOKEN)
+DEVICE_REPO=$(env_value DEVICE_REPO)
 
 : "${DEVICE_API_URL:?}"
 : "${DEVICE_TOKEN:?}"
@@ -64,20 +78,49 @@ DISK_USED=$(echo "$DISK_LINE" | awk '{gsub("G",""); print $3}')
 DISK_AVAIL=$(echo "$DISK_LINE" | awk '{gsub("G",""); print $4}')
 DISK_PCT=$(echo "$DISK_LINE" | awk '{gsub("%",""); print $5}')
 
-# ── WiFi ────────────────────────────────────────────────
-WIFI_RAW=$(iwconfig wlan0 2>/dev/null || true)
-WIFI_SSID=$(echo "$WIFI_RAW" | grep -oP 'ESSID:"\K[^"]+' || echo "disconnected")
-WIFI_SIGNAL=$(echo "$WIFI_RAW" | grep -oP 'Signal level=\K-?[0-9]+' || echo "0")
-WIFI_QUALITY_RAW=$(echo "$WIFI_RAW" | grep -oP 'Link Quality=\K[0-9]+/[0-9]+' || echo "0/70")
-WIFI_QUALITY_NUM=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f1)
-WIFI_QUALITY_DEN=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f2)
-if [ "$WIFI_QUALITY_DEN" -gt 0 ] 2>/dev/null; then
-    WIFI_QUALITY=$((WIFI_QUALITY_NUM * 100 / WIFI_QUALITY_DEN))
-else
-    WIFI_QUALITY=0
+# ── Network ─────────────────────────────────────────────
+# Report the actual default-route interface, not a hardcoded wlan0.
+# Handles ethernet (eth0) primary, either wifi radio (wlan0/wlan1), or
+# no-internet states (AP-only fallback).
+PRIMARY_IFACE=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}' || true)
+if [ -z "$PRIMARY_IFACE" ] || [[ "$PRIMARY_IFACE" == tail* ]]; then
+    # No internet route, or default goes via tailscale (pick the underlying iface
+    # behind tailscale by inspecting the tailscale-up interface — fall back to wlan0).
+    PRIMARY_IFACE=$(ip -o link show up 2>/dev/null \
+        | awk -F': ' '{print $2}' \
+        | grep -E '^(eth|wlan)' | head -1 || echo "wlan0")
 fi
-WIFI_BITRATE=$(echo "$WIFI_RAW" | grep -oP 'Bit Rate=\K[0-9.]+' || echo "0")
-WIFI_IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP 'inet \K[0-9.]+' || echo "none")
+
+WIFI_IP=$(ip -4 addr show "$PRIMARY_IFACE" 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1 || echo "none")
+
+if [[ "$PRIMARY_IFACE" == eth* ]]; then
+    NETWORK_KIND="ethernet"
+    WIFI_SSID="Ethernet"
+    LINK_SPEED=$(ethtool "$PRIMARY_IFACE" 2>/dev/null | grep -oP 'Speed:\s+\K[0-9]+' || echo "0")
+    WIFI_SIGNAL=0
+    WIFI_QUALITY=100
+    WIFI_BITRATE="$LINK_SPEED"
+elif [[ "$PRIMARY_IFACE" == wlan* ]]; then
+    NETWORK_KIND="wifi"
+    WIFI_RAW=$(iwconfig "$PRIMARY_IFACE" 2>/dev/null || true)
+    WIFI_SSID=$(echo "$WIFI_RAW" | grep -oP 'ESSID:"\K[^"]+' || echo "disconnected")
+    WIFI_SIGNAL=$(echo "$WIFI_RAW" | grep -oP 'Signal level=\K-?[0-9]+' || echo "0")
+    WIFI_QUALITY_RAW=$(echo "$WIFI_RAW" | grep -oP 'Link Quality=\K[0-9]+/[0-9]+' || echo "0/70")
+    WIFI_QUALITY_NUM=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f1)
+    WIFI_QUALITY_DEN=$(echo "$WIFI_QUALITY_RAW" | cut -d/ -f2)
+    if [ "$WIFI_QUALITY_DEN" -gt 0 ] 2>/dev/null; then
+        WIFI_QUALITY=$((WIFI_QUALITY_NUM * 100 / WIFI_QUALITY_DEN))
+    else
+        WIFI_QUALITY=0
+    fi
+    WIFI_BITRATE=$(echo "$WIFI_RAW" | grep -oP 'Bit Rate=\K[0-9.]+' || echo "0")
+else
+    NETWORK_KIND="unknown"
+    WIFI_SSID="disconnected"
+    WIFI_SIGNAL=0
+    WIFI_QUALITY=0
+    WIFI_BITRATE=0
+fi
 
 # ── Screen ──────────────────────────────────────────────
 BL_PATH=$(ls -d /sys/class/backlight/*/brightness 2>/dev/null | head -1)
@@ -213,7 +256,9 @@ JSON=$(cat <<ENDJSON
     "signalDBm": $WIFI_SIGNAL,
     "quality": $WIFI_QUALITY,
     "bitrateMbps": $WIFI_BITRATE,
-    "ip": "$(json_escape "$WIFI_IP")"
+    "ip": "$(json_escape "$WIFI_IP")",
+    "iface": "$(json_escape "$PRIMARY_IFACE")",
+    "kind": "$(json_escape "$NETWORK_KIND")"
   },
   "aio": {
     "sdr": { "detected": $AIO_SDR_DETECTED, "chip": "$(json_escape "$AIO_SDR_CHIP")" },

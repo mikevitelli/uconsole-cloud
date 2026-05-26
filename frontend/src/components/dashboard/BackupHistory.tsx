@@ -68,13 +68,12 @@ export function BackupHistory({ backups, content }: BackupHistoryProps) {
 
       {backups.length > 0 && (
         <>
-          <CalendarGrid data={calendarCounts} />
-
-          <div className="mt-4 bg-background border border-border rounded-lg p-3">
-            <div className="text-[11px] text-sub font-medium mb-1.5 tracking-wide uppercase">
+          <div className="bg-background border border-border rounded-lg p-3">
+            <div className="text-[11px] text-sub font-medium mb-2 tracking-wide uppercase">
               {content?.sparklineLabel ?? "Last 30 days"}
             </div>
-            <div className="w-full overflow-hidden h-14">
+            <CalendarGrid data={calendarCounts} days={30} />
+            <div className="mt-3 w-full overflow-hidden h-14">
               <Sparkline data={sparkData} width={440} height={56} />
             </div>
           </div>

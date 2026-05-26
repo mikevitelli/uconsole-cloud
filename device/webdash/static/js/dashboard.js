@@ -985,29 +985,43 @@ async function run(name) {
   _showRaw = false;
 
   try {
-    var es = new EventSource('/api/stream/' + name);
-
-    es.onmessage = function(e) {
-      _rawOutput += e.data + '\n';
-      pre.textContent += e.data + '\n';
-      pre.scrollTop = pre.scrollHeight;
-    };
-
-    await new Promise(function(resolve, reject) {
-      es.addEventListener('done', function(e) {
-        es.close();
-        try {
-          var d = JSON.parse(e.data);
-          _rawRc = d.returncode;
-          _rawError = d.error || '';
-        } catch(ex) {}
-        resolve();
-      });
-      es.onerror = function() {
-        es.close();
-        reject(new Error('Stream connection lost'));
-      };
-    });
+    /* POST + fetch streaming — /api/stream is POST-only so EventSource (GET)
+       can't be used. Parse SSE frames manually from the response body. */
+    var resp = await fetch('/api/stream/' + encodeURIComponent(name), { method: 'POST' });
+    if (!resp.ok || !resp.body) throw new Error('Stream open failed: HTTP ' + resp.status);
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var streamDone = false;
+    while (!streamDone) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var idx;
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        var frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        var eventName = 'message';
+        var dataLines = [];
+        frame.split('\n').forEach(function(line) {
+          if (line.indexOf('event: ') === 0) eventName = line.slice(7);
+          else if (line.indexOf('data: ') === 0) dataLines.push(line.slice(6));
+        });
+        var data = dataLines.join('\n');
+        if (eventName === 'done') {
+          try {
+            var d = JSON.parse(data);
+            _rawRc = d.returncode;
+            _rawError = d.error || '';
+          } catch (ex) {}
+          streamDone = true;
+        } else if (eventName === 'message' && dataLines.length) {
+          _rawOutput += data + '\n';
+          pre.textContent += data + '\n';
+          pre.scrollTop = pre.scrollHeight;
+        }
+      }
+    }
 
     var elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
 
@@ -1521,26 +1535,83 @@ function openWifiPicker() {
   document.body.appendChild(modal);
   modal.addEventListener('click', function(e) { if (e.target === modal) closeWifiPicker(); });
   fetch('/api/wifi/scan').then(function(r){return r.json()}).then(function(data) {
-    if (data.error) { document.getElementById('wifi-list').innerHTML = '<div style="padding:1rem;color:var(--red);">' + esc(data.error) + '</div>'; return; }
-    var html = '';
+    var listEl = document.getElementById('wifi-list');
+    if (data.error) {
+      listEl.textContent = '';
+      var err = document.createElement('div');
+      err.style.cssText = 'padding:1rem;color:var(--red);';
+      err.textContent = data.error;
+      listEl.appendChild(err);
+      return;
+    }
+    listEl.textContent = '';
+    if (!data.networks || !data.networks.length) {
+      var none = document.createElement('div');
+      none.style.cssText = 'padding:1rem;color:var(--dim);';
+      none.textContent = 'No networks found';
+      listEl.appendChild(none);
+      return;
+    }
     data.networks.forEach(function(n) {
+      // Hostile APs can include arbitrary text in SSID/security fields.
+      // Build the row via DOM so user-controlled values can never escape
+      // an attribute or insert event handlers.
       var bars = n.signal > 75 ? 4 : n.signal > 50 ? 3 : n.signal > 25 ? 2 : 1;
-      var barStr = '\u2582'.repeat(bars) + '<span style="color:var(--dim)">' + '\u2582'.repeat(4-bars) + '</span>';
       var lock = n.security !== 'Open' ? ' \uD83D\uDD12' : '';
-      var active = n.active ? ' style="border:1px solid var(--green);background:var(--green-glow);"' : ' style="border:1px solid var(--border);"';
-      var badge = n.active ? '<span style="color:var(--green);font-size:0.75rem;margin-left:0.5rem;">Connected</span>' : '';
-      html += '<div class="wifi-item" onclick="selectWifi(this,\'' + n.ssid.replace(/'/g, "\\'") + '\',\'' + n.security + '\')"' + active
-        + ' data-ssid="' + n.ssid.replace(/"/g, '&quot;') + '"'
-        + ' style="padding:0.7rem 0.9rem;border-radius:10px;margin-bottom:0.4rem;cursor:pointer;' + (n.active ? 'border:1px solid var(--green);background:var(--green-glow);' : 'border:1px solid var(--border);') + '">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
-        + '<span style="color:var(--bright);">' + esc(n.ssid) + lock + badge + '</span>'
-        + '<span style="font-size:0.9rem;">' + barStr + ' <span style="color:var(--dim);font-size:0.75rem;">' + n.signal + '%</span></span>'
-        + '</div></div>';
+
+      var row = document.createElement('div');
+      row.className = 'wifi-item';
+      row.style.cssText = 'padding:0.7rem 0.9rem;border-radius:10px;margin-bottom:0.4rem;cursor:pointer;'
+        + (n.active ? 'border:1px solid var(--green);background:var(--green-glow);' : 'border:1px solid var(--border);');
+      row.dataset.ssid = String(n.ssid || '');
+
+      var inner = document.createElement('div');
+      inner.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+
+      var leftSpan = document.createElement('span');
+      leftSpan.style.cssText = 'color:var(--bright);';
+      leftSpan.textContent = String(n.ssid || '') + lock;
+      if (n.active) {
+        var badge = document.createElement('span');
+        badge.style.cssText = 'color:var(--green);font-size:0.75rem;margin-left:0.5rem;';
+        badge.textContent = 'Connected';
+        leftSpan.appendChild(badge);
+      }
+
+      var rightSpan = document.createElement('span');
+      rightSpan.style.cssText = 'font-size:0.9rem;';
+      // Bar chars are static. Render with two spans so the dim trailing
+      // segment doesn't need string concat with style attributes.
+      var barLit = document.createElement('span');
+      barLit.textContent = '\u2582'.repeat(bars);
+      var barDim = document.createElement('span');
+      barDim.style.cssText = 'color:var(--dim);';
+      barDim.textContent = '\u2582'.repeat(4 - bars);
+      var pctSpan = document.createElement('span');
+      pctSpan.style.cssText = 'color:var(--dim);font-size:0.75rem;';
+      pctSpan.textContent = ' ' + Number(n.signal || 0) + '%';
+      rightSpan.appendChild(barLit);
+      rightSpan.appendChild(barDim);
+      rightSpan.appendChild(pctSpan);
+
+      inner.appendChild(leftSpan);
+      inner.appendChild(rightSpan);
+      row.appendChild(inner);
+
+      // Capture ssid/security in the closure \u2014 never interpolated.
+      row.addEventListener('click', function() {
+        selectWifi(row, String(n.ssid || ''), String(n.security || ''));
+      });
+
+      listEl.appendChild(row);
     });
-    if (!html) html = '<div style="padding:1rem;color:var(--dim);">No networks found</div>';
-    document.getElementById('wifi-list').innerHTML = html;
   }).catch(function(e) {
-    document.getElementById('wifi-list').innerHTML = '<div style="padding:1rem;color:var(--red);">Scan failed: ' + esc(String(e)) + '</div>';
+    var listEl = document.getElementById('wifi-list');
+    listEl.textContent = '';
+    var err = document.createElement('div');
+    err.style.cssText = 'padding:1rem;color:var(--red);';
+    err.textContent = 'Scan failed: ' + String(e);
+    listEl.appendChild(err);
   });
 }
 
@@ -1551,10 +1622,23 @@ function selectWifi(el, ssid, security) {
   var form = document.createElement('div');
   form.className = 'wifi-password-form';
   form.style.cssText = 'margin-top:0.5rem;display:flex;gap:0.4rem;';
-  form.innerHTML = '<input type="password" placeholder="Password" autocomplete="off" style="flex:1;padding:0.5rem 0.7rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--bright);font-size:0.9rem;outline:none;">'
-    + '<button onclick="connectWifi(\'' + ssid.replace(/'/g, "\\'") + '\', this.parentNode.querySelector(\'input\').value)" style="padding:0.5rem 1rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;">Join</button>';
+
+  var input = document.createElement('input');
+  input.type = 'password';
+  input.placeholder = 'Password';
+  input.autocomplete = 'off';
+  input.style.cssText = 'flex:1;padding:0.5rem 0.7rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--bright);font-size:0.9rem;outline:none;';
+
+  var join = document.createElement('button');
+  join.type = 'button';
+  join.textContent = 'Join';
+  join.style.cssText = 'padding:0.5rem 1rem;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-weight:600;cursor:pointer;';
+  join.addEventListener('click', function() { connectWifi(ssid, input.value); });
+
+  form.appendChild(input);
+  form.appendChild(join);
   el.appendChild(form);
-  form.querySelector('input').focus();
+  input.focus();
 }
 
 function connectWifi(ssid, password) {

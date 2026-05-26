@@ -32,11 +32,11 @@ RSYNC_EXCLUDE := --exclude __pycache__ --exclude .pytest_cache --exclude tests \
 
 install:
 	@echo "Deploying device/ → /opt/uconsole/"
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/lib/ /opt/uconsole/lib/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/scripts/ /opt/uconsole/scripts/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
-	@sudo rsync -a --delete $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/lib/ /opt/uconsole/lib/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/scripts/ /opt/uconsole/scripts/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/webdash/ /opt/uconsole/webdash/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/bin/ /opt/uconsole/bin/
+	@sudo rsync -a --delete --chown=root:root $(RSYNC_EXCLUDE) device/share/ /opt/uconsole/share/
 	@sudo cp frontend/public/scripts/uconsole /opt/uconsole/bin/uconsole 2>/dev/null || true
 	@sudo chmod +x /opt/uconsole/bin/* 2>/dev/null || true
 	@echo "Syncing device/ → ~/pkg/ (no --delete, preserves backup-only files)"
@@ -102,10 +102,10 @@ test-device:
 
 test-install: build-deb
 	@echo "=== Docker install test ==="
-	docker build -f Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
+	docker build -f packaging/Dockerfile.test -t uconsole-test . && echo "INSTALL TEST PASSED" || (echo "INSTALL TEST FAILED"; exit 1)
 
 test-e2e: build-deb
-	@bash scripts/test-e2e.sh
+	@bash packaging/scripts/test-e2e.sh
 
 test-frontend:
 	@echo "=== vitest ==="

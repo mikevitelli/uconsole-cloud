@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 
 interface CalendarGridProps {
   data: Record<string, number>;
+  days?: number;
 }
 
 const COLORS = ["#21262d", "#0e4429", "#006d32", "#26a641", "#3fb950"];
@@ -19,7 +20,7 @@ function getColor(count: number): string {
 const DAY_LABELS = ["", "M", "", "W", "", "F", ""];
 const CELL = 11;
 const GAP = 2;
-const WEEKS = 52;
+const DEFAULT_DAYS = 52 * 7;
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -55,7 +56,7 @@ interface Tooltip {
   y: number;
 }
 
-export function CalendarGrid({ data }: CalendarGridProps) {
+export function CalendarGrid({ data, days = DEFAULT_DAYS }: CalendarGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -83,6 +84,30 @@ export function CalendarGrid({ data }: CalendarGridProps) {
     setTooltip(null);
   }, []);
 
+  const tooltipNode = tooltip ? (
+    <div
+      className="fixed pointer-events-none"
+      style={{
+        left: tooltip.x,
+        top: tooltip.y - 4,
+        transform: "translate(-50%, -100%)",
+        zIndex: 9999,
+      }}
+    >
+      <div className="bg-[#1b1f23] text-white text-xs font-medium px-2.5 py-1.5 rounded-md whitespace-nowrap border border-[#3d444d] shadow-lg">
+        {tooltip.text}
+      </div>
+      <div
+        className="w-0 h-0 mx-auto"
+        style={{
+          borderLeft: "6px solid transparent",
+          borderRight: "6px solid transparent",
+          borderTop: "6px solid #3d444d",
+        }}
+      />
+    </div>
+  ) : null;
+
   // Don't render date-dependent SVG on server to avoid hydration mismatch
   if (!mounted) {
     return (
@@ -90,13 +115,55 @@ export function CalendarGrid({ data }: CalendarGridProps) {
     );
   }
 
-  // Always show a full year ending today, like GitHub
+  // Show the last `days` days, ending today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Find the start: go back ~52 weeks, align to Sunday
+  // Short-range mode: a single horizontal strip that fills the card width
+  if (days < DEFAULT_DAYS) {
+    const stripCells: { date: string; count: number }[] = [];
+    const cursor = new Date(today);
+    cursor.setDate(cursor.getDate() - (days - 1));
+    const startLabel = `${MONTH_NAMES[cursor.getMonth()]} ${cursor.getDate()}`;
+    for (let i = 0; i < days; i++) {
+      const key = cursor.toISOString().slice(0, 10);
+      stripCells.push({ date: key, count: data[key] || 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const endLabel = `${MONTH_NAMES[today.getMonth()]} ${today.getDate()}`;
+
+    return (
+      <div ref={containerRef} className="relative">
+        <div className="flex w-full gap-[3px]">
+          {stripCells.map((c) => (
+            <div
+              key={c.date}
+              className="flex-1 aspect-square rounded-[3px] cursor-pointer"
+              style={{ backgroundColor: getColor(c.count) }}
+              onMouseEnter={(e) => {
+                const r = (e.target as HTMLDivElement).getBoundingClientRect();
+                setTooltip({
+                  text: formatTooltip(c.date, c.count),
+                  x: r.left + r.width / 2,
+                  y: r.top,
+                });
+              }}
+              onMouseLeave={handleCellLeave}
+            />
+          ))}
+        </div>
+        <div className="flex justify-between mt-1.5 text-[10px] text-dim font-medium">
+          <span>{startLabel}</span>
+          <span>{endLabel}</span>
+        </div>
+        {tooltipNode}
+      </div>
+    );
+  }
+
+  // Find the start: go back `days - 1`, align to Sunday so M/W/F rows line up
   const start = new Date(today);
-  start.setDate(start.getDate() - (WEEKS * 7) + 1);
+  start.setDate(start.getDate() - (days - 1));
   start.setDate(start.getDate() - start.getDay()); // align to Sunday
 
   const cells: { date: string; count: number; col: number; row: number }[] = [];
@@ -180,31 +247,7 @@ export function CalendarGrid({ data }: CalendarGridProps) {
         </svg>
       </div>
 
-      {/* GitHub-style tooltip — rendered via portal-like fixed positioning to escape overflow clipping */}
-      {tooltip && (
-        <div
-          className="fixed pointer-events-none"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y - 4,
-            transform: "translate(-50%, -100%)",
-            zIndex: 9999,
-          }}
-        >
-          <div className="bg-[#1b1f23] text-white text-xs font-medium px-2.5 py-1.5 rounded-md whitespace-nowrap border border-[#3d444d] shadow-lg">
-            {tooltip.text}
-          </div>
-          <div
-            className="w-0 h-0 mx-auto"
-            style={{
-              borderLeft: "6px solid transparent",
-              borderRight: "6px solid transparent",
-              borderTop: "6px solid #3d444d",
-            }}
-          />
-        </div>
-      )}
-
+      {tooltipNode}
     </div>
   );
 }

@@ -1,0 +1,19 @@
+#!/bin/bash
+# uconsole-ai — local AI agent CLI
+# Auto-detects whether to run from the dev tree or the installed package.
+
+set -euo pipefail
+
+# Dev tree first, then installed package
+for candidate in \
+    "${UCONSOLE_DEV_LIB:-$HOME/uconsole-cloud/device/lib}" \
+    "/opt/uconsole/lib" \
+    "$HOME/scripts"
+do
+    if [ -f "$candidate/uconsole_ai.py" ]; then
+        exec python3 -u "$candidate/uconsole_ai.py" "$@"
+    fi
+done
+
+echo "uconsole-ai: cannot locate uconsole_ai.py in dev or package paths" >&2
+exit 1
