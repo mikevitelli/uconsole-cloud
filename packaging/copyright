@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: uconsole-cloud
-Upstream-Contact: Mike Vitelli <mike@chopcheese.nyc>
+Upstream-Contact: Mike Vitelli <mike@uconsole.cloud>
 Source: https://github.com/mikevitelli/uconsole-cloud
 
 Files: *
