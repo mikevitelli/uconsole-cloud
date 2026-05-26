@@ -1,3 +1,0 @@
-PiXflat
-PiXnoir
-tPiXflat
