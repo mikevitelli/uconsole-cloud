@@ -124,16 +124,11 @@ SUBMENUS = {
         ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action", "☁️"),
     ],
     "sub:hw_config": [
-        ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel",      "🩹"),
-        ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action",      "📥"),
-        ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action",      "📤"),
-        ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action",     "⚡"),
         ("CPU Freq",         "_cpu_freq",                 "set min/max — 1.5–2.4 GHz",             "action",     "🎚️"),
         ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen", "🔌"),
     ],
     "sub:power_ctl": [
         ("Power Status",     "power/power.sh status",     "current power state",                    "panel",      "🔋"),
-        ("Low Batt Status",  "power/low-battery-shutdown.sh status", "voltage vs shutdown threshold", "panel",    "🪫"),
         ("Reboot",           "power/power.sh reboot",     "reboot with 3s delay",                   "fullscreen", "🔁"),
         ("Shutdown",         "power/power.sh shutdown",   "power off with 3s delay",                "fullscreen", "🛑"),
     ],
@@ -305,7 +300,6 @@ CATEGORIES = [
             ("Live Monitor",     "_monitor",            "real-time CPU, RAM, temp, battery",      "action", "📈"),
             ("Processes",        "_processes",           "view and kill running processes",        "action", "🧮"),
             ("System Logs",      "_syslog",             "live journalctl log viewer",             "action", "📜"),
-            ("Crash Log",        "util/crash-log.sh",   "recent crash and boot errors",           "panel",  "💥"),
         ],
     },
     {
