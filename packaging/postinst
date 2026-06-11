@@ -149,6 +149,42 @@ low-battery-shutdown.service crash-log.service axp-voff-shutdown.service"
         done
         systemctl reset-failed $RETIRED_UNITS 2>/dev/null || true
 
+        # Remove the VOFF payload the retired Fix Battery Boot installed
+        # at runtime, OUTSIDE dpkg's file list (fix-battery-boot.sh copied
+        # these into /etc, and the script itself is gone, so nothing else
+        # can clean them). Left in place, the premount hook keeps forcing
+        # `i2cset -f -y 0 0x34 0x31 0x03` (bus 0 — wrong on CM5) from the
+        # initramfs every boot, and update-initramfs re-bakes it into
+        # every new kernel.
+        #
+        # /etc/udev/rules.d/99-uconsole-battery.rules is deliberately NOT
+        # removed: the kept fix-voltage-cutoff.sh installs the identical
+        # rule, so an existing rule may be the user's supported opt-in.
+        VOFF_HOOK_REMOVED=0
+        for f in /etc/initramfs-tools/hooks/axp-voff \
+                 /etc/initramfs-tools/scripts/init-premount/axp-voff; do
+            if [ -f "$f" ]; then
+                rm -f "$f"
+                VOFF_HOOK_REMOVED=1
+                echo "Retired battery boot fix: removed $f"
+            fi
+        done
+        if [ -f /etc/systemd/system/axp-voff-shutdown.service ]; then
+            rm -f /etc/systemd/system/axp-voff-shutdown.service
+            systemctl daemon-reload 2>/dev/null || true
+            echo "Retired battery boot fix: removed orphaned axp-voff-shutdown.service"
+        fi
+        if [ "$VOFF_HOOK_REMOVED" = "1" ]; then
+            if command -v update-initramfs >/dev/null 2>&1 \
+                    && update-initramfs -u >/dev/null 2>&1; then
+                echo "Rebuilt initramfs without the retired VOFF hook."
+            else
+                echo "WARNING: initramfs rebuild failed or unavailable —" \
+                     "run 'sudo update-initramfs -u' to purge the retired" \
+                     "VOFF hook from the current initrd." >&2
+            fi
+        fi
+
         # Clean up orphaned ~/scripts/ compat symlinks from the old manual fix.
         if [ -n "$REAL_HOME" ] && [ -d "${REAL_HOME}/scripts" ]; then
             for name in pmu-voltage-min low-battery-shutdown cpu-freq-cap \
