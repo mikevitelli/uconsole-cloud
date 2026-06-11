@@ -110,25 +110,27 @@ sudo dtoverlay -r spi1-1cs
 
 **Cause:** The AXP228 PMU defaults to a 3.3V undervoltage cutoff (VOFF). 18650 cells sag below 3.3V during boot inrush current, and the PMU kills power before the OS starts.
 
-**Fix:** Install the battery boot fix from the TUI:
-
-```
-Power > Power Config > Install Boot Fix
-```
-
-Or from the command line:
+**Fix:** Run the voltage-cutoff fix, which installs a udev rule that lowers VOFF to 2.9V on every boot:
 
 ```bash
-sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh install
+sudo bash /opt/uconsole/scripts/power/fix-voltage-cutoff.sh
 ```
 
-This installs three layers: a udev rule, an initramfs hook (sets VOFF before heavy boot loads), and a shutdown service (persists VOFF through reboot). Check status with:
+(Standalone installs: `curl -fsSL https://uconsole.cloud/scripts/fix-voltage-cutoff.sh | sudo bash`)
+
+> **Check your battery chemistry first.** 2.9V is safe for 18650 cells (their true cutoff is ~2.5V), but may be too low for other chemistries. Verify your pack's minimum voltage before applying.
+
+To revert: `sudo rm /etc/udev/rules.d/99-uconsole-battery.rules && sudo udevadm control --reload-rules`
+
+**Upgrading from ≤ v0.3.0 with the old "Fix Battery Boot" installed:** that feature (initramfs hook + shutdown service) was removed in v0.3.1 — it hardcoded i2c bus 0, which is wrong on CM5. The `.deb` upgrade retires it automatically. Standalone installs must clean it up manually:
 
 ```bash
-bash /opt/uconsole/scripts/power/fix-battery-boot.sh status
+sudo rm -f /etc/initramfs-tools/hooks/axp-voff \
+           /etc/initramfs-tools/scripts/init-premount/axp-voff \
+           /etc/systemd/system/axp-voff-shutdown.service
+sudo systemctl daemon-reload
+sudo update-initramfs -u
 ```
-
-To revert: `sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh remove`
 
 ## WiFi Fallback AP Not Starting
 
