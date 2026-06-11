@@ -387,6 +387,13 @@ if python3 -c "import json; d=json.load(open('$USER_CONF')); exit(0 if d.get('we
     fi
 fi
 
+# crash-log — passive unclean-shutdown detector, always enable
+if systemctl list-unit-files crash-log.service &>/dev/null; then
+    sudo systemctl enable crash-log.service 2>/dev/null && ok "crash-log.service enabled" || info "crash-log.service already enabled"
+else
+    info "crash-log.service not installed — install uconsole-cloud package"
+fi
+
 # status timer — if cloud linked
 if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
     if systemctl list-unit-files uconsole-status.timer &>/dev/null; then

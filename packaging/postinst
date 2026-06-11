@@ -142,8 +142,12 @@ with open(path, 'w') as f:
         # i2c bus 0 and a 2.9V VOFF cutoff tuned for 18650 cells, which is
         # wrong on CM5 and unsafe for other chemistries. On upgrade,
         # disable any that an earlier install enabled and clear stale state.
+        # NOTE: crash-log.service is intentionally NOT retired — it is a
+        # passive, chemistry-/bus-agnostic diagnostic (it only logs unclean
+        # shutdowns + battery sysfs, it does not drive the PMIC), so it is
+        # shipped and enabled like any other service, not dropped here.
         RETIRED_UNITS="pmu-voltage-min.service cpu-freq-cap.service \
-low-battery-shutdown.service crash-log.service axp-voff-shutdown.service"
+low-battery-shutdown.service axp-voff-shutdown.service"
         for unit in $RETIRED_UNITS; do
             systemctl disable --now "$unit" 2>/dev/null || true
         done
@@ -187,8 +191,7 @@ low-battery-shutdown.service crash-log.service axp-voff-shutdown.service"
 
         # Clean up orphaned ~/scripts/ compat symlinks from the old manual fix.
         if [ -n "$REAL_HOME" ] && [ -d "${REAL_HOME}/scripts" ]; then
-            for name in pmu-voltage-min low-battery-shutdown cpu-freq-cap \
-                        crash-log; do
+            for name in pmu-voltage-min low-battery-shutdown cpu-freq-cap; do
                 LINK="${REAL_HOME}/scripts/${name}.sh"
                 [ -L "$LINK" ] && rm -f "$LINK"
             done

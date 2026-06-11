@@ -7,7 +7,7 @@
 ### Removed
 - **Device-specific battery/VOFF stack** — the "Fix Battery Boot" feature
   (initramfs hook + `axp-voff-shutdown.service`) and the battery-safety stack
-  (`pmu-voltage-min`, `cpu-freq-cap`, `low-battery-shutdown`, `crash-log`).
+  (`pmu-voltage-min`, `cpu-freq-cap`, `low-battery-shutdown`).
   Both hardcoded i2c bus 0 (wrong on CM5) and a 2.9V VOFF tuned for 18650
   cells. **On upgrade, the package disables the retired units, removes the
   runtime-installed initramfs hook and orphaned service file, and rebuilds
@@ -16,6 +16,14 @@
   `power.*` config keys.
 
 ### Fixed
+- **`crash-log.service` ran as a system unit with no `$HOME`** — under
+  `set -u` it aborted every boot with "HOME: unbound variable", silently
+  disabling crash detection (no entries logged since 2026-05-26). The
+  service was also mistakenly swept into the retired battery stack. It is
+  now revived as a passive, chemistry-/bus-agnostic diagnostic: it resolves
+  the operator home like the postinst (first UID ≥ 1000 user), keeps
+  `~/crash.log` operator-owned so the user-mode TUI logger can share it, and
+  is enabled by the setup wizard instead of disabled on upgrade.
 - **push-status.sh could never push on fresh .deb installs** — it only read
   `~/.config/uconsole/status.env` while package-mode linking writes
   `/etc/uconsole/status.env`. Now resolves /etc first, then ~/.config.
