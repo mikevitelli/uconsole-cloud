@@ -4,6 +4,25 @@
 
 (v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
 
+### Removed
+- **Device-specific battery/VOFF stack** — the "Fix Battery Boot" feature
+  (initramfs hook + `axp-voff-shutdown.service`) and the battery-safety stack
+  (`pmu-voltage-min`, `cpu-freq-cap`, `low-battery-shutdown`, `crash-log`).
+  Both hardcoded i2c bus 0 (wrong on CM5) and a 2.9V VOFF tuned for 18650
+  cells. **On upgrade, the package disables the retired units, removes the
+  runtime-installed initramfs hook and orphaned service file, and rebuilds
+  the initramfs.** The udev-rule path (`fix-voltage-cutoff.sh`) remains the
+  supported opt-in fix. The setup wizard no longer prompts for the orphaned
+  `power.*` config keys.
+
+### Fixed
+- **push-status.sh could never push on fresh .deb installs** — it only read
+  `~/.config/uconsole/status.env` while package-mode linking writes
+  `/etc/uconsole/status.env`. Now resolves /etc first, then ~/.config.
+- **Live-served standalone `push-status.sh` no longer `source`s status.env**
+  — ports the hardened `env_value()` parser, closing the config-as-code
+  execution path on standalone installs that re-download via `uconsole update`.
+
 ## v0.3.0 (2026-05-26)
 
 ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa
