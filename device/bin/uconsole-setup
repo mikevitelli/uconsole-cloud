@@ -201,20 +201,12 @@ if [ ! -f "$CONF_FILE" ] && [ -f "$CONF_DEFAULT" ]; then
     cp "$CONF_DEFAULT" "$CONF_FILE"
 fi
 
-current_freq=$(ini_get "$CONF_FILE" "power" "cpu_freq_cap" "1200")
-current_shutdown=$(ini_get "$CONF_FILE" "power" "low_battery_shutdown" "3.05")
-
-ask "CPU frequency cap (MHz, 0=no cap)" "$current_freq" freq_cap
-ask "Low battery shutdown voltage" "$current_shutdown" shutdown_v
-
-if [ -f "$CONF_FILE" ] || [ -f "$CONF_DEFAULT" ]; then
-    [ ! -f "$CONF_FILE" ] && cp "$CONF_DEFAULT" "$CONF_FILE"
-    ini_set "$CONF_FILE" "power" "cpu_freq_cap" "$freq_cap"
-    ini_set "$CONF_FILE" "power" "low_battery_shutdown" "$shutdown_v"
-    ok "System config saved"
-else
-    warn "No config file available — skipping"
-fi
+# The battery/VOFF stack (cpu-freq-cap, low-battery-shutdown services)
+# was removed in v0.3.1 — power.cpu_freq_cap and
+# power.low_battery_shutdown no longer have any consumer, so prompting
+# for them would tell users a protection exists that nothing implements.
+info "PMIC/battery tuning was retired in v0.3.1 — nothing to configure here."
+info "If the device won't boot on battery, see fix-voltage-cutoff.sh in TROUBLESHOOTING.md."
 
 # ════════════════════════════════════════════
 # STEP 3 — Webdash Password (REQUIRED)
@@ -395,6 +387,13 @@ if python3 -c "import json; d=json.load(open('$USER_CONF')); exit(0 if d.get('we
     fi
 fi
 
+# crash-log — passive unclean-shutdown detector, always enable
+if systemctl list-unit-files crash-log.service &>/dev/null; then
+    sudo systemctl enable crash-log.service 2>/dev/null && ok "crash-log.service enabled" || info "crash-log.service already enabled"
+else
+    info "crash-log.service not installed — install uconsole-cloud package"
+fi
+
 # status timer — if cloud linked
 if sudo test -f "$STATUS_ENV" 2>/dev/null && sudo grep -q "DEVICE_TOKEN" "$STATUS_ENV" 2>/dev/null; then
     if systemctl list-unit-files uconsole-status.timer &>/dev/null; then
@@ -475,10 +474,6 @@ section "Setup Complete"
 
 echo ""
 printf "  ${BOLD}Your uConsole is configured:${RESET}\n\n"
-
-# system
-freq_cap=$(ini_get "$CONF_FILE" "power" "cpu_freq_cap" "1200")
-printf "  CPU freq cap:     ${freq_cap} MHz\n"
 
 # expansion
 if [ -f "$HW_JSON" ]; then

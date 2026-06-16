@@ -4,6 +4,46 @@
 
 (v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
 
+## v0.3.1 (2026-06-16)
+
+CM5 battery/VOFF stack retirement, packaging and crash-log fixes, a
+hardened push-status path — plus a new cellular + camera TUI suite
+(live camera feed, 4G signal monitor and coverage map, `4g.sh` helper).
+
+### Added
+- **Camera + Cellular TUI suite** — a curses live-camera viewer
+  (`tui.camera`), a 4G signal monitor (`tui.cellular_signal`), and a
+  GPS-tagged cellular coverage map (`tui.cellular_map`), wired into the
+  launcher under HARDWARE. Backed by a new `scripts/network/4g.sh`
+  helper for SIM7600G-H bring-up / teardown and signal queries.
+
+### Removed
+- **Device-specific battery/VOFF stack** — the "Fix Battery Boot" feature
+  (initramfs hook + `axp-voff-shutdown.service`) and the battery-safety stack
+  (`pmu-voltage-min`, `cpu-freq-cap`, `low-battery-shutdown`).
+  Both hardcoded i2c bus 0 (wrong on CM5) and a 2.9V VOFF tuned for 18650
+  cells. **On upgrade, the package disables the retired units, removes the
+  runtime-installed initramfs hook and orphaned service file, and rebuilds
+  the initramfs.** The udev-rule path (`fix-voltage-cutoff.sh`) remains the
+  supported opt-in fix. The setup wizard no longer prompts for the orphaned
+  `power.*` config keys.
+
+### Fixed
+- **`crash-log.service` ran as a system unit with no `$HOME`** — under
+  `set -u` it aborted every boot with "HOME: unbound variable", silently
+  disabling crash detection (no entries logged since 2026-05-26). The
+  service was also mistakenly swept into the retired battery stack. It is
+  now revived as a passive, chemistry-/bus-agnostic diagnostic: it resolves
+  the operator home like the postinst (first UID ≥ 1000 user), keeps
+  `~/crash.log` operator-owned so the user-mode TUI logger can share it, and
+  is enabled by the setup wizard instead of disabled on upgrade.
+- **push-status.sh could never push on fresh .deb installs** — it only read
+  `~/.config/uconsole/status.env` while package-mode linking writes
+  `/etc/uconsole/status.env`. Now resolves /etc first, then ~/.config.
+- **Live-served standalone `push-status.sh` no longer `source`s status.env**
+  — ports the hardened `env_value()` parser, closing the config-as-code
+  execution path on standalone installs that re-download via `uconsole update`.
+
 ## v0.3.0 (2026-05-26)
 
 ESP32 hub overhaul, Meshtastic mesh map, ADS-B feeder migration, LoRa

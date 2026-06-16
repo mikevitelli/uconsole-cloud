@@ -1,1 +1,0 @@
-KERNEL=="axp20x-battery", ATTR{constant_charge_current_max}="900000", ATTR{constant_charge_current}="900000", ATTR{voltage_min}="2900000"
