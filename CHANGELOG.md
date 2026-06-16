@@ -4,6 +4,19 @@
 
 (v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
 
+## v0.3.1 (2026-06-16)
+
+CM5 battery/VOFF stack retirement, packaging and crash-log fixes, a
+hardened push-status path — plus a new cellular + camera TUI suite
+(live camera feed, 4G signal monitor and coverage map, `4g.sh` helper).
+
+### Added
+- **Camera + Cellular TUI suite** — a curses live-camera viewer
+  (`tui.camera`), a 4G signal monitor (`tui.cellular_signal`), and a
+  GPS-tagged cellular coverage map (`tui.cellular_map`), wired into the
+  launcher under HARDWARE. Backed by a new `scripts/network/4g.sh`
+  helper for SIM7600G-H bring-up / teardown and signal queries.
+
 ### Removed
 - **Device-specific battery/VOFF stack** — the "Fix Battery Boot" feature
   (initramfs hook + `axp-voff-shutdown.service`) and the battery-safety stack
