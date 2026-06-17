@@ -395,6 +395,7 @@ CATEGORIES = [
             ("View Mode",        "_viewmode",           "switch between list and tile view",      "action", "🪟"),
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action", "⌨️"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action", "⚖️"),
+            ("Battery / Power",  "_battery_config",     "charge, discharge, profiles (live)",     "action", "🔋"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action",     "🖱️"),
             ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action", "☁️"),
             ("Monitor Refresh",  "_monitor_refresh",    "live monitor update rate",               "action", "⏱️"),
@@ -1930,6 +1931,7 @@ FEATURE_MODULES = [
     "tui.esp32_hub",
     "tui.wifi_radio",
     "tui.camera",
+    "tui.battery_config",
 ]
 
 _HANDLERS_CACHE = None
