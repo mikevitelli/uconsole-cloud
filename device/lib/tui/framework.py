@@ -129,6 +129,7 @@ SUBMENUS = {
         ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action", "☁️"),
     ],
     "sub:hw_config": [
+        ("Battery / Power",  "_battery_config",           "charge, discharge, profiles (live)",     "action",     "🔋"),
         ("CPU Freq",         "_cpu_freq",                 "set min/max — 1.5–2.4 GHz",             "action",     "🎚️"),
         ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen", "🔌"),
     ],
@@ -395,7 +396,6 @@ CATEGORIES = [
             ("View Mode",        "_viewmode",           "switch between list and tile view",      "action", "🪟"),
             ("Keybinds",         "_keybinds",           "keyboard and gamepad reference",         "action", "⌨️"),
             ("Battery Gauge",    "_bat_gauge",          "toggle voltage-est vs fuel gauge",       "action", "⚖️"),
-            ("Battery / Power",  "_battery_config",     "charge, discharge, profiles (live)",     "action", "🔋"),
             ("Trackball Scroll", "_trackball_scroll",   "Fn + trackball = scroll wheel",      "action",     "🖱️"),
             ("Push Interval",    "_push_interval",      "cloud telemetry frequency (or off)",     "action", "☁️"),
             ("Monitor Refresh",  "_monitor_refresh",    "live monitor update rate",               "action", "⏱️"),
