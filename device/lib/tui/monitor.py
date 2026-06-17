@@ -42,6 +42,21 @@ def run_live_monitor(scr):
     # Header name = system hostname (uppercased); falls back to "UCONSOLE".
     host_name = (socket.gethostname() or "uconsole").upper()
 
+    # Resolve the PWM fan hwmon node once — the hwmonN index can shuffle
+    # across reboots, so match by name ("pwmfan") rather than hard-coding.
+    fan_dir = ""
+    try:
+        hwbase = "/sys/class/hwmon"
+        for hw in os.listdir(hwbase):
+            try:
+                if open(f"{hwbase}/{hw}/name").read().strip() == "pwmfan":
+                    fan_dir = f"{hwbase}/{hw}"
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     def net_bytes():
         rx = tx = 0
         try:
@@ -186,6 +201,18 @@ def run_live_monitor(scr):
         tui.push(bat_h, bat_display)
         tui.push(volt_h, bat_v)
 
+        # FAN — pwm-fan telemetry (-1 = unreadable)
+        fan_rpm = fan_pwm = -1
+        if fan_dir:
+            try:
+                fan_rpm = int(open(f"{fan_dir}/fan1_input").read())
+            except Exception:
+                pass
+            try:
+                fan_pwm = int(open(f"{fan_dir}/pwm1").read())
+            except Exception:
+                pass
+
         # NET
         rx_now, tx_now = net_bytes()
         dt_n = now - prev_time if prev_time > 0 else 1
@@ -273,8 +300,32 @@ def run_live_monitor(scr):
         # ── Render panels ──
         # ═══════════════════════════════════════════════════════
 
-        GR = 4          # graph rows for area charts
-        ARC_R = 5       # arc gauge rows
+        # ── Adaptive vertical sizing — fit the taller (right) column into the
+        #    available rows so the dashboard is responsive instead of clipping.
+        #    The NET scope is a mirrored gauge, so it uses an EVEN row count
+        #    (net_gr) for symmetry. Right-column height = TEMP(GR) + NET(net_gr)
+        #    + battery arc + 16 fixed text/border rows. Shrink the arc first
+        #    (decorative), then the graphs, down to readable minimums.
+        avail = h - 2                       # content rows between header and footer
+
+        def right_h(g, a):
+            return g + max(2, g - g % 2) + a + 15      # TEMP graph + even NET graph + arc + fixed
+
+        GR, ARC_R = 4, 5                    # full-detail ceiling (tall terminals)
+        while right_h(GR, ARC_R) > avail and ARC_R > 3:
+            ARC_R -= 1
+        while right_h(GR, ARC_R) > avail and GR > 2:
+            GR -= 1
+        # Still too tall even at minimums → tiny screen: collapse graphs.
+        if right_h(GR, ARC_R) > avail:
+            GR = 1
+        # Spend any leftover rows so the right column fills the height and
+        # evens up with the left — grow the battery arc back first, then graphs.
+        while right_h(GR, ARC_R) < avail and ARC_R < 5:
+            ARC_R += 1
+        while right_h(GR, ARC_R) < avail and GR < 4:
+            GR += 1
+        net_gr = max(2, GR - GR % 2)        # NET mirror rows — even for a symmetric scope
         lx = 0          # left panel x
         rx = mid        # right panel x
 
@@ -348,7 +399,9 @@ def run_live_monitor(scr):
         if y < h - 2:
             tui.panel_top(scr, y, lx, pw_l, "TOP", "by CPU")
             y += 1
-            bar_w = gw_l - 20
+            text_w = 12                            # "  4.1%  159M"
+            text_x = lx + 2 + gw_l - text_w        # right-aligned to the panel's inner edge
+            bar_w = max(4, text_x - lx - 16)       # bar fills name→text gap, never past the edge
             for cpup, rss, name in top_procs:
                 if y >= h - 2:
                     break
@@ -358,7 +411,7 @@ def run_live_monitor(scr):
                 pbar = "▓" * fill
                 tui.put(scr, y, lx + 2, f"{name:<12s}", 12, val)
                 tui.put(scr, y, lx + 15, pbar, bar_w, grp)
-                tui.put(scr, y, lx + 16 + bar_w, f"{cpup:>5}% {rss:>4}M", 11, dim)
+                tui.put(scr, y, text_x, f"{cpup:>5}% {rss:>4}M", text_w, dim)
                 y += 1
             tui.panel_bot(scr, y, lx, pw_l)
 
@@ -386,19 +439,15 @@ def run_live_monitor(scr):
         tui.panel_top(scr, ry, rx, pw_r, "BAT", f"{bat_icon}{bat_display}%  {bat_v:.3f}V")
         ry += 1
         # Arc gauge — centered in panel
-        arc_w = min(gw_r, 40)
-        arc_rows = tui.make_arc(bat_display, arc_w, ARC_R)
-        arc_x = rx + 2 + (gw_r - arc_w) // 2
+        arc_w = gw_r          # liquid tank fills the full inner width of the box
+        arc_rows = tui.make_liquid(bat_display, arc_w, ARC_R, tick, bat_status == "Charging")
+        arc_x = rx + 2
         bcol = tui.C_CRIT if bat_display <= 15 else tui.C_WARN if bat_display <= 30 else tui.C_OK
         for row_str in arc_rows:
             tui.panel_side(scr, ry, rx, pw_r)
             tui.put(scr, ry, arc_x, row_str, arc_w, curses.color_pair(bcol))
             ry += 1
-        # Percentage centered under arc
-        tui.panel_side(scr, ry, rx, pw_r)
-        pct_str = f"{bat_display}%"
-        tui.put(scr, ry, rx + 2 + (gw_r - len(pct_str)) // 2, pct_str, len(pct_str), val)
-        ry += 1
+        # (level is shown in the panel title + the fill itself — no separate % line)
         # Status details
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, f"{bat_status}  {bat_i:+.0f}mA", pw_r - 4, dim)
@@ -432,10 +481,27 @@ def run_live_monitor(scr):
         if len(volt_h) > 1:
             tui.panel_side(scr, ry, rx, pw_r)
             ry += 0  # voltage waveform follows directly
-            for row_str in tui.make_vwave(volt_h, gw_r, 2):
+            for row_str in tui.make_vwave(volt_h, gw_r, 1):
                 tui.panel_side(scr, ry, rx, pw_r)
                 tui.put(scr, ry, rx + 2, row_str, gw_r, curses.color_pair(bcol))
                 ry += 1
+        # Fan readout — RPM + neutral PWM-duty bar, last line of the module
+        cx = rx + 2
+        tui.panel_side(scr, ry, rx, pw_r)
+        if not fan_dir or fan_rpm < 0:
+            tui.put(scr, ry, cx, "FAN  n/a", pw_r - 4, dim)
+        elif fan_rpm == 0 and fan_pwm <= 0:
+            tui.put(scr, ry, cx, "FAN  off", pw_r - 4, dim)
+        else:
+            pwm_pct = max(0, min(100, round(fan_pwm / 255 * 100))) if fan_pwm >= 0 else 0
+            fbar_w = max(6, gw_r - 18)
+            fill = int(fbar_w * pwm_pct / 100)
+            fbar = "▓" * fill + "░" * (fbar_w - fill)
+            tui.put(scr, ry, cx, "FAN ", 4, lbl)
+            tui.put(scr, ry, cx + 4, f"{fan_rpm}rpm"[:8].ljust(8), 8, val)
+            tui.put(scr, ry, cx + 13, fbar, fbar_w, grp)
+            tui.put(scr, ry, cx + 14 + fbar_w, f"{pwm_pct}%", 4, dim)
+        ry += 1
         tui.panel_bot(scr, ry, rx, pw_r)
         ry += 1
 
@@ -444,26 +510,38 @@ def run_live_monitor(scr):
         txs = f"{tx_rate:.0f}" if tx_rate < 1000 else f"{tx_rate/1024:.1f}M"
         tui.panel_top(scr, ry, rx, pw_r, "NET", f"↓{rxs} ↑{txs} KB/s")
         ry += 1
-        for row_str in tui.make_lines(rx_h, tx_h, gw_r, GR):
+        # Mirrored filled scope: rx fills upward from a center axis (rx legend
+        # color), tx fills downward (tx legend color). Position separates the
+        # two even when the theme's colors are close.
+        net_rows, net_split = tui.make_mirror(rx_h, tx_h, gw_r, net_gr)
+        for i, row_str in enumerate(net_rows):
             tui.panel_side(scr, ry, rx, pw_r)
-            tui.put(scr, ry, rx + 2, row_str, gw_r, grp)
+            mcol = tui.C_RX if i < net_split else tui.C_TX
+            tui.put(scr, ry, rx + 2, row_str, gw_r, curses.color_pair(mcol))
             ry += 1
         # Legend + baseline
         tui.panel_side(scr, ry, rx, pw_r)
         tui.put(scr, ry, rx + 2, "─" * gw_r, gw_r, dim)
         ry += 1
+        # Legend + cumulative totals on one line (rx marker+total, tx marker+
+        # total), then WiFi/link info filling whatever width is left.
         tui.panel_side(scr, ry, rx, pw_r)
-        tui.put(scr, ry, rx + 2, "⠉ rx  ", 6, curses.color_pair(C_STATUS))
-        tui.put(scr, ry, rx + 9, "⠉ tx", 4, curses.color_pair(C_CAT))
+        seg_rx = f" rx ↓{rx_now // (1024**2)}MB"
+        seg_tx = f" tx ↑{tx_now // (1024**2)}MB"
+        cx = rx + 2
+        tui.put(scr, ry, cx, "⠉", 1, curses.color_pair(tui.C_RX))
+        tui.put(scr, ry, cx + 1, seg_rx, len(seg_rx), dim)
+        cx2 = cx + 1 + len(seg_rx) + 2
+        tui.put(scr, ry, cx2, "⠉", 1, curses.color_pair(tui.C_TX))
+        tui.put(scr, ry, cx2 + 1, seg_tx, len(seg_tx), dim)
+        info_x = cx2 + 1 + len(seg_tx) + 2
+        net_info = ""
         if primary_kind == "ethernet":
-            net_info = f"  Wired  {ip_addr}"
-            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
+            net_info = f"Wired  {ip_addr}"
         elif ssid:
-            net_info = f"  {ssid}  {ip_addr}  {signal}"
-            tui.put(scr, ry, rx + 14, net_info, pw_r - 16, dim)
-        ry += 1
-        tui.panel_side(scr, ry, rx, pw_r)
-        tui.put(scr, ry, rx + 2, f"total ↓{rx_now // (1024**2)}MB ↑{tx_now // (1024**2)}MB", pw_r - 4, dim)
+            net_info = f"{ssid}  {ip_addr}  {signal}"
+        if net_info:
+            tui.put(scr, ry, info_x, net_info, max(0, rx + 2 + gw_r - info_x), dim)
         ry += 1
         tui.panel_bot(scr, ry, rx, pw_r)
 

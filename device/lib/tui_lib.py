@@ -17,6 +17,8 @@ DEFAULT_HIST_SIZE = 120    # default history buffer length
 C_OK = 20
 C_WARN = 21
 C_CRIT = 22
+C_RX = 23       # NET download trace — cyan
+C_TX = 24       # NET upload trace — magenta
 
 # Standard color pair IDs (initialized by console.py's apply_theme)
 C_HEADER = 1
@@ -34,9 +36,11 @@ C_DIM = 9
 
 def init_gauge_colors():
     """Initialize C_OK/C_WARN/C_CRIT color pairs. Call once after curses.start_color()."""
-    curses.init_pair(C_OK,   curses.COLOR_GREEN,  -1)
-    curses.init_pair(C_WARN, curses.COLOR_YELLOW, -1)
-    curses.init_pair(C_CRIT, curses.COLOR_RED,    -1)
+    curses.init_pair(C_OK,   curses.COLOR_GREEN,   -1)
+    curses.init_pair(C_WARN, curses.COLOR_YELLOW,  -1)
+    curses.init_pair(C_CRIT, curses.COLOR_RED,     -1)
+    curses.init_pair(C_RX,   curses.COLOR_CYAN,    -1)
+    curses.init_pair(C_TX,   curses.COLOR_MAGENTA, -1)
 
 
 # ── History Buffer ────────────────────────────────────────────────────
@@ -129,6 +133,28 @@ def make_area(hist, cw, ch, max_val=100, graph_exp=DEFAULT_GRAPH_EXP):
     return c.render()
 
 
+def make_line(hist, cw, ch, max_val=100, graph_exp=DEFAULT_GRAPH_EXP):
+    """Single line graph — oscilloscope style, one trace, no fill. Render two of
+    these and overlay them to get independently-colored traces (a braille cell
+    can only hold one color, so dual-color needs separate layers)."""
+    c = BrailleCanvas(cw, ch)
+    data = list(hist)[-c.pw:]
+    prev = None
+    for i, v in enumerate(data):
+        v = max(0, min(max_val, v))
+        if max_val > 0 and v > 0:
+            scaled = (v / max_val) ** graph_exp
+            py = c.ph - 1 - max(1, int(scaled * (c.ph - 1)))
+        else:
+            py = c.ph - 1
+        if prev is not None:
+            c.line(i - 1, prev, i, py)
+        else:
+            c.set(i, py)
+        prev = py
+    return c.render()
+
+
 def make_lines(h1, h2, cw, ch, max_val=100, graph_exp=DEFAULT_GRAPH_EXP):
     """Dual line graph — oscilloscope style, two traces, no fill."""
     c = BrailleCanvas(cw, ch)
@@ -148,6 +174,43 @@ def make_lines(h1, h2, cw, ch, max_val=100, graph_exp=DEFAULT_GRAPH_EXP):
                 c.set(i, py)
             prev = py
     return c.render()
+
+
+def make_mirror(h_up, h_dn, cw, ch, max_val=100, graph_exp=DEFAULT_GRAPH_EXP):
+    """Mirrored oscilloscope. ``ch`` should be EVEN so the two halves are
+    symmetric: ``h_up`` traces upward from a thin center line, ``h_dn`` downward.
+    Uses connected LINE traces (sharp, defined spikes) rather than solid fill.
+    Returns ``(rows, split)`` — ``rows[:split]`` is the up-trace, ``rows[split:]``
+    the down-trace — so the caller colors each half (position separates them
+    even when the two colors are close)."""
+    c = BrailleCanvas(cw, ch)
+    half = ch // 2
+    center = half * 4                       # axis sits on the char-row boundary
+    up_span = max(1, center - 1)
+    dn_span = max(1, c.ph - center - 1)
+    # No separate baseline — each trace rests ON the center line when idle and
+    # lifts into a spike where there's activity, so it reads as a single line.
+    prev = None                             # up-trace: line rising from the axis
+    for i, v in enumerate(list(h_up)[-c.pw:]):
+        v = max(0, min(max_val, v))
+        s = (v / max_val) ** graph_exp if max_val > 0 else 0
+        py = max(0, (center - 1) - int(s * up_span))
+        if prev is not None:
+            c.line(i - 1, prev, i, py)
+        else:
+            c.set(i, py)
+        prev = py
+    prev = None                             # down-trace: line dropping from the axis
+    for i, v in enumerate(list(h_dn)[-c.pw:]):
+        v = max(0, min(max_val, v))
+        s = (v / max_val) ** graph_exp if max_val > 0 else 0
+        py = min(c.ph - 1, center + int(s * dn_span))
+        if prev is not None:
+            c.line(i - 1, prev, i, py)
+        else:
+            c.set(i, py)
+        prev = py
+    return c.render(), half
 
 
 def make_arc(pct, cw, ch):
@@ -193,6 +256,33 @@ def make_arc(pct, cw, ch):
         ny = int(cy - r_step * math.sin(needle_a))
         c.set(nx, ny)
 
+    return c.render()
+
+
+def make_liquid(pct, cw, ch, t=0, charging=False):
+    """Liquid-fill battery gauge — a tank that fills from the bottom to ``pct``
+    with an animated sine surface (sum of two sines). Amplitude is triangular
+    (calm at 0%/100%, waviest mid-charge, d3-liquid-fill style); the surface
+    scrolls with ``t`` and gets faster/choppier while ``charging``."""
+    c = BrailleCanvas(cw, ch)
+    pct = max(0, min(100, pct))
+    H = c.ph
+    base = H * (1 - pct / 100.0)
+    if charging:
+        amp = 2.6                                    # strong, level-independent agitation
+        phase = t * 0.7
+        base += 1.0 * math.sin(t * 0.2)              # slow slosh bob
+        base = max(amp, base)                        # keep the surface visible even at ~100%
+    else:
+        amp = 2.6 * (1 - abs(pct - 50) / 50.0)       # triangular: calm/solid at 0% and 100%
+        phase = t * 0.35
+    lam_back = max(8.0, c.pw / 1.6)                  # ~1.6 long swells across width
+    lam_front = max(5.0, c.pw / 3.4)                 # finer ripple on top
+    for x in range(c.pw):
+        surf = base - (amp * 0.6 * math.sin(2 * math.pi * x / lam_back + phase)
+                       + amp * 0.4 * math.sin(2 * math.pi * x / lam_front - phase * 1.7))
+        for y in range(max(0, int(round(surf))), H):
+            c.set(x, y)
     return c.render()
 
 
