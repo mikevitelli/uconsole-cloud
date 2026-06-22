@@ -1,7 +1,8 @@
 # AC/DC-aware CPU frequency auto-switching
 
 **Date:** 2026-06-22
-**Status:** Design approved, pending spec review
+**Status:** PAUSED — review applied; resume blocked on GATE 0 (confirm udev fires
+on AC plug/unplug) before writing the implementation plan
 **Branch:** `feat/cpu-freq-scaling`
 
 ## Problem
@@ -26,7 +27,8 @@ of brownouts in the meantime and costs nothing on AC.
 - On **battery (DC)**: lock CPU to 1500/1500 MHz (no turbo).
 - On **AC**: allow 1500/2400 MHz with the `ondemand` governor (idles cool at
   1.5 GHz, bursts to the stock 2.4 GHz ceiling on demand).
-- Switch automatically on AC plug/unplug **and** on boot.
+- Switch automatically on AC plug/unplug, and come up already capped at boot
+  (steady-state; see the boot-coverage caveat under "Scope of brownout coverage").
 - Ship as a package feature with a **TUI toggle, disabled by default**.
 - Pure runtime / sysfs. No `config.txt` overclock, no reboot, fully reversible.
 
@@ -41,6 +43,23 @@ of brownouts in the meantime and costs nothing on AC.
   values can be added later via a conf key if ever needed.
 - No reverting of the current frequency when the feature is disabled (see Error
   handling).
+
+## Scope of brownout coverage (honest limits)
+
+This feature reliably addresses **in-use, steady-state** battery brownouts — the
+documented failure mode where sustained multi-core load (e.g. 4-core `stress-ng`)
+on battery sags the rail until the PMU cuts. On battery it pins the CPU at
+1.5 GHz, removing the turbo-driven current spikes.
+
+It gives only **best-effort** coverage of the *boot-time* current spike. The udev
+rule fires at coldplug, which runs **after** the kernel has brought all four
+cores online and systemd has begun launching services — i.e. after the worst
+early-boot ramp. So the device comes up already capped for steady-state, but the
+boot transient itself is largely past by the time the rule applies. The only
+real lever for the boot spike is the `config.txt` `arm_freq`/`arm_boost` route,
+which is deliberately out of scope (see Non-goals) because it cannot be made
+power-source-conditional and would itself raise draw. The spec does **not**
+promise boot-spike suppression.
 
 ## Existing building blocks (reused, not rebuilt)
 
@@ -82,7 +101,7 @@ toggle) and drop the scaffolding that does not pay rent here.
    ```sh
    apply-power)
        # No-op unless the feature is enabled (marker file present).
-       [ -e /etc/uconsole/cpu-auto.enabled ] || exit 0
+       [ -e /etc/uconsole/cpu-auto-enabled ] || exit 0
        if [ "$(cat /sys/class/power_supply/axp22x-ac/online 2>/dev/null)" = 1 ]; then
            write_freq min 1500; write_freq max 2400   # AC: burst to 2.4
        else
@@ -98,9 +117,11 @@ toggle) and drop the scaffolding that does not pay rent here.
 
 2. **New verb `auto on|off|toggle|status` in `scripts/power/cpu-freq.sh`**
 
-   - `on` — create `/etc/uconsole/cpu-auto.enabled`, then run `apply-power`
+   - `on` — create `/etc/uconsole/cpu-auto-enabled`, then run `apply-power`
      immediately so state is correct without waiting for the next event.
-   - `off` — remove the marker. Does **not** revert current frequency.
+   - `off` — remove the marker, then release the cap: set min→1500
+     (`cpuinfo_min_freq`) and max→2400 (`cpuinfo_max_freq`). This is "remove the
+     cap" semantics (back to stock range), not "restore a remembered state."
    - `toggle` — flip based on marker presence.
    - `status` — print enabled/disabled, current AC/DC source, current min/max.
 
@@ -110,13 +131,42 @@ toggle) and drop the scaffolding that does not pay rent here.
 3. **New udev rule `system/etc/udev/rules.d/90-uconsole-cpu-power.rules`**
 
    ```
-   SUBSYSTEM=="power_supply", ACTION=="add|change", RUN+="/opt/uconsole/scripts/power/cpu-freq.sh apply-power"
+   # Narrow form — preferred IF the AC device emits the event (see gate below):
+   KERNEL=="axp22x-ac", ACTION=="add|change", RUN+="/opt/uconsole/scripts/power/cpu-freq.sh apply-power"
+
+   # Broad fallback — only if the battery device, not the AC device, drives it:
+   # SUBSYSTEM=="power_supply", ACTION=="add|change", RUN+="/opt/uconsole/scripts/power/cpu-freq.sh apply-power"
    ```
 
    Matching **both `add` and `change`** is what gives correct boot state for
    free: udev coldplugs `add` events at boot (it does not emit `change` then), so
    matching only `change` would miss boot. With both matched, no separate
    oneshot service is required.
+
+   When invoked by udev the script runs as **root**, so `write_freq` always takes
+   the direct-write branch and never the `sudo tee` fallback (no password prompt,
+   no sudoers entry needed in this path).
+
+   > **⚠ UNVERIFIED — build-time gate (review item #3).** Whether the AXP AC
+   > driver emits a udev event on plug/unplug was **not** confirmed on-device
+   > (two capture attempts caught no cable toggle — `online` stayed `0`
+   > throughout, so the cable was never switched, not that udev was silent).
+   > Driver architecture *suggests* it does: `axp20x_ac_power` registers ACIN
+   > plug-in/removal IRQs whose handlers call `power_supply_changed()`, which
+   > emits a `change` uevent on `axp22x-ac`. **Before writing any code**, the
+   > implementation plan's FIRST step must run
+   > `udevadm monitor --udev --subsystem-match=power_supply` and physically
+   > toggle the cable to establish:
+   >   1. Does any udev event fire on plug/unplug? If **no** → udev is not a
+   >      viable trigger; fall back to a polling timer (see below).
+   >   2. If yes, which device emits it — `axp22x-ac` (use the narrow rule) or
+   >      only `axp20x-battery` (use the broad rule, accept the extra exec).
+   >
+   > **Polling fallback (only if udev proves silent):** a `.timer` firing
+   > `cpu-freq.sh apply-power` every ~15 s. `apply-power` is already idempotent,
+   > so no other change is needed. Measured idle `power_supply` chatter is 0
+   > events/12 s, so a 15 s poll is negligible. This is a documented contingency,
+   > **not** to be built unless step 1 forces it.
 
 4. **TUI toggle in `lib/tui/cpu_freq.py`**
 
@@ -141,7 +191,7 @@ TUI row ─> cpu-freq.sh auto {toggle,status} ─> marker file + immediate apply
 
 | State | Location | Meaning |
 |-------|----------|---------|
-| Feature enabled | `/etc/uconsole/cpu-auto.enabled` (presence) | opt-in marker, absent by default |
+| Feature enabled | `/etc/uconsole/cpu-auto-enabled` (presence) | opt-in marker, absent by default |
 | Power source | `/sys/class/power_supply/axp22x-ac/online` | `1`=AC, `0`=battery (read-only) |
 | Current freq | `/sys/.../cpu0/cpufreq/scaling_{min,max}_freq` | applied result |
 
@@ -159,28 +209,47 @@ the TUI.
 - **AC sysfs unreadable** — `cat ... 2>/dev/null` yields empty, which is not
   `1`, so we fall through to the safe battery state (1500/1500). Failing safe
   toward the brownout-protective state is correct.
-- **Disable while on battery** — `auto off` leaves the CPU at whatever it is
-  (likely 1500/1500). It does not auto-revert; the user can pick a preset
-  manually. Documented, intentional — avoids guessing a "previous" state we
-  never stored.
+- **Disable while on battery** — `auto off` releases the cap to the stock range
+  (1500/2400). Disabling the *capping* feature should not leave the CPU capped;
+  releasing to the hardware range is the natural "off," and is not guessing a
+  prior state (it's `cpuinfo_min`/`cpuinfo_max`). Note this permits turbo on
+  battery again — that is the user's explicit choice to turn off brownout
+  protection.
 - **Concurrent events** — idempotent writes; no locking needed. Two back-to-back
   events just write the same values twice.
 
-## Cleanup (in scope)
+## Cleanup (separate task — NOT this branch)
 
-- Delete the dead `scripts/power/cpu-freq-cap.sh`. It caps to 1.2 GHz, which is
-  *below* the CM5's 1.5 GHz floor (`cpuinfo_min_freq`), so the write can never
-  succeed. CM4-era cruft in the same file domain.
+- The dead `cpu-freq-cap.sh` (caps to 1.2 GHz, *below* the CM5's 1.5 GHz floor,
+  so the write can never succeed — CM4-era cruft) was **verified absent from the
+  canonical `device/` tree**. It exists only in `~/scripts/power/` and the
+  `~/pkg/` backup repo, and was never packaged (the postinst already retires the
+  related service). Deleting it is therefore a **separate `~/pkg` backup-repo
+  commit**, out of scope for `feat/cpu-freq-scaling`. Listed here so it isn't
+  lost, not as a step in this plan.
 
 ## Testing
 
+- **GATE 0 — event source** (must pass before coding, per review #3):
+  `udevadm monitor --udev --subsystem-match=power_supply` + physical cable
+  toggle. Confirm an event fires and record which device emits it. Picks the
+  narrow vs broad rule, or triggers the polling fallback.
 - **Flag ON, unplug** → `scaling_max_freq` becomes 1500000.
 - **Flag ON, plug in** → `scaling_max_freq` becomes 2400000 (governor stays the
   default `ondemand`, so it bursts under load).
-- **Flag OFF, plug/unplug** → frequencies unchanged.
+- **All cores capped, not just cpu0** → read
+  `cpu{1,2,3}/cpufreq/scaling_max_freq`; all should match cpu0 (policy0 spans
+  cpu0–3, confirmed on-device).
+- **Flag OFF** → cap released to 1500/2400 (stock range), and plug/unplug then
+  changes nothing.
 - **Boot on battery, flag ON** → comes up at 1500/1500 (verifies `add` match).
 - **Boot on AC, flag ON** → comes up at 1500/2400.
 - **`cpu-freq.sh auto status`** → reports correct enabled state and source.
+- **TUI toggle does not prompt for a password** (sudo-tee/`rm` covered by the
+  existing NOPASSWD policy).
+- **Manual preset is transient when auto is ON** → after enabling auto, a manual
+  `cpu-freq.sh preset` is overridden by the next power event. Document this; it
+  is expected, not a bug.
 - **Syntax gates** — `bash -n scripts/power/cpu-freq.sh`,
   `python3 -m py_compile lib/tui/cpu_freq.py`.
 - **Manual udev re-trigger for testing** —
