@@ -252,7 +252,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor flow.
 
 ## Related repos
 
-- **[mikevitelli/uconsole](https://github.com/mikevitelli/uconsole)** (private) — full device backup: dotfiles, WiFi profiles, SSH keys, apt manifests, RetroPie layout, hardware driver snapshots. Captures the installed state of the device for restore.
 - **HackerGadgets AIO** — expansion board this software supports ([hackergadgets.com](https://www.hackergadgets.com/))
 - **ClockworkPi** — the upstream hardware ([clockworkpi.com](https://www.clockworkpi.com/))
 
