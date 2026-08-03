@@ -40,6 +40,18 @@ export async function validateDeviceToken(
   return { userId: data.userId, repo: data.repo };
 }
 
+/**
+ * Delete a specific token by value.
+ *
+ * revokeDeviceToken() can only reach the token currently referenced in user
+ * settings. Link flows that mint a replacement must hand the superseded value
+ * here, or it stays valid in Redis for the rest of its 90-day TTL with nothing
+ * left pointing at it — an orphaned credential nobody can revoke.
+ */
+export async function revokeDeviceTokenValue(token: string): Promise<void> {
+  await redis.del(`devicetoken:${token}`);
+}
+
 export async function revokeDeviceToken(userId: string): Promise<void> {
   const settings = await getUserSettings(userId);
   if (settings?.deviceToken) {
