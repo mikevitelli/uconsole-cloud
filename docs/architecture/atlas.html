@@ -252,25 +252,23 @@
   .fig .wire  { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
   .fig .ghost { stroke: var(--rule); stroke-width: 1; fill: none; }
 
-  .fig .c-dev  { color: var(--device); }
-  .fig .c-cld  { color: var(--cloud); }
-  .fig .c-lan  { color: var(--lan); }
-  .fig .c-bad  { color: var(--crit); }
-
   .fig .s-dev { stroke: var(--device); }
   .fig .s-cld { stroke: var(--cloud); }
   .fig .s-lan { stroke: var(--lan); }
-  .fig .s-bad { stroke: var(--crit); }
+
+  .fig .s-ok  { stroke: var(--ok); }
+  .fig .f-ok  { fill: var(--ok); }
+  .fig .tint-ok { fill: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .fig .muted { stroke: var(--rule); }
+  .fig .f-muted { fill: var(--ink-3); }
 
   .fig .f-dev { fill: var(--device); }
   .fig .f-cld { fill: var(--cloud); }
   .fig .f-lan { fill: var(--lan); }
-  .fig .f-bad { fill: var(--crit); }
 
   .fig .tint-dev { fill: color-mix(in srgb, var(--device) 8%, transparent); }
   .fig .tint-cld { fill: color-mix(in srgb, var(--cloud) 8%, transparent); }
   .fig .tint-lan { fill: color-mix(in srgb, var(--lan) 8%, transparent); }
-  .fig .tint-bad { fill: color-mix(in srgb, var(--crit) 10%, transparent); }
 
   figcaption {
     margin-top: 14px;
@@ -335,12 +333,13 @@
     padding: 14px 18px;
     background: var(--sunk);
     border: 1px solid var(--rule-soft);
-    border-left: 3px solid var(--warn);
+    border-left: 3px solid var(--device);
     font-size: 14.5px;
     color: var(--ink-2);
     max-width: 78ch;
   }
   .note b { color: var(--ink); }
+  .note--good { border-left-color: var(--ok); }
 
   /* ─── anatomy cards ────────────────────────────────────────── */
 
@@ -441,8 +440,8 @@
       <p class="standfirst">
         A three-tier stack for the ClockworkPi uConsole: a curses TUI and Flask dashboard on the
         device, an nginx/mDNS layer on the local network, and an optional Next.js dashboard in the
-        cloud. These plates draw the mechanisms — what talks to what, what polls, what is gated,
-        and what happens when a piece breaks.
+        cloud. These plates draw the mechanisms behind it: how the tiers stay independent, how
+        little it polls, how a device proves who it is, and how every feature is isolated.
       </p>
     </div>
     <table class="revblock">
@@ -457,8 +456,8 @@
     <a href="#p1"><b>01</b> Topology</a>
     <a href="#p2"><b>02</b> Cadence</a>
     <a href="#p3"><b>03</b> Linking</a>
-    <a href="#p4"><b>04</b> Auth gates</a>
-    <a href="#p5"><b>05</b> Fault isolation</a>
+    <a href="#p4"><b>04</b> Gates</a>
+    <a href="#p5"><b>05</b> Isolation</a>
     <a href="#p6"><b>06</b> Pipeline</a>
     <a href="#p7"><b>07</b> Anatomy</a>
   </nav>
@@ -472,7 +471,7 @@
         The device is self-sufficient: the TUI, the dashboard and the scripts all read the same
         local substrate, and the LAN tier only wraps that dashboard in TLS and a name.
         <strong>Exactly one line leaves for the internet</strong> — a timer-driven POST that carries
-        telemetry outward and never accepts a command back.
+        telemetry outward and accepts nothing back.
       </p>
 
       <figure>
@@ -613,9 +612,10 @@
     <div class="plate__body">
       <h2>Three data paths, one poller</h2>
       <p class="claim">
-        It reads like three live feeds, but only the first one is a scheduled loop. The cloud
-        dashboard has <strong>no client-side timer at all</strong> — it is as fresh as the last push
-        and nothing more — and the local live monitor streams only while its panel is open.
+        Three live-looking surfaces, one scheduled loop between them. The cloud dashboard runs
+        <strong>no client-side timer at all</strong> — it reads once per request, on the server —
+        and the local monitor streams only while you are watching it. An idle device and an idle
+        browser both cost nothing.
       </p>
 
       <figure>
@@ -818,12 +818,12 @@
   <section class="plate" id="p4">
     <div class="plate__no">PLATE<b>04</b></div>
     <div class="plate__body">
-      <h2>What the middleware does not cover</h2>
+      <h2>Three gates, and every route behind one</h2>
       <p class="claim">
-        One negative-lookahead regex decides which API routes NextAuth guards. The routes it skips
-        are the interesting ones — and the most sensitive of them,
-        <strong><code>/api/device/push</code>, carries its own gate</strong>: token shape, payload
-        shape, a size ceiling and a per-token rate limit.
+        A single negative-lookahead regex routes each API call to the gate that fits it. Browsers
+        carry a session and go through NextAuth. Devices carry no cookie, so
+        <strong><code>/api/device/push</code> enforces its own gate</strong> — token shape, payload
+        shape, a size ceiling and a per-token rate limit, all checked before a byte reaches Redis.
       </p>
 
       <figure>
@@ -858,17 +858,17 @@
               <line x1="470" y1="306" x2="470" y2="500"/><line x1="484" y1="306" x2="484" y2="500"/>
             </g>
             <text class="tier f-cld" x="477" y="345" text-anchor="middle" transform="rotate(-90 477 345)">MIDDLEWARE</text>
-            <text class="xs f-cld" x="477" y="30" text-anchor="middle">gaps = matcher exemptions</text>
+            <text class="xs f-cld" x="477" y="30" text-anchor="middle">deliberate exemptions</text>
             <text class="xs f-cld" x="477" y="518" text-anchor="middle">auth() · NextAuth v5</text>
 
             <!-- gate on the wall -->
             <circle class="box s-cld" cx="477" cy="410" r="15"/>
             <path class="wire s-cld" d="M471 408 v-6 a6 6 0 0 1 12 0 v6"/>
-            <text class="xs" x="477" y="446" text-anchor="middle">401 if no session</text>
+            <text class="xs f-ok" x="477" y="446" text-anchor="middle">401 if no session</text>
 
             <!-- group A -->
             <rect class="box s-dev" x="600" y="46" width="410" height="152" rx="2"/>
-            <text class="tier f-dev" x="618" y="68">OPEN — MATCHER SKIPS THESE</text>
+            <text class="tier f-dev" x="618" y="68">PUBLIC BY DESIGN</text>
             <text class="sm" x="618" y="94">/api/health</text>
             <text class="sm" x="618" y="114">/api/device/code</text>
             <text class="sm" x="618" y="134">/api/device/poll/{secret}</text>
@@ -878,7 +878,7 @@
 
             <!-- group B -->
             <rect class="box s-dev" x="600" y="238" width="410" height="130" rx="2"/>
-            <text class="tier f-dev" x="618" y="260">BEARER — ROUTE'S OWN GATE</text>
+            <text class="tier f-dev" x="618" y="260">BEARER — DEVICE IDENTITY</text>
             <rect class="tint-dev" x="616" y="272" width="378" height="82" rx="2"/>
             <text class="sm" x="632" y="294">/api/device/push</text>
             <text class="xs" x="632" y="314">UUID v4 shape · Redis token lookup · hostname +</text>
@@ -903,9 +903,9 @@
           </svg>
         </div>
         <figcaption>
-          The wall has gaps because the matcher is written as an exclusion list, not an inclusion
-          list — so every route added under <code>/api</code> is guarded by default, and each
-          exemption has to be argued for one path at a time.
+          The matcher is written as an exclusion list rather than an inclusion list, which is what
+          makes it hold: every new route under <code>/api</code> is guarded the moment it exists,
+          and an exemption has to be argued for one path at a time.
         </figcaption>
       </figure>
 
@@ -916,11 +916,11 @@ export const config = {
   ],
 };</code></pre>
 
-      <div class="note">
-        <b>The trap this drawing exists to prevent:</b> reading the exemption list as
-        &quot;unauthenticated&quot;. <code>/api/device/push</code> skips the session middleware
-        because devices have no cookie — not because it is open. Its checks live in the route
-        handler, so anything that moves or copies that route has to carry them along.
+      <div class="note note--good">
+        <b>Defence in depth.</b> <code>/api/device/push</code> sits outside the session matcher
+        because a device has no cookie to present — and it earns that exemption in the handler,
+        checking token shape, payload shape, body size and push rate on every request. Two
+        different callers, two different proofs of identity, neither one trusting the other's.
       </div>
     </div>
   </section>
@@ -929,24 +929,24 @@ export const config = {
   <section class="plate" id="p5">
     <div class="plate__no">PLATE<b>05</b></div>
     <div class="plate__body">
-      <h2>A broken module costs you one menu entry</h2>
+      <h2>Twenty-three features, each one isolated</h2>
       <p class="claim">
-        The TUI resolves its menu at first use by importing 23 feature modules and merging the
-        <code>HANDLERS</code> dict each one exports. An import that raises is logged and skipped, and
-        <strong>the filter pass then hides the menu items that lost their handler</strong> — a
-        missing serial library takes out one row, not the launcher.
+        The TUI builds its menu at first use from 23 independently imported feature modules, each
+        exporting a <code>HANDLERS</code> dict. Because entries resolve through that dict instead of
+        at import scope, <strong>a module that can't load is contained rather than fatal</strong>:
+        it is recorded, its row steps aside, and the launcher and the other 22 features carry on.
       </p>
 
       <figure>
         <div class="fig">
           <svg viewBox="0 0 1040 430" role="img"
-               aria-label="Twenty-three feature modules feed an import loop. One module fails to import and is diverted to a crash log. The surviving modules merge their HANDLERS dicts into a cache, and a filter pass removes the menu items whose handler is missing, leaving that single entry hidden while the rest of the menu renders.">
+               aria-label="Twenty-three feature modules feed an import loop. Modules that load merge their HANDLERS dicts into a cache which the menu renders from. A module that cannot load — here, one needing an absent serial library — is recorded to a log and its single menu row steps aside, while the launcher and every other feature keep working.">
             <defs>
               <marker id="p5-ink" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path fill="currentColor" d="M0 0 L10 5 L0 10 z"/>
               </marker>
-              <marker id="p5-bad" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path class="f-bad" d="M0 0 L10 5 L0 10 z"/>
+              <marker id="p5-lan" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-lan" d="M0 0 L10 5 L0 10 z"/>
               </marker>
             </defs>
 
@@ -957,9 +957,9 @@ export const config = {
             <text class="sm" x="56" y="150">tui.tools</text>
             <text class="sm" x="56" y="174">tui.games</text>
             <text class="sm" x="56" y="198">tui.marauder</text>
-            <rect class="tint-bad" x="48" y="208" width="214" height="26" rx="2"/>
-            <text class="sm f-bad" x="56" y="226">tui.telegram</text>
-            <text class="sm f-bad" x="250" y="226" text-anchor="end">✗</text>
+            <rect class="tint-lan" x="48" y="208" width="214" height="26" rx="2"/>
+            <text class="sm f-muted" x="56" y="226">tui.telegram</text>
+            <text class="xs f-muted" x="256" y="226" text-anchor="end">no telethon</text>
             <text class="sm" x="56" y="254">tui.meshtastic_map</text>
             <text class="sm" x="56" y="278">tui.esp32_hub</text>
             <text class="sm" x="56" y="302">tui.wifi_radio</text>
@@ -977,9 +977,9 @@ export const config = {
             <text class="xs" x="470" y="332" text-anchor="middle">built once, then reused</text>
 
             <!-- crash log -->
-            <rect class="box s-bad" x="360" y="42" width="220" height="66" rx="2"/>
-            <text class="sm f-bad" x="470" y="68" text-anchor="middle">~/crash.log</text>
-            <text class="xs" x="470" y="88" text-anchor="middle">feature-import-failed</text>
+            <rect class="box s-lan" x="360" y="42" width="220" height="66" rx="2"/>
+            <text class="sm f-lan" x="470" y="68" text-anchor="middle">~/crash.log</text>
+            <text class="xs" x="470" y="88" text-anchor="middle">recorded, timestamped</text>
 
             <!-- menu -->
             <rect class="box" x="680" y="70" width="310" height="300" rx="2"/>
@@ -991,32 +991,32 @@ export const config = {
             <text class="xs" x="698" y="222">TOOLS ▸</text>
             <text class="sm" x="716" y="246">Git Panel · Quick Notes · Calculator</text>
             <text class="sm" x="716" y="270">Weather · Hacker News · Forum</text>
-            <text class="sm f-bad" x="716" y="294" text-decoration="line-through">Telegram</text>
-            <text class="xs f-bad" x="800" y="294">hidden, not crashed</text>
+            <text class="sm f-muted" x="716" y="294">Telegram</text>
+            <text class="xs f-muted" x="790" y="294">— row steps aside</text>
             <text class="sm" x="716" y="318">Markdown Viewer · Screenshot</text>
-            <text class="xs" x="698" y="352">every other row still dispatches normally</text>
+            <text class="xs f-ok" x="698" y="352">✓ launcher and all 22 other features unaffected</text>
 
             <!-- wires -->
             <path class="wire" d="M270 193 H356" marker-end="url(#p5-ink)"/>
             <text class="xs" x="313" y="185" text-anchor="middle">import</text>
             <text class="xs" x="313" y="208" text-anchor="middle">each</text>
 
-            <path class="wire s-bad" d="M470 150 V112" marker-end="url(#p5-bad)"/>
-            <text class="xs f-bad" x="486" y="134">ImportError</text>
+            <path class="wire s-lan" d="M470 150 V112" marker-end="url(#p5-lan)"/>
+            <text class="xs f-lan" x="486" y="134">contained</text>
 
             <path class="wire" d="M470 236 V280" marker-end="url(#p5-ink)"/>
             <text class="xs" x="486" y="262">merge</text>
 
             <path class="wire" d="M580 317 H640 V220 H676" marker-end="url(#p5-ink)"/>
             <text class="xs" x="630" y="270" text-anchor="middle" transform="rotate(-90 630 270)">_filter_menus()</text>
-            <text class="xs" x="470" y="378" text-anchor="middle">drops every menu item whose handler never arrived</text>
+            <text class="xs" x="470" y="378" text-anchor="middle">renders the menu from whatever actually loaded</text>
           </svg>
         </div>
         <figcaption>
-          The registry is the whole safety mechanism: because menu entries are resolved through a
-          dict rather than imported at module scope, the blast radius of a bad dependency is one
-          key. Adding a feature means exporting a <code>HANDLERS</code> dict and naming the module
-          in one list.
+          The registry is what buys the resilience: because menu entries resolve through a dict
+          rather than at import scope, the blast radius of any missing dependency is one key. It is
+          also the whole extension story — adding a feature means exporting a <code>HANDLERS</code>
+          dict and naming the module in one list.
         </figcaption>
       </figure>
 
@@ -1024,7 +1024,7 @@ export const config = {
         <div><dt>Registered modules</dt><dd>23</dd></div>
         <div><dt>Files under tui/</dt><dd>30</dd></div>
         <div><dt>Menu categories</dt><dd>9</dd></div>
-        <div><dt>Failure record</dt><dd>~/crash.log,<br>timestamped</dd></div>
+        <div><dt>Blast radius</dt><dd>1 menu row,<br>never the launcher</dd></div>
       </dl>
     </div>
   </section>
@@ -1037,8 +1037,8 @@ export const config = {
       <p class="claim">
         Editing and shipping share a single track; what differs is how far along it you travel.
         The <code>console</code> launcher prefers a source tree over the installed copy, so
-        <strong>previewing a TUI change requires no build and no deploy</strong> — the packaging
-        steps only matter when you are producing a <code>.deb</code>.
+        <strong>previewing a TUI change costs seconds — no build, no deploy</strong>. The packaging
+        stations only come into play when you are actually cutting a <code>.deb</code>.
       </p>
 
       <figure>
@@ -1100,9 +1100,9 @@ export const config = {
           </svg>
         </div>
         <figcaption>
-          The dashed station is the one most people assume is mandatory. <code>make install</code>
-          exists to verify the end-user install path, not to see your own edits — skipping it is the
-          normal case.
+          The dashed station is optional by design: <code>make install</code> is there to verify
+          the end-user install path. Day to day, <code>console</code> is already running your edits,
+          so the inner loop never leaves the first two stations.
         </figcaption>
       </figure>
 
