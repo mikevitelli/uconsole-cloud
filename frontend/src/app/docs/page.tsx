@@ -409,38 +409,40 @@ Phone / Browser            │
         {/* Scripts */}
         <Section id="scripts" title="Scripts">
           <p className="text-sub mb-3 text-sm">
-            46 management scripts organized in 5 categories under{" "}
+            53 management scripts organized in 5 categories under{" "}
             <InlineCode>/opt/uconsole/scripts/</InlineCode>.
           </p>
           <div className="space-y-4">
             {[
               {
                 name: "network/",
-                count: 5,
-                scripts: "hotspot.sh, network.sh, wifi-fallback.sh, wifi.sh, lib.sh",
+                count: 6,
+                scripts:
+                  "4g.sh, hotspot.sh, network.sh, wifi-fallback.sh, wifi.sh, lib.sh",
               },
               {
                 name: "power/",
-                count: 11,
+                count: 8,
                 scripts:
-                  "battery.sh, battery-test.sh, cellhealth.sh, charge.sh, cpu-freq-cap.sh, fix-battery-boot.sh, fix-voltage-cutoff.sh, low-battery-shutdown.sh, pmu-voltage-min.sh, power.sh, lib.sh",
+                  "battery.sh, battery-test.sh, cellhealth.sh, charge.sh, cpu-freq.sh, fix-voltage-cutoff.sh, power.sh, lib.sh",
               },
               {
                 name: "radio/",
-                count: 8,
+                count: 9,
                 scripts:
-                  "aio-check.sh, esp32.sh, esp32-marauder.sh, gps.sh, lora.sh, lora_helper.py, sdr.sh, lib.sh",
+                  "aio-check.sh, esp32.sh, esp32-marauder.sh, gps.sh, lora.sh, lora_helper.py, meshtastic.sh, sdr.sh, lib.sh",
               },
               {
                 name: "system/",
-                count: 5,
-                scripts: "backup.sh, push-status.sh, restore.sh, update.sh, lib.sh",
+                count: 6,
+                scripts:
+                  "install-tdlib.sh, push-status.sh, restore.sh, update.sh, validate-telegram.sh, lib.sh",
               },
               {
                 name: "util/",
-                count: 18,
+                count: 24,
                 scripts:
-                  "audit.sh, boot-check.sh, config.py, config.sh, console.sh, crash-log.sh, dashboard.sh, discharge-test.sh, diskusage.sh, hardware-detect.sh, integration-test.sh, smoke-test.sh, storage.sh, trackball-scroll.py, webdash-ctl.sh, webdash-info.sh, webdash.sh, lib.sh",
+                  "audit.sh, backup-restore-smoke.sh, boot-check.sh, build_adsb_basemap.py, clean-basemap-water.py, config.py, config.sh, console.sh, crash-log.sh, dashboard.sh, discharge-test.sh, diskusage.sh, hardware-detect.sh, integration-test.sh, smoke-test.sh, storage.sh, trackball-scroll.py, wardrive-demo.py, wardrive-preview.py, webdash-ctl.sh, webdash-info.sh, webdash.sh, wigle-quota-probe.py, lib.sh",
               },
             ].map(({ name, count, scripts }) => (
               <div
@@ -750,15 +752,14 @@ uconsole setup`}</Code>
               </p>
               <p className="text-sub text-sm mb-2">
                 The AXP228 PMU defaults to a 3.3V undervoltage cutoff. 18650
-                cells sag below this during boot inrush. Install the battery
-                boot fix from TUI (Power &gt; Power Config &gt; Install Boot
-                Fix) or run{" "}
+                cells sag below this during boot inrush. Lower the cutoff to
+                2.9V by running{" "}
                 <InlineCode>
-                  sudo bash /opt/uconsole/scripts/power/fix-battery-boot.sh
-                  install
+                  sudo bash /opt/uconsole/scripts/power/fix-voltage-cutoff.sh
                 </InlineCode>
-                . This sets a 2.9V cutoff via udev rule, initramfs hook, and
-                shutdown service.
+                . This installs a udev rule that applies the 2.9V cutoff on
+                every boot. Note: 2.9V is safe for 18650 cells &mdash; verify it
+                suits your battery chemistry before applying.
               </p>
             </div>
             <div>
