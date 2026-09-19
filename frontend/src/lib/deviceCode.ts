@@ -55,13 +55,22 @@ export async function generateDeviceCode(): Promise<{
 }
 
 /**
- * Check a code is present and unused without consuming it.
+ * Atomically reserve a pending code for exactly one caller.
  *
  * Lets callers reject a bad code *before* minting a device token. Confirming
- * mints first and validated second, so every mistyped or expired code left a
+ * mints first and validates second, so every mistyped or expired code left a
  * live 90-day credential behind that never reached a device.
+ *
+ * The status read alone is not enough: confirmDeviceCode is a read-then-write,
+ * so two simultaneous confirmations of the same code both observe "pending",
+ * both pass, and both mint a token. Only the last one is referenced by user
+ * settings — the other stays valid and unreachable. The SET NX below is the
+ * actual gate; the read only supplies the accurate error message.
+ *
+ * Callers that do not go on to confirm must releaseDeviceCode(), or a
+ * transient failure locks the code out for the rest of its TTL.
  */
-export async function validateDeviceCode(
+export async function claimDeviceCode(
   code: string
 ): Promise<{ success: boolean; error?: string }> {
   const codeData = await redis.get<DeviceCodeData>(`devicecode:${code}`);
@@ -71,7 +80,21 @@ export async function validateDeviceCode(
   if (codeData.status !== "pending") {
     return { success: false, error: "Code already used" };
   }
+
+  const claimed = await redis.set(`deviceclaim:${code}`, "1", {
+    ex: CODE_TTL,
+    nx: true,
+  });
+  if (claimed !== "OK") {
+    return { success: false, error: "Code already used" };
+  }
+
   return { success: true };
+}
+
+/** Release a claim so a legitimate retry can take it. */
+export async function releaseDeviceCode(code: string): Promise<void> {
+  await redis.del(`deviceclaim:${code}`);
 }
 
 export async function confirmDeviceCode(
@@ -113,6 +136,7 @@ export async function pollDeviceCode(
     await Promise.all([
       redis.del(`devicepoll:${secret}`),
       redis.del(`devicecode:${data.code}`),
+      redis.del(`deviceclaim:${data.code}`),
     ]);
   }
 

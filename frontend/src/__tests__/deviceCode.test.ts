@@ -17,7 +17,8 @@ vi.mock("@/lib/redis", () => ({
 
 import {
   generateDeviceCode,
-  validateDeviceCode,
+  claimDeviceCode,
+  releaseDeviceCode,
   confirmDeviceCode,
   pollDeviceCode,
 } from "@/lib/deviceCode";
@@ -226,32 +227,62 @@ describe("full flow: generate → confirm → poll", () => {
   });
 });
 
-describe("validateDeviceCode", () => {
-  it("accepts a pending code without consuming it", async () => {
+describe("claimDeviceCode", () => {
+  it("reserves a pending code without consuming it", async () => {
     mockGet.mockResolvedValue({ status: "pending" });
+    mockSet.mockResolvedValue("OK");
 
-    const result = await validateDeviceCode("ABCD-1234");
+    const result = await claimDeviceCode("ABCD-1234");
 
     expect(result.success).toBe(true);
-    expect(mockSet).not.toHaveBeenCalled();
+    // The claim key is the only write; the code itself is untouched.
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet).toHaveBeenCalledWith("deviceclaim:ABCD-1234", "1", {
+      ex: 600,
+      nx: true,
+    });
     expect(mockDel).not.toHaveBeenCalled();
   });
 
   it("rejects a code that does not exist or has expired", async () => {
     mockGet.mockResolvedValue(null);
 
-    const result = await validateDeviceCode("ABCD-1234");
+    const result = await claimDeviceCode("ABCD-1234");
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/not found or expired/i);
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
-  it("rejects a code that was already claimed", async () => {
+  it("rejects a code that was already confirmed", async () => {
     mockGet.mockResolvedValue({ status: "confirmed" });
 
-    const result = await validateDeviceCode("ABCD-1234");
+    const result = await claimDeviceCode("ABCD-1234");
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/already used/i);
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it("rejects the loser when two callers race the same pending code", async () => {
+    // Both read "pending" — the status check cannot separate them. SET NX is
+    // the gate: it returns null for the caller that did not create the key.
+    mockGet.mockResolvedValue({ status: "pending" });
+    mockSet.mockResolvedValueOnce("OK").mockResolvedValueOnce(null);
+
+    const [first, second] = await Promise.all([
+      claimDeviceCode("ABCD-1234"),
+      claimDeviceCode("ABCD-1234"),
+    ]);
+
+    expect([first.success, second.success].sort()).toEqual([false, true]);
+    expect(first.success ? second.error : first.error).toMatch(/already used/i);
+  });
+});
+
+describe("releaseDeviceCode", () => {
+  it("drops the claim so a retry can take the code", async () => {
+    await releaseDeviceCode("ABCD-1234");
+    expect(mockDel).toHaveBeenCalledWith("deviceclaim:ABCD-1234");
   });
 });
