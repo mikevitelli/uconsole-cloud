@@ -54,7 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRequireAuth.mockResolvedValue({ user: { id: "user123" } });
   mockGetUserSettings.mockResolvedValue({ ...BASE });
-  mockGenerateDeviceToken.mockResolvedValue("new-token");
+  mockGenerateDeviceToken.mockResolvedValue({ token: "new-token", replaced: "prior-token" });
   mockClaimDeviceCode.mockResolvedValue({ success: true });
   mockConfirmDeviceCode.mockResolvedValue({ success: true });
 });
@@ -80,7 +80,7 @@ describe("POST /api/device/code/confirm", () => {
     });
     mockGenerateDeviceToken.mockImplementation(async () => {
       order.push("mint");
-      return "new-token";
+      return { token: "new-token", replaced: "prior-token" };
     });
 
     await POST(request());
@@ -92,8 +92,9 @@ describe("POST /api/device/code/confirm", () => {
     const res = await POST(request());
 
     expect(res.status).toBe(200);
-    expect(mockRevokeTokenValue).toHaveBeenCalledWith("prior-token");
-    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("new-token");
+    expect(mockRevokeTokenValue).toHaveBeenCalledTimes(1);
+    expect(mockRevokeTokenValue).toHaveBeenCalledWith("user123", "prior-token");
+    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("user123", "new-token");
   });
 
   it("rolls the token back and restores the pointer when confirm fails", async () => {
@@ -109,7 +110,7 @@ describe("POST /api/device/code/confirm", () => {
     const res = await POST(request());
 
     expect(res.status).toBe(400);
-    expect(mockRevokeTokenValue).toHaveBeenCalledWith("new-token");
+    expect(mockRevokeTokenValue).toHaveBeenCalledWith("user123", "new-token");
     expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
       ...BASE,
       deviceToken: "prior-token",
@@ -138,9 +139,57 @@ describe("POST /api/device/code/confirm", () => {
 
     expect(res.status).toBe(400);
     // This request's own token is still rolled back...
-    expect(mockRevokeTokenValue).toHaveBeenCalledWith("new-token");
+    expect(mockRevokeTokenValue).toHaveBeenCalledWith("user123", "new-token");
     // ...but the concurrent request's settings and live token survive.
     expect(mockSetUserSettings).not.toHaveBeenCalled();
-    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("concurrent-token");
+    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("user123", "concurrent-token");
+  });
+
+  it("revokes the token the pointer actually held, not an earlier snapshot", async () => {
+    // A concurrent link superseded the opening snapshot's token before this
+    // request swapped the pointer. Revoking "prior-token" would leave the
+    // token this request really displaced live and unreferenced.
+    mockGenerateDeviceToken.mockResolvedValue({
+      token: "new-token",
+      replaced: "actually-displaced",
+    });
+
+    await POST(request());
+
+    expect(mockRevokeTokenValue).toHaveBeenCalledWith(
+      "user123",
+      "actually-displaced"
+    );
+    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith(
+      "user123",
+      "prior-token"
+    );
+  });
+
+  it("cleans up when confirmation throws", async () => {
+    // A failed Redis write mid-flight must not leave the token live, the
+    // pointer moved, and the code claimed until its TTL expires.
+    mockConfirmDeviceCode.mockRejectedValue(new Error("redis unavailable"));
+    mockGetUserSettings
+      .mockResolvedValueOnce({ ...BASE })
+      .mockResolvedValueOnce({ ...BASE, deviceToken: "new-token" });
+
+    await expect(POST(request())).rejects.toThrow("redis unavailable");
+
+    expect(mockRevokeTokenValue).toHaveBeenCalledWith("user123", "new-token");
+    expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
+      ...BASE,
+      deviceToken: "prior-token",
+    });
+    expect(mockReleaseDeviceCode).toHaveBeenCalledWith(CODE);
+  });
+
+  it("releases the claim when minting itself throws", async () => {
+    mockGenerateDeviceToken.mockRejectedValue(new Error("mint failed"));
+
+    await expect(POST(request())).rejects.toThrow("mint failed");
+
+    expect(mockReleaseDeviceCode).toHaveBeenCalledWith(CODE);
+    expect(mockRevokeTokenValue).not.toHaveBeenCalled();
   });
 });

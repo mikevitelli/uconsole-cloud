@@ -11,6 +11,30 @@ import {
   releaseDeviceCode,
 } from "@/lib/deviceCode";
 
+/**
+ * Undo a confirmation that did not commit: drop this request's token, put the
+ * pointer back if it still references it, and hand the code back for a retry.
+ */
+async function rollback(
+  userId: string,
+  deviceToken: string | undefined,
+  replaced: string | undefined,
+  code: string
+): Promise<void> {
+  if (deviceToken) {
+    await revokeDeviceTokenValue(userId, deviceToken);
+
+    // Compare-and-set, not a blind restore. Writing back a snapshot would
+    // clobber anything a concurrent request committed in the meantime —
+    // including its token pointer, orphaning the credential it just minted.
+    const current = await getUserSettings(userId);
+    if (current?.deviceToken === deviceToken) {
+      await setUserSettings(userId, { ...current, deviceToken: replaced });
+    }
+  }
+  await releaseDeviceCode(code);
+}
+
 export async function POST(req: NextRequest) {
   const session = await requireAuth();
   if (!session) {
@@ -43,39 +67,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: claim.error }, { status: 400 });
   }
 
-  // Hold the outgoing token: generateDeviceToken overwrites the settings
-  // reference, and once that pointer moves the old value is unreachable.
-  const priorToken = settings.deviceToken;
+  let deviceToken: string | undefined;
+  let replaced: string | undefined;
 
-  const deviceToken = await generateDeviceToken(session.user.id, settings.repo);
-  const result = await confirmDeviceCode(normalized, deviceToken, settings.repo);
+  try {
+    const minted = await generateDeviceToken(session.user.id, settings.repo);
+    deviceToken = minted.token;
+    // What the pointer actually held when it moved, not a snapshot taken at the
+    // top of the request. A concurrent link may have superseded that already.
+    replaced = minted.replaced;
 
-  if (!result.success) {
-    // Confirmation lost a race (the code expired between claim and write).
-    // Roll the new token back rather than leaving it orphaned.
-    await revokeDeviceTokenValue(deviceToken);
+    const result = await confirmDeviceCode(normalized, deviceToken, settings.repo);
 
-    // Compare-and-set, not a blind restore. Writing back the snapshot taken at
-    // the top of the request would clobber anything a concurrent request
-    // committed in the meantime — including its token pointer, orphaning the
-    // live credential it just minted. Only revert what this request moved.
-    const current = await getUserSettings(session.user.id);
-    if (current?.deviceToken === deviceToken) {
-      await setUserSettings(session.user.id, {
-        ...current,
-        deviceToken: priorToken,
-      });
+    if (!result.success) {
+      await rollback(session.user.id, deviceToken, replaced, normalized);
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
-
-    // Let a legitimate retry take the code again.
-    await releaseDeviceCode(normalized);
-    return NextResponse.json({ error: result.error }, { status: 400 });
+  } catch (err) {
+    // A throw between minting and confirming (a failed Redis write, say) would
+    // otherwise leave the token live, the pointer moved, and the code claimed
+    // until its TTL expires.
+    await rollback(session.user.id, deviceToken, replaced, normalized);
+    throw err;
   }
 
   // Superseded only now that the replacement is committed. Revoking earlier
   // would strand a working device if confirmation failed.
-  if (priorToken && priorToken !== deviceToken) {
-    await revokeDeviceTokenValue(priorToken);
+  if (replaced && replaced !== deviceToken) {
+    await revokeDeviceTokenValue(session.user.id, replaced);
   }
 
   return NextResponse.json({ success: true, repo: settings.repo });
