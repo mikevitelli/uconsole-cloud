@@ -54,6 +54,26 @@ export async function generateDeviceCode(): Promise<{
   return { code, secret, expiresIn: CODE_TTL };
 }
 
+/**
+ * Check a code is present and unused without consuming it.
+ *
+ * Lets callers reject a bad code *before* minting a device token. Confirming
+ * mints first and validated second, so every mistyped or expired code left a
+ * live 90-day credential behind that never reached a device.
+ */
+export async function validateDeviceCode(
+  code: string
+): Promise<{ success: boolean; error?: string }> {
+  const codeData = await redis.get<DeviceCodeData>(`devicecode:${code}`);
+  if (!codeData) {
+    return { success: false, error: "Code not found or expired" };
+  }
+  if (codeData.status !== "pending") {
+    return { success: false, error: "Code already used" };
+  }
+  return { success: true };
+}
+
 export async function confirmDeviceCode(
   code: string,
   deviceToken: string,

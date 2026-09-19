@@ -17,6 +17,7 @@ vi.mock("@/lib/redis", () => ({
 
 import {
   generateDeviceCode,
+  validateDeviceCode,
   confirmDeviceCode,
   pollDeviceCode,
 } from "@/lib/deviceCode";
@@ -222,5 +223,35 @@ describe("full flow: generate → confirm → poll", () => {
     expect(polled?.status).toBe("confirmed");
     expect(polled?.deviceToken).toBe("device-token-uuid");
     expect(polled?.repo).toBe("mikevitelli/uconsole");
+  });
+});
+
+describe("validateDeviceCode", () => {
+  it("accepts a pending code without consuming it", async () => {
+    mockGet.mockResolvedValue({ status: "pending" });
+
+    const result = await validateDeviceCode("ABCD-1234");
+
+    expect(result.success).toBe(true);
+    expect(mockSet).not.toHaveBeenCalled();
+    expect(mockDel).not.toHaveBeenCalled();
+  });
+
+  it("rejects a code that does not exist or has expired", async () => {
+    mockGet.mockResolvedValue(null);
+
+    const result = await validateDeviceCode("ABCD-1234");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/not found or expired/i);
+  });
+
+  it("rejects a code that was already claimed", async () => {
+    mockGet.mockResolvedValue({ status: "confirmed" });
+
+    const result = await validateDeviceCode("ABCD-1234");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/already used/i);
   });
 });

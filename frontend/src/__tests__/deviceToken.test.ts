@@ -22,6 +22,7 @@ import {
   generateDeviceToken,
   validateDeviceToken,
   revokeDeviceToken,
+  revokeDeviceTokenValue,
   regenerateDeviceToken,
 } from "@/lib/deviceToken";
 import { getUserSettings, setUserSettings } from "@/lib/redis";
@@ -129,5 +130,37 @@ describe("regenerateDeviceToken", () => {
     const newToken = await regenerateDeviceToken("user123", "owner/repo");
     expect(newToken).toMatch(/^[0-9a-f]{8}-/);
     expect(mockDel).toHaveBeenCalledWith("devicetoken:old-token");
+  });
+});
+
+describe("revokeDeviceTokenValue", () => {
+  it("deletes the token it is handed, not the one in settings", async () => {
+    mockGetUserSettings.mockResolvedValue({
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "current-token",
+    });
+
+    await revokeDeviceTokenValue("orphaned-token");
+
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:orphaned-token");
+    expect(mockDel).not.toHaveBeenCalledWith("devicetoken:current-token");
+  });
+
+  it("reaches a token that settings no longer point at", async () => {
+    // revokeDeviceToken() reads the settings pointer, so once a re-link moves
+    // it the superseded value is unreachable. This is the escape hatch.
+    mockGetUserSettings.mockResolvedValue({
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "replacement",
+    });
+
+    await revokeDeviceToken("user123");
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:replacement");
+    expect(mockDel).not.toHaveBeenCalledWith("devicetoken:superseded");
+
+    await revokeDeviceTokenValue("superseded");
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:superseded");
   });
 });
