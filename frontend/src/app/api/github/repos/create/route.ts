@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithToken } from "@/lib/api-helpers";
 import { setUserSettings } from "@/lib/redis";
-import { generateDeviceToken } from "@/lib/deviceToken";
+import { generateDeviceToken, revokeDeviceToken } from "@/lib/deviceToken";
 import { createBootstrapRepo } from "@/lib/github";
 
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/;
@@ -30,12 +30,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status });
   }
 
-  // Auto-link the new repo
+  // Auto-link the new repo. Revoke the outgoing credential first — the write
+  // below drops the pointer, orphaning whatever it referenced.
+  await revokeDeviceToken(session.user.id);
+
   await setUserSettings(session.user.id, {
     repo: result.full_name,
     linkedAt: new Date().toISOString(),
   });
-  const deviceToken = await generateDeviceToken(
+  const { token: deviceToken } = await generateDeviceToken(
     session.user.id,
     result.full_name
   );
