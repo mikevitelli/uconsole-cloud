@@ -51,6 +51,10 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    env:
+      # The `secrets` context is readable in job-level env but not in a job-level
+      # `if`, so the presence check happens inside the gate script below.
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     outputs:
       proceed: ${{ steps.check.outputs.proceed }}
       pr: ${{ steps.check.outputs.pr }}
@@ -70,6 +74,20 @@ jobs:
         run: |
           set -euo pipefail
           emit() { echo "proceed=$1" >>"$GITHUB_OUTPUT"; echo "reason=$2" >>"$GITHUB_OUTPUT"; }
+
+          # Without the key the fix job would fail on every single review event.
+          # Stand down quietly instead, but make it visible in the run summary so
+          # a silently disabled loop is not mistaken for a quiet one.
+          if [ "$HAS_KEY" != "true" ]; then
+            {
+              echo "### PR bot-fix loop is disabled"
+              echo
+              echo "No \`ANTHROPIC_API_KEY\` repository secret is set, so this loop"
+              echo "cannot run. Add it under **Settings -> Secrets and variables ->"
+              echo "Actions** and it will start working on the next review event."
+            } >>"$GITHUB_STEP_SUMMARY"
+            emit false "ANTHROPIC_API_KEY secret is not set"; exit 0
+          fi
 
           pr=""
           case "$EVENT" in
