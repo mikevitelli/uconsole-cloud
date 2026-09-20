@@ -1,0 +1,5 @@
+{
+  "autoReview": ["open"],
+  "commentTypes": ["logic", "syntax"],
+  "ignorePatterns": "package-lock.json\nfrontend/public/apt/**\n**/__pycache__/**\ndevice/lib/tui/*.json"
+}
