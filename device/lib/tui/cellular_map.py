@@ -211,13 +211,32 @@ def upsert_serving(cache, cell, geo):
 
 
 # ── Geolocation ─────────────────────────────────────────────────────────
+def _op_token():
+    """Service-account token for the op CLI, or None.
+
+    Never name a developer's home directory here. The package installs for
+    whoever owns the device, so an absolute /home/<someone> path only ever
+    works on one machine, and shipping it also trips the packaging check that
+    greps the built package for personal data.
+    """
+    tok = os.environ.get("OP_SERVICE_ACCOUNT_TOKEN")
+    if tok:
+        return tok.strip() or None
+    path = os.environ.get("OP_SERVICE_ACCOUNT_TOKEN_FILE") or os.path.expanduser(
+        "~/.config/op/service-account-token"
+    )
+    try:
+        with open(path) as f:
+            return f.read().strip() or None
+    except Exception:
+        return None
+
+
 def _op_field(title, label="credential"):
     """Fetch a 1Password field via the op CLI (service account). None on failure.
     Shared by the WiGLE and OpenCelliD secret loaders; the value is never logged."""
-    try:
-        with open("/home/mikevitelli/.config/op/service-account-token") as f:
-            tok = f.read().strip()
-    except Exception:
+    tok = _op_token()
+    if not tok:
         return None
     env2 = dict(os.environ)
     env2["OP_SERVICE_ACCOUNT_TOKEN"] = tok

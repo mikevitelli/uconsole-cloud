@@ -300,3 +300,31 @@ def test_no_leaked_sudoers_files_in_source():
         assert "mikevitelli " not in body, (
             f"{fname}: hardcoded operator username 'mikevitelli' present"
         )
+
+
+# ── Packaging: no developer home directories in shipped source ────────────
+
+
+def test_no_hardcoded_home_directories_in_device_source():
+    """packaging/Dockerfile.test greps the built package for personal data and
+    fails the install test on a hit. An absolute /home/<someone> path also only
+    ever resolves on one machine, so it is broken for every other install."""
+    offenders = []
+    for root, dirs, files in os.walk(os.path.join(REPO, "device")):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        for name in files:
+            if not name.endswith((".py", ".sh")):
+                continue
+            path = os.path.join(root, name)
+            if not os.path.isfile(path):
+                continue  # broken symlink, e.g. a lib.sh that resolves at install time
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for lineno, line in enumerate(f, 1):
+                    if re.search(r"/home/(?!uconsole\b)[A-Za-z0-9._-]+/", line):
+                        offenders.append(
+                            f"{os.path.relpath(path, REPO)}:{lineno}: {line.strip()}"
+                        )
+    assert not offenders, (
+        "hardcoded home directory in shipped source; use os.path.expanduser "
+        "or an env override:\n  " + "\n  ".join(offenders)
+    )
