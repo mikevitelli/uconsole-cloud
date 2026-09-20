@@ -129,7 +129,7 @@ Nothing above fires without a human pushing, running `make`, or invoking `/publi
 | `make install` permission denied | rsync error | `sudo` prompt — nothing destructive |
 | `make publish-apt` GPG error | Signing fails | Only the maintainer with the key can fix |
 | Vercel deploy fails | `main` pushed but site unchanged | Check Vercel dashboard — usually env var or build error |
-| User device upgrade fails | End-user `apt upgrade` errors | postinst issue — user can pin to prior: `sudo apt install uconsole-cloud=0.2.1-1` |
+| User device upgrade fails | End-user `apt upgrade` errors | postinst issue — the pool carries only the current release, so there is no prior version to pin to. Fix forward and publish a new release. |
 
 ## Related docs
 

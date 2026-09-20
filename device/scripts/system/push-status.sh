@@ -15,9 +15,11 @@ set -euo pipefail
 # /etc/uconsole/status.env — the same path the systemd unit's
 # EnvironmentFile points at; standalone installs use ~/.config.
 # Check both so timer runs and manual runs work on either layout.
+# HOME is expanded with a default: under a systemd system unit it can be
+# unset, and a bare "${HOME}" would abort the script via `set -u`.
 ENV_FILE="${UCONSOLE_STATUS_ENV:-}"
 if [ -z "$ENV_FILE" ]; then
-    for cand in /etc/uconsole/status.env "${HOME}/.config/uconsole/status.env"; do
+    for cand in /etc/uconsole/status.env "${HOME:-}/.config/uconsole/status.env"; do
         if [ -f "$cand" ]; then
             ENV_FILE="$cand"
             break

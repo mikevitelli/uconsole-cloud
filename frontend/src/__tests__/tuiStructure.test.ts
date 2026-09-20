@@ -29,7 +29,7 @@ function getScriptFiles(): Set<string> {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) walk(path.join(dir, entry.name));
       else if (entry.name.endsWith(".sh"))
-        files.add(path.relative(SCRIPTS_DIR, path.join(dir, entry.name)));
+        files.add(path.relative(SCRIPTS_DIR, path.join(dir, entry.name)).split(path.sep).join("/"));
     }
   }
   walk(SCRIPTS_DIR);

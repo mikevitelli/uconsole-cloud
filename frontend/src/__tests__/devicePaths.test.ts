@@ -38,7 +38,7 @@ function getScriptFiles(dir: string): Set<string> {
         walk(path.join(d, entry.name));
       } else if (entry.name.endsWith(".sh")) {
         // Relative path from scripts/ root, e.g. "power/battery.sh"
-        files.add(path.relative(dir, path.join(d, entry.name)));
+        files.add(path.relative(dir, path.join(d, entry.name)).split(path.sep).join("/"));
       }
     }
   }
