@@ -4,6 +4,31 @@
 
 (v0.4 work lands here. See [docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md](docs/internal/plans/2026-05-26-v0.3.1-v0.4-roadmap.md).)
 
+### Fixed
+- **The v0.3.1 `push-status.sh` fixes never reached the live-served copy** —
+  both were applied to `device/scripts/system/push-status.sh` only, while
+  `frontend/public/scripts/push-status.sh` (what `uconsole.cloud` serves to
+  `curl` installers and `uconsole update`) kept the old behaviour. Standalone
+  installs still resolved `~/.config/uconsole/status.env` exclusively and still
+  `source`d it. Ported both: `/etc` → `~/.config` resolution with a
+  `UCONSOLE_STATUS_ENV` override, and the `env_value()` parser that closes the
+  config-as-code execution path. A `status.env` containing
+  `EVIL=$(...)` executed on the previous version.
+- **`${HOME}` could abort push-status.sh under `set -u`** — a systemd system
+  unit does not necessarily set `HOME`, so the bare expansion aborted with
+  "HOME: unbound variable" before the config check could report anything
+  useful. Now `${HOME:-}` in both copies. Same failure mode as the
+  `crash-log.service` bug fixed in v0.3.1.
+- **Device tokens were orphaned on every link, and could not be revoked** —
+  `/api/device/code/confirm` minted a token *before* validating the code, so
+  every mistyped, expired, or abandoned link left a live 90-day credential in
+  Redis. `revokeDeviceToken()` only reaches the token referenced in user
+  settings, so each new link made the previous one permanently unrevocable.
+  One account had accumulated seven valid tokens for a single device. The
+  route now pre-validates the code, revokes the superseded token only after
+  the replacement is committed, and rolls the new token back (restoring the
+  settings pointer) if confirmation loses a race.
+
 ## v0.3.1 (2026-06-16)
 
 CM5 battery/VOFF stack retirement, packaging and crash-log fixes, a
