@@ -1,0 +1,246 @@
+name: PR bot-fix loop
+
+# Closes the review loop: Greptile / Copilot / Vercel Agent leave findings on a
+# PR, Claude verifies each one against the code, pushes a fix, replies and
+# resolves the thread. That push re-triggers the reviewers, so the loop is
+# recursive by construction — which is exactly why the gate job below caps it.
+#
+# `issue_comment` is deliberately NOT a trigger: vercel[bot] posts a deployment
+# table on every push, and watching it would make the loop feed on deploy noise.
+#
+# SETUP: requires an `ANTHROPIC_API_KEY` repository secret
+# (Settings -> Secrets and variables -> Actions). Without it the fix job fails
+# on every run. Usage is billed to that key.
+#
+# CAP: at most MAX_ROUNDS automated rounds per PR, tracked by `bot-fix-round-N`
+# labels. To give a PR more rounds, delete those labels. To run past the cap
+# once, dispatch this workflow manually with the PR number.
+
+on:
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to run against (bypasses the round cap)"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# One run per PR. A second event while a fix is in flight queues behind it
+# rather than racing it onto the same branch.
+concurrency:
+  group: >-
+    bot-fix-${{ github.event.pull_request.number
+      || github.event.inputs.pr
+      || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  MAX_ROUNDS: "3"
+  WATCHED_BOTS: "greptile-apps[bot],copilot-pull-request-reviewer[bot],Copilot,vercel[bot]"
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    env:
+      # The `secrets` context is readable in job-level env but not in a job-level
+      # `if`, so the presence check happens inside the gate script below.
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+      pr: ${{ steps.check.outputs.pr }}
+      reason: ${{ steps.check.outputs.reason }}
+      rounds: ${{ steps.check.outputs.rounds }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.event.sender.login }}
+          PR_FROM_REVIEW: ${{ github.event.pull_request.number }}
+          PR_FROM_DISPATCH: ${{ github.event.inputs.pr }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          emit() { echo "proceed=$1" >>"$GITHUB_OUTPUT"; echo "reason=$2" >>"$GITHUB_OUTPUT"; }
+
+          # Without the key the fix job would fail on every single review event.
+          # Stand down quietly instead, but make it visible in the run summary so
+          # a silently disabled loop is not mistaken for a quiet one.
+          if [ "$HAS_KEY" != "true" ]; then
+            {
+              echo "### PR bot-fix loop is disabled"
+              echo
+              echo "No \`ANTHROPIC_API_KEY\` repository secret is set, so this loop"
+              echo "cannot run. Add it under **Settings -> Secrets and variables ->"
+              echo "Actions** and it will start working on the next review event."
+            } >>"$GITHUB_STEP_SUMMARY"
+            emit false "ANTHROPIC_API_KEY secret is not set"; exit 0
+          fi
+
+          pr=""
+          case "$EVENT" in
+            workflow_dispatch)
+              pr="$PR_FROM_DISPATCH"
+              ;;
+            workflow_run)
+              # Only act on a red CI run, and only if it belongs to an open PR.
+              if [ "$RUN_CONCLUSION" != "failure" ]; then
+                emit false "CI run concluded '$RUN_CONCLUSION', nothing to fix"; exit 0
+              fi
+              pr=$(gh pr list --repo "$REPO" --head "$RUN_BRANCH" --state open \
+                     --json number --jq '.[0].number // empty')
+              [ -n "$pr" ] || { emit false "no open PR for branch $RUN_BRANCH"; exit 0; }
+              ;;
+            *)
+              pr="$PR_FROM_REVIEW"
+              # Never react to our own replies, or to a human's — a human asking
+              # for something goes through the author, not this loop.
+              case ",$WATCHED_BOTS," in
+                *",$ACTOR,"*) : ;;
+                *) emit false "actor '$ACTOR' is not a watched review bot"; exit 0 ;;
+              esac
+              ;;
+          esac
+
+          echo "pr=$pr" >>"$GITHUB_OUTPUT"
+
+          state=$(gh pr view "$pr" --repo "$REPO" --json state --jq '.state')
+          [ "$state" = "OPEN" ] || { emit false "PR #$pr is $state"; exit 0; }
+
+          # Round cap. Counted from `bot-fix-round-N` labels this workflow sets
+          # on itself, NOT from commit authorship — a Co-Authored-By trailer from
+          # any Claude session would otherwise be miscounted as a loop round.
+          # Visible on the PR, and resettable by deleting the labels.
+          rounds=$(gh pr view "$pr" --repo "$REPO" --json labels --jq \
+            '[.labels[].name | select(startswith("bot-fix-round-"))
+               | ltrimstr("bot-fix-round-") | tonumber] | max // 0')
+          echo "rounds=$rounds" >>"$GITHUB_OUTPUT"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            emit true "manual run (cap bypassed, $rounds rounds so far)"; exit 0
+          fi
+          if [ "$rounds" -ge "$MAX_ROUNDS" ]; then
+            emit false "hit the $MAX_ROUNDS-round cap ($rounds rounds already)"; exit 0
+          fi
+          emit true "round $((rounds + 1)) of $MAX_ROUNDS"
+
+      - name: Say why it stood down
+        if: steps.check.outputs.proceed != 'true' && contains(steps.check.outputs.reason, 'round cap')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.check.outputs.pr }}
+          REASON: ${{ steps.check.outputs.reason }}
+          ROUNDS: ${{ steps.check.outputs.rounds }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            "**Automated fix loop stopped: ${REASON}.**" \
+            "" \
+            "There are still open review findings here, but the loop has run ${ROUNDS} rounds on" \
+            "this PR and will not push more without a human. Repeated rounds usually mean one" \
+            "of three things:" \
+            "" \
+            "- a finding is a false positive, and each \"fix\" creates new surface for the next one" \
+            "- the real problem is a design choice the reviewers keep circling, not a bug" \
+            "- an earlier fix was wrong and the bots are reacting to it" \
+            "" \
+            "Worth a look before anything else lands. To override, run the **PR bot-fix loop**" \
+            "workflow manually against this PR number." \
+            "" \
+            "---" \
+            "_Generated by [Claude Code](https://claude.ai/code)_" > /tmp/stood-down.md
+          gh pr comment "$PR" --repo "$REPO" --body-file /tmp/stood-down.md
+
+  fix:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Findings arrive from bot accounts; without this they are ignored.
+          allowed_bots: "greptile-apps[bot],copilot-pull-request-reviewer[bot],vercel[bot]"
+          use_sticky_comment: "true"
+          claude_args: "--model claude-opus-5 --max-turns 40"
+          prompt: |
+            You are closing the review loop on pull request #${{ needs.gate.outputs.pr }}
+            of ${{ github.repository }}. This is ${{ needs.gate.outputs.reason }}.
+
+            Work only on this PR's branch. Never merge it, never approve it, never
+            touch another branch.
+
+            ## What to do
+
+            1. Read the PR diff and every unresolved review thread on it.
+            2. VERIFY EACH FINDING AGAINST THE CODE before acting. These reviewers
+               produce false positives. A finding you cannot reproduce by reading
+               the actual code is not a finding: reply on its thread explaining why
+               it does not apply, resolve it, move on. Never write a speculative fix
+               just to make a comment go away.
+            3. Fix the findings that survive. Keep each fix minimal — what the
+               finding needs, nothing more. Do not widen the PR.
+            4. If CI is red on the current head, root-cause and fix that too. Never
+               skip, disable or quarantine a test to get green.
+            5. Reply once per thread you acted on, saying what changed and why, then
+               resolve it.
+
+            ## Before you push
+
+            Run the repo's own checks from `frontend/` and get them clean:
+            `npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`.
+            A push that turns CI red costs a cycle. If a check cannot pass, push
+            nothing and say so in a PR comment instead.
+
+            Add a regression test for any behavioural fix, and confirm it FAILS
+            against the unfixed code before keeping it. A test that passes either
+            way is worse than no test.
+
+            ## Stop and comment instead of pushing when
+
+            - the finding is architectural, or changes an API, schema, or public
+              behaviour — propose an approach and let a human decide
+            - two reviewers contradict each other
+            - the same finding returns after you already fixed it, which means the
+              fix is not landing and another round will not help
+            - fixing it would mean changing files this PR does not already touch
+
+            In any of those cases post one PR comment explaining the situation and
+            stop. Stopping with a clear explanation is a good outcome. A wrong push
+            is not.
+
+            End every comment you post with a blank line, a `---` rule, then:
+            _Generated by [Claude Code](https://claude.ai/code)_
+
+      - name: Record the round
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.gate.outputs.pr }}
+          ROUNDS: ${{ needs.gate.outputs.rounds }}
+        run: |
+          set -euo pipefail
+          next=$(( ROUNDS + 1 ))
+          gh label create "bot-fix-round-${next}" --repo "$REPO" \
+            --color ededed --description "Automated review-fix loop, round ${next}" \
+            --force >/dev/null 2>&1 || true
+          gh pr edit "$PR" --repo "$REPO" --add-label "bot-fix-round-${next}"

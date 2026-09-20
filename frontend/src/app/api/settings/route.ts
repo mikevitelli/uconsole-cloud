@@ -39,12 +39,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Relinking replaces the device's credential. Revoke the outgoing one first:
+  // the write below drops the pointer, and anything it still referenced would
+  // otherwise stay valid for the rest of its 90 days.
+  await revokeDeviceToken(session.user.id);
+
   await setUserSettings(session.user.id, {
     repo: repo.trim(),
     linkedAt: new Date().toISOString(),
   });
 
-  const deviceToken = await generateDeviceToken(session.user.id, repo.trim());
+  const { token: deviceToken } = await generateDeviceToken(
+    session.user.id,
+    repo.trim()
+  );
 
   return NextResponse.json({ ok: true, deviceToken });
 }
