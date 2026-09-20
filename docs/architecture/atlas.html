@@ -1,0 +1,1210 @@
+<title>uconsole-cloud — Architecture Atlas</title>
+
+<style>
+  :root {
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:   #eceff4;
+    --sheet:    #fbfcfe;
+    --sunk:     #f2f5f9;
+    --ink:      #0e151f;
+    --ink-2:    #4b586b;
+    --ink-3:    #74808f;
+    --rule:     #c3cddb;
+    --rule-soft:#dde4ee;
+
+    --device:   #1f6feb;
+    --cloud:    #9333c7;
+    --lan:      #a4620b;
+
+    --ok:       #1a7f37;
+    --warn:     #9a6700;
+    --crit:     #cf222e;
+
+    --tick: 6px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #080b11;
+      --sheet:    #101722;
+      --sunk:     #0b111a;
+      --ink:      #dbe4f0;
+      --ink-2:    #93a2b8;
+      --ink-3:    #6c7c92;
+      --rule:     #2a3545;
+      --rule-soft:#1c2532;
+
+      --device:   #58a6ff;
+      --cloud:    #d67aff;
+      --lan:      #f0a23c;
+
+      --ok:       #3fb950;
+      --warn:     #d29922;
+      --crit:     #f85149;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --ground:#eceff4; --sheet:#fbfcfe; --sunk:#f2f5f9;
+    --ink:#0e151f; --ink-2:#4b586b; --ink-3:#74808f;
+    --rule:#c3cddb; --rule-soft:#dde4ee;
+    --device:#1f6feb; --cloud:#9333c7; --lan:#a4620b;
+    --ok:#1a7f37; --warn:#9a6700; --crit:#cf222e;
+  }
+
+  :root[data-theme="dark"] {
+    --ground:#080b11; --sheet:#101722; --sunk:#0b111a;
+    --ink:#dbe4f0; --ink-2:#93a2b8; --ink-3:#6c7c92;
+    --rule:#2a3545; --rule-soft:#1c2532;
+    --device:#58a6ff; --cloud:#d67aff; --lan:#f0a23c;
+    --ok:#3fb950; --warn:#d29922; --crit:#f85149;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    padding: 0 16px 96px;
+  }
+
+  .sheet {
+    max-width: 1180px;
+    margin: 0 auto;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    border-top: none;
+  }
+
+  /* ─── masthead ─────────────────────────────────────────────── */
+
+  .masthead {
+    border-top: 3px solid var(--ink);
+    padding: 40px 40px 28px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+    align-items: end;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 14px;
+  }
+
+  .masthead h1 {
+    font-family: var(--mono);
+    font-size: clamp(28px, 5vw, 46px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .masthead h1 span { color: var(--ink-3); }
+
+  .standfirst {
+    margin: 18px 0 0;
+    max-width: 62ch;
+    color: var(--ink-2);
+    font-size: 17px;
+  }
+
+  .revblock {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--rule);
+    border-collapse: collapse;
+    white-space: nowrap;
+  }
+  .revblock td, .revblock th {
+    border: 1px solid var(--rule);
+    padding: 5px 12px;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+  }
+  .revblock th {
+    color: var(--ink-3);
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 10px;
+  }
+  .revblock td { font-weight: 600; }
+
+  /* ─── nav ──────────────────────────────────────────────────── */
+
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    background: var(--sheet);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav a {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    text-decoration: none;
+    padding: 11px 16px;
+    border-right: 1px solid var(--rule-soft);
+  }
+  .nav a:hover { background: var(--sunk); color: var(--ink); }
+  .nav a:focus-visible { outline: 2px solid var(--device); outline-offset: -2px; }
+  .nav b { color: var(--ink-3); font-weight: 400; margin-right: 7px; }
+
+  /* ─── plates ───────────────────────────────────────────────── */
+
+  .plate {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 0 28px;
+    padding: 44px 40px 48px;
+    border-bottom: 1px solid var(--rule-soft);
+    scroll-margin-top: 48px;
+  }
+
+  .plate__no {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+    border-right: 1px solid var(--rule-soft);
+    padding-right: 20px;
+    text-align: right;
+  }
+  .plate__no b {
+    display: block;
+    font-size: 34px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    font-weight: 600;
+    line-height: 1;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .plate__body { min-width: 0; }
+
+  .plate h2 {
+    font-family: var(--mono);
+    font-size: clamp(20px, 2.6vw, 27px);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin: 0 0 10px;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  .claim {
+    margin: 0 0 26px;
+    max-width: 68ch;
+    color: var(--ink-2);
+  }
+  .claim strong { color: var(--ink); font-weight: 600; }
+
+  /* ─── figures ──────────────────────────────────────────────── */
+
+  figure { margin: 0; }
+
+  .fig {
+    background: var(--sunk);
+    border: 1px solid var(--rule-soft);
+    padding: 20px;
+    overflow-x: auto;
+  }
+  .fig svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 660px;
+    color: var(--ink-2);
+  }
+
+  .fig text {
+    font-family: var(--mono);
+    fill: var(--ink);
+    font-size: 13px;
+  }
+  .fig .sm    { font-size: 11px; fill: var(--ink-2); }
+  .fig .xs    { font-size: 10px; fill: var(--ink-3); }
+  .fig .tier  { font-size: 10.5px; letter-spacing: 0.2em; fill: var(--ink-3); }
+  .fig .hd    { font-size: 13px; font-weight: 600; }
+  .fig .num   { font-size: 10px; fill: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .fig .box   { fill: var(--sheet); stroke: var(--rule); stroke-width: 1.2; }
+  .fig .band  { fill: none; stroke-width: 1.2; stroke-dasharray: 5 5; }
+  .fig .wire  { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .fig .ghost { stroke: var(--rule); stroke-width: 1; fill: none; }
+
+  .fig .s-dev { stroke: var(--device); }
+  .fig .s-cld { stroke: var(--cloud); }
+  .fig .s-lan { stroke: var(--lan); }
+
+  .fig .s-ok  { stroke: var(--ok); }
+  .fig .f-ok  { fill: var(--ok); }
+  .fig .tint-ok { fill: color-mix(in srgb, var(--ok) 10%, transparent); }
+  .fig .muted { stroke: var(--rule); }
+  .fig .f-muted { fill: var(--ink-3); }
+
+  .fig .f-dev { fill: var(--device); }
+  .fig .f-cld { fill: var(--cloud); }
+  .fig .f-lan { fill: var(--lan); }
+
+  .fig .tint-dev { fill: color-mix(in srgb, var(--device) 8%, transparent); }
+  .fig .tint-cld { fill: color-mix(in srgb, var(--cloud) 8%, transparent); }
+  .fig .tint-lan { fill: color-mix(in srgb, var(--lan) 8%, transparent); }
+
+  figcaption {
+    margin-top: 14px;
+    font-size: 14px;
+    color: var(--ink-2);
+    max-width: 78ch;
+    padding-left: 2px;
+    border-left: 2px solid var(--rule);
+    padding-left: 14px;
+  }
+
+  /* ─── facts + code ─────────────────────────────────────────── */
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    margin-top: 28px;
+    background: var(--rule-soft);
+    border: 1px solid var(--rule-soft);
+  }
+  .facts div { background: var(--sheet); padding: 14px 16px; }
+  .facts dt {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 6px;
+  }
+  .facts dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--sunk);
+    border: 1px solid var(--rule-soft);
+    padding: 1px 5px;
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--sunk);
+    border: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--cloud);
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 24px 0 0;
+    line-height: 1.6;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  .note {
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: var(--sunk);
+    border: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--device);
+    font-size: 14.5px;
+    color: var(--ink-2);
+    max-width: 78ch;
+  }
+  .note b { color: var(--ink); }
+  .note--good { border-left-color: var(--ok); }
+
+  /* ─── anatomy cards ────────────────────────────────────────── */
+
+  .anatomy {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--rule-soft);
+    border: 1px solid var(--rule-soft);
+  }
+  .card { background: var(--sheet); padding: 20px; }
+  .card h3 {
+    font-family: var(--mono);
+    font-size: 15px;
+    margin: 0 0 4px;
+    font-weight: 600;
+  }
+  .card p.kind {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 16px;
+  }
+  .card ul { list-style: none; margin: 0; padding: 0; }
+  .card li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 5px 0;
+    border-top: 1px solid var(--rule-soft);
+    color: var(--ink-2);
+  }
+  .card li b {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .card--dev  { border-top: 3px solid var(--device); }
+  .card--lan  { border-top: 3px solid var(--lan); }
+  .card--cld  { border-top: 3px solid var(--cloud); }
+  .card--nul  { border-top: 3px solid var(--rule); }
+
+  /* ─── colophon ─────────────────────────────────────────────── */
+
+  .colophon {
+    padding: 34px 40px 44px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-3);
+    line-height: 1.8;
+    border-top: 1px solid var(--rule);
+  }
+  .colophon a { color: var(--ink-2); }
+  .colophon b { color: var(--ink-2); font-weight: 400; }
+
+  a:focus-visible { outline: 2px solid var(--device); outline-offset: 2px; }
+
+  @media (max-width: 760px) {
+    body { padding: 0 0 64px; }
+    .sheet { border-left: none; border-right: none; }
+    .masthead { grid-template-columns: minmax(0, 1fr); padding: 28px 20px 22px; align-items: start; }
+    .plate { grid-template-columns: minmax(0, 1fr); padding: 32px 20px 36px; gap: 0; }
+    .plate__no {
+      border-right: none;
+      border-bottom: 1px solid var(--rule-soft);
+      padding: 0 0 12px;
+      margin-bottom: 20px;
+      text-align: left;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .plate__no b { margin-top: 0; font-size: 26px; }
+    .colophon { padding: 28px 20px 36px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .masthead h1, .standfirst { animation: rise 480ms ease-out both; }
+    .standfirst { animation-delay: 90ms; }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: none; }
+    }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Architecture atlas · seven plates</p>
+      <h1>uconsole-cloud<br><span>a handheld, its LAN,<br>and one 5-minute POST</span></h1>
+      <p class="standfirst">
+        A three-tier stack for the ClockworkPi uConsole: a curses TUI and Flask dashboard on the
+        device, an nginx/mDNS layer on the local network, and an optional Next.js dashboard in the
+        cloud. These plates draw the mechanisms behind it: how the tiers stay independent, how
+        little it polls, how a device proves who it is, and how every feature is isolated.
+      </p>
+    </div>
+    <table class="revblock">
+      <tr><th>Drawing</th><td>ARCH-ATLAS</td></tr>
+      <tr><th>Revision</th><td>v0.3.0</td></tr>
+      <tr><th>Source</th><td>ebd1de1</td></tr>
+      <tr><th>Plates</th><td>7</td></tr>
+    </table>
+  </header>
+
+  <nav class="nav">
+    <a href="#p1"><b>01</b> Topology</a>
+    <a href="#p2"><b>02</b> Cadence</a>
+    <a href="#p3"><b>03</b> Linking</a>
+    <a href="#p4"><b>04</b> Gates</a>
+    <a href="#p5"><b>05</b> Isolation</a>
+    <a href="#p6"><b>06</b> Pipeline</a>
+    <a href="#p7"><b>07</b> Anatomy</a>
+  </nav>
+
+  <!-- ══════════════ PLATE 01 ══════════════ -->
+  <section class="plate" id="p1">
+    <div class="plate__no">PLATE<b>01</b></div>
+    <div class="plate__body">
+      <h2>Three tiers, one crossing</h2>
+      <p class="claim">
+        The device is self-sufficient: the TUI, the dashboard and the scripts all read the same
+        local substrate, and the LAN tier only wraps that dashboard in TLS and a name.
+        <strong>Exactly one line leaves for the internet</strong> — a timer-driven POST that carries
+        telemetry outward and accepts nothing back.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1140 700" role="img"
+               aria-label="Three tiers: the cloud tier holds Vercel server components, Upstash Redis, GitHub and Sanity; the local network tier holds Avahi, nginx and a fallback access point; the device tier holds the console TUI, the Flask webdash and push-status.sh over a shared substrate of sysfs, scripts and systemd. The only device-to-cloud link is a five-minute POST to /api/device/push that bypasses the local network tier entirely.">
+            <defs>
+              <marker id="p1-cld" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-cld" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="p1-lan" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-lan" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="p1-ink" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+              </marker>
+            </defs>
+
+            <!-- ── browser actor ── -->
+            <rect class="box" x="345" y="20" width="180" height="36" rx="2"/>
+            <text class="sm" x="435" y="43" text-anchor="middle">browser · anywhere</text>
+            <path class="wire s-cld" d="M435 56 V110" marker-end="url(#p1-cld)"/>
+
+            <!-- ── CLOUD band ── -->
+            <rect class="band s-cld tint-cld" x="40" y="70" width="850" height="170" rx="3"/>
+            <text class="tier f-cld" x="54" y="92">CLOUD — OPTIONAL, OPT-IN</text>
+
+            <rect class="box" x="90" y="100" width="150" height="48" rx="2"/>
+            <text class="sm" x="165" y="122" text-anchor="middle">GitHub REST</text>
+            <text class="xs" x="165" y="137" text-anchor="middle">backup repo</text>
+
+            <rect class="box" x="90" y="170" width="150" height="48" rx="2"/>
+            <text class="sm" x="165" y="192" text-anchor="middle">Sanity v3</text>
+            <text class="xs" x="165" y="207" text-anchor="middle">site content</text>
+
+            <rect class="box" x="320" y="116" width="220" height="90" rx="2"/>
+            <text class="hd" x="430" y="146" text-anchor="middle">Vercel Edge</text>
+            <text class="sm" x="430" y="166" text-anchor="middle">React Server</text>
+            <text class="sm" x="430" y="183" text-anchor="middle">Components</text>
+
+            <rect class="box" x="690" y="116" width="180" height="90" rx="2"/>
+            <text class="hd" x="780" y="146" text-anchor="middle">Upstash Redis</text>
+            <text class="xs" x="780" y="166" text-anchor="middle">user:{id} · 90 d</text>
+            <text class="xs" x="780" y="182" text-anchor="middle">devicetoken:{uuid}</text>
+
+            <path class="wire s-cld" d="M240 124 H316" marker-end="url(#p1-cld)"/>
+            <text class="xs" x="278" y="117" text-anchor="middle">REST</text>
+            <path class="wire s-cld" d="M240 194 H316" marker-end="url(#p1-cld)"/>
+            <text class="xs" x="278" y="187" text-anchor="middle">GROQ</text>
+
+            <path class="wire s-cld" d="M690 161 H544" marker-end="url(#p1-cld)"/>
+            <text class="xs" x="617" y="150" text-anchor="middle">read once</text>
+            <text class="xs" x="617" y="180" text-anchor="middle">per page load</text>
+
+            <!-- ── LAN band ── -->
+            <rect class="band s-lan tint-lan" x="40" y="290" width="850" height="130" rx="3"/>
+            <text class="tier f-lan" x="54" y="312">LOCAL NETWORK — SAME WIFI</text>
+
+            <rect class="box" x="60" y="330" width="140" height="64" rx="2"/>
+            <text class="sm" x="130" y="358" text-anchor="middle">phone /</text>
+            <text class="sm" x="130" y="375" text-anchor="middle">laptop</text>
+
+            <rect class="box" x="300" y="330" width="150" height="64" rx="2"/>
+            <text class="sm" x="375" y="358" text-anchor="middle">Avahi</text>
+            <text class="xs" x="375" y="375" text-anchor="middle">mDNS · .local</text>
+
+            <rect class="box" x="520" y="330" width="190" height="64" rx="2"/>
+            <text class="sm" x="615" y="356" text-anchor="middle">nginx :443</text>
+            <text class="xs" x="615" y="373" text-anchor="middle">self-signed TLS</text>
+
+            <rect class="box s-lan" x="750" y="330" width="140" height="64" rx="2" stroke-dasharray="4 4"/>
+            <text class="xs" x="820" y="352" text-anchor="middle">wifi-fallback.sh</text>
+            <text class="xs" x="820" y="367" text-anchor="middle">AP &quot;uConsole&quot;</text>
+            <text class="xs" x="820" y="382" text-anchor="middle">no known SSID</text>
+
+            <path class="wire s-lan" d="M200 362 H296" marker-end="url(#p1-lan)"/>
+            <text class="xs" x="248" y="348" text-anchor="middle">https://</text>
+            <text class="xs" x="248" y="380" text-anchor="middle">uconsole.local</text>
+            <path class="wire s-lan" d="M450 362 H516" marker-end="url(#p1-lan)"/>
+            <text class="xs" x="483" y="352" text-anchor="middle">resolves</text>
+
+            <!-- ── DEVICE band ── -->
+            <rect class="band s-dev tint-dev" x="40" y="470" width="850" height="200" rx="3"/>
+            <text class="tier f-dev" x="54" y="492">DEVICE — WORKS ENTIRELY OFFLINE</text>
+
+            <rect class="box" x="70" y="500" width="210" height="64" rx="2"/>
+            <text class="hd" x="175" y="526" text-anchor="middle">console</text>
+            <text class="xs" x="175" y="545" text-anchor="middle">curses TUI · 23 modules</text>
+
+            <rect class="box" x="320" y="500" width="210" height="64" rx="2"/>
+            <text class="hd" x="425" y="526" text-anchor="middle">webdash :8080</text>
+            <text class="xs" x="425" y="545" text-anchor="middle">Flask · 56 routes</text>
+
+            <rect class="box" x="570" y="500" width="200" height="64" rx="2"/>
+            <text class="hd" x="670" y="526" text-anchor="middle">push-status.sh</text>
+            <text class="xs" x="670" y="545" text-anchor="middle">pure bash, no jq</text>
+
+            <rect class="box" x="70" y="596" width="700" height="48" rx="2"/>
+            <text class="sm" x="420" y="619" text-anchor="middle">sysfs · procfs · 48 shell scripts · systemd (9 services / 3 timers)</text>
+            <text class="xs" x="420" y="636" text-anchor="middle">the single source every tier above reads</text>
+
+            <path class="wire ghost" d="M175 596 V570" marker-end="url(#p1-ink)"/>
+            <path class="wire ghost" d="M425 596 V570" marker-end="url(#p1-ink)"/>
+            <path class="wire ghost" d="M670 596 V570" marker-end="url(#p1-ink)"/>
+
+            <!-- nginx → webdash -->
+            <path class="wire s-lan" d="M615 394 V440 H425 V496" marker-end="url(#p1-lan)"/>
+            <text class="xs" x="520" y="432" text-anchor="middle">proxy_pass 127.0.0.1:8080</text>
+
+            <!-- push corridor -->
+            <path class="wire s-cld" d="M770 532 H980 V161 H874" marker-end="url(#p1-cld)"/>
+            <text class="xs f-cld" x="966" y="348" text-anchor="middle" transform="rotate(-90 966 348)">POST /api/device/push · Bearer · every 5 min</text>
+
+            <!-- AP fallback corridor -->
+            <path class="wire s-lan" d="M770 620 H1060 V362 H894" marker-end="url(#p1-lan)" stroke-dasharray="5 4"/>
+            <text class="xs f-lan" x="1046" y="500" text-anchor="middle" transform="rotate(-90 1046 500)">NetworkManager dispatcher</text>
+          </svg>
+        </div>
+        <figcaption>
+          The push corridor runs outside the local-network band on purpose: telemetry goes straight
+          out to the internet and never touches nginx or mDNS. Pull that one line and the device
+          keeps every feature except the remote dashboard.
+        </figcaption>
+      </figure>
+
+      <dl class="facts">
+        <div><dt>Cloud is optional</dt><dd>Nothing leaves the<br>device by default</dd></div>
+        <div><dt>Direction</dt><dd>Outbound only —<br>no inbound commands</dd></div>
+        <div><dt>Payload size</dt><dd>~1–2 KB<br>capped at 32 KB</dd></div>
+        <div><dt>Offline reach</dt><dd>TUI · webdash · AP<br>fallback · local AI</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 02 ══════════════ -->
+  <section class="plate" id="p2">
+    <div class="plate__no">PLATE<b>02</b></div>
+    <div class="plate__body">
+      <h2>Three data paths, one poller</h2>
+      <p class="claim">
+        Three live-looking surfaces, one scheduled loop between them. The cloud dashboard runs
+        <strong>no client-side timer at all</strong> — it reads once per request, on the server —
+        and the local monitor streams only while you are watching it. An idle device and an idle
+        browser both cost nothing.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1040 450" role="img"
+               aria-label="Three timelines. The device-to-cloud path fires evenly every five minutes from a systemd timer. The browser-to-cloud path fires only on page load and navigation. The webdash-to-phone path streams densely at one second, but only within the bracket where the Live Monitor panel is open.">
+            <defs>
+              <marker id="p2-ink" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path fill="currentColor" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <line class="ghost" x1="215" y1="40" x2="215" y2="412"/>
+
+            <!-- lane 1 -->
+            <text class="hd f-dev" x="20" y="92">DEVICE → CLOUD</text>
+            <text class="xs" x="20" y="110">push-status.sh</text>
+            <text class="xs" x="20" y="126">systemd user timer</text>
+            <line class="ghost" x1="230" y1="140" x2="1000" y2="140"/>
+            <g class="s-dev">
+              <line x1="260" y1="140" x2="260" y2="112"/><line x1="326" y1="140" x2="326" y2="112"/>
+              <line x1="392" y1="140" x2="392" y2="112"/><line x1="458" y1="140" x2="458" y2="112"/>
+              <line x1="524" y1="140" x2="524" y2="112"/><line x1="590" y1="140" x2="590" y2="112"/>
+              <line x1="656" y1="140" x2="656" y2="112"/><line x1="722" y1="140" x2="722" y2="112"/>
+              <line x1="788" y1="140" x2="788" y2="112"/><line x1="854" y1="140" x2="854" y2="112"/>
+              <line x1="920" y1="140" x2="920" y2="112"/><line x1="986" y1="140" x2="986" y2="112"/>
+            </g>
+            <g class="f-dev">
+              <circle cx="260" cy="110" r="3"/><circle cx="326" cy="110" r="3"/><circle cx="392" cy="110" r="3"/>
+              <circle cx="458" cy="110" r="3"/><circle cx="524" cy="110" r="3"/><circle cx="590" cy="110" r="3"/>
+              <circle cx="656" cy="110" r="3"/><circle cx="722" cy="110" r="3"/><circle cx="788" cy="110" r="3"/>
+              <circle cx="854" cy="110" r="3"/><circle cx="920" cy="110" r="3"/><circle cx="986" cy="110" r="3"/>
+            </g>
+            <text class="sm" x="230" y="162">OnUnitActiveSec=5min · configurable 30 s – 30 min, or off · the only scheduled loop in the stack</text>
+
+            <!-- lane 2 -->
+            <text class="hd f-cld" x="20" y="232">BROWSER → CLOUD</text>
+            <text class="xs" x="20" y="250">app/page.tsx</text>
+            <text class="xs" x="20" y="266">Server Component</text>
+            <line class="ghost" x1="230" y1="280" x2="1000" y2="280"/>
+            <g class="s-cld">
+              <line x1="330" y1="280" x2="330" y2="252"/>
+              <line x1="720" y1="280" x2="720" y2="252"/>
+            </g>
+            <circle class="f-cld" cx="330" cy="250" r="3"/>
+            <circle class="f-cld" cx="720" cy="250" r="3"/>
+            <text class="xs" x="330" y="240" text-anchor="middle">page load</text>
+            <text class="xs" x="720" y="240" text-anchor="middle">user navigates</text>
+            <text class="sm" x="230" y="302">One Redis read per request, on the server — no setInterval, no WebSocket, no long-poll</text>
+
+            <!-- lane 3 -->
+            <text class="hd f-lan" x="20" y="372">WEBDASH → PHONE</text>
+            <text class="xs" x="20" y="390">Flask SSE</text>
+            <text class="xs" x="20" y="406">Live Monitor</text>
+            <line class="ghost" x1="230" y1="380" x2="1000" y2="380"/>
+            <path class="wire s-lan" d="M420 358 V348 H770 V358" stroke-dasharray="4 3"/>
+            <text class="xs f-lan" x="595" y="340" text-anchor="middle">panel open ─ stream alive</text>
+            <g class="s-lan">
+              <line x1="426" y1="380" x2="426" y2="366"/><line x1="446" y1="380" x2="446" y2="366"/>
+              <line x1="466" y1="380" x2="466" y2="366"/><line x1="486" y1="380" x2="486" y2="366"/>
+              <line x1="506" y1="380" x2="506" y2="366"/><line x1="526" y1="380" x2="526" y2="366"/>
+              <line x1="546" y1="380" x2="546" y2="366"/><line x1="566" y1="380" x2="566" y2="366"/>
+              <line x1="586" y1="380" x2="586" y2="366"/><line x1="606" y1="380" x2="606" y2="366"/>
+              <line x1="626" y1="380" x2="626" y2="366"/><line x1="646" y1="380" x2="646" y2="366"/>
+              <line x1="666" y1="380" x2="666" y2="366"/><line x1="686" y1="380" x2="686" y2="366"/>
+              <line x1="706" y1="380" x2="706" y2="366"/><line x1="726" y1="380" x2="726" y2="366"/>
+              <line x1="746" y1="380" x2="746" y2="366"/><line x1="766" y1="380" x2="766" y2="366"/>
+            </g>
+            <text class="sm" x="230" y="402">Server-Sent Events at 1 s — opens with the panel, ends when it closes, nothing in between</text>
+            <path class="ghost" d="M986 428 H1002" marker-end="url(#p2-ink)"/>
+            <text class="xs" x="984" y="432" text-anchor="end">time</text>
+          </svg>
+        </div>
+        <figcaption>
+          Tick spacing is relative, not to scale — lane 1 fires every 5 minutes and lane 3 every
+          second. The shape is the point: an unconditional loop, a set of user-triggered events,
+          and a dense stream that exists only inside a bracket the user controls.
+        </figcaption>
+      </figure>
+
+      <dl class="facts">
+        <div><dt>Scheduled loops</dt><dd>1 of 3</dd></div>
+        <div><dt>Default interval</dt><dd>5 min</dd></div>
+        <div><dt>Opt-out</dt><dd>CONFIG → Push<br>Interval → off</dd></div>
+        <div><dt>Dashboard staleness</dt><dd>Age of last push,<br>shown explicitly</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 03 ══════════════ -->
+  <section class="plate" id="p3">
+    <div class="plate__no">PLATE<b>03</b></div>
+    <div class="plate__body">
+      <h2>Linking a device without typing a password into a terminal</h2>
+      <p class="claim">
+        The device never sees the user's credentials. It asks for a short code, then polls a URL
+        only it knows, while the actual authorisation happens in an already-signed-in browser.
+        <strong>Both halves of the handshake are single-use</strong> and expire in ten minutes.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1000 640" role="img"
+               aria-label="A three-lifeline handshake. The device requests a code with no authentication, receives a code and a secret with a ten-minute TTL, then polls every two seconds. The signed-in browser confirms the code, which mints a ninety-day device token. The next poll returns the token and deletes both Redis keys. The device writes status.env at mode 600 and enables the push timer.">
+            <defs>
+              <marker id="p3-dev" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-dev" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="p3-cld" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-cld" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <rect class="box s-dev" x="60" y="26" width="220" height="46" rx="2"/>
+            <text class="hd" x="170" y="55" text-anchor="middle">uConsole · uconsole setup</text>
+            <rect class="box s-cld" x="400" y="26" width="240" height="46" rx="2"/>
+            <text class="hd" x="520" y="55" text-anchor="middle">uconsole.cloud + Redis</text>
+            <rect class="box s-cld" x="780" y="26" width="200" height="46" rx="2"/>
+            <text class="hd" x="880" y="55" text-anchor="middle">browser · /link</text>
+
+            <line class="ghost" x1="170" y1="72" x2="170" y2="612" stroke-dasharray="4 5"/>
+            <line class="ghost" x1="520" y1="72" x2="520" y2="612" stroke-dasharray="4 5"/>
+            <line class="ghost" x1="880" y1="72" x2="880" y2="580" stroke-dasharray="4 5"/>
+
+            <!-- 1 -->
+            <path class="wire s-dev" d="M170 122 H516" marker-end="url(#p3-dev)"/>
+            <text class="sm" x="345" y="114" text-anchor="middle">POST /api/device/code</text>
+            <text class="xs" x="345" y="138" text-anchor="middle">no auth · rate-limited 5 req/min/IP</text>
+            <text class="num" x="150" y="126" text-anchor="end">1</text>
+
+            <!-- 2 -->
+            <path class="wire s-cld" d="M520 178 H174" marker-end="url(#p3-cld)"/>
+            <text class="sm" x="345" y="170" text-anchor="middle">200 { code: &quot;AB12-CD34&quot;, secret }</text>
+            <text class="xs" x="345" y="194" text-anchor="middle">devicecode:{code} + devicepoll:{secret} · TTL 600 s</text>
+            <text class="num" x="540" y="182">2</text>
+
+            <!-- 3 -->
+            <path class="wire s-dev" d="M170 240 H516" marker-end="url(#p3-dev)" stroke-dasharray="6 4"/>
+            <text class="sm" x="345" y="232" text-anchor="middle">GET /api/device/poll/{secret} → &quot;pending&quot;</text>
+            <text class="xs" x="345" y="256" text-anchor="middle">repeats every 2 s · secret is a UUID v4, never shown to the user</text>
+            <text class="num" x="150" y="244" text-anchor="end">3</text>
+
+            <!-- 4 -->
+            <path class="wire s-cld" d="M880 306 H524" marker-end="url(#p3-cld)"/>
+            <text class="sm" x="702" y="298" text-anchor="middle">POST /api/device/code/confirm</text>
+            <text class="xs" x="702" y="322" text-anchor="middle">session required · GitHub OAuth · linked repo required</text>
+            <text class="num" x="900" y="310">4</text>
+
+            <!-- 5 -->
+            <rect class="box s-cld tint-cld" x="350" y="348" width="440" height="52" rx="2"/>
+            <text class="sm" x="570" y="370" text-anchor="middle">mint devicetoken:{uuid v4} · 90-day TTL</text>
+            <text class="xs" x="570" y="388" text-anchor="middle">scoped to { userId, repo } — the device never sees the user's session</text>
+            <path class="wire s-cld" d="M520 348 V330" marker-end="url(#p3-cld)"/>
+            <text class="num" x="340" y="374" text-anchor="end">5</text>
+
+            <!-- 6 -->
+            <path class="wire s-cld" d="M520 440 H174" marker-end="url(#p3-cld)"/>
+            <text class="sm" x="345" y="432" text-anchor="middle">poll returns { deviceToken, repo }</text>
+            <text class="xs" x="345" y="456" text-anchor="middle">both Redis keys deleted on read — single use</text>
+            <text class="num" x="540" y="444">6</text>
+
+            <!-- 7 -->
+            <rect class="box s-dev tint-dev" x="200" y="480" width="330" height="48" rx="2"/>
+            <text class="sm" x="365" y="500" text-anchor="middle">~/.config/uconsole/status.env</text>
+            <text class="xs" x="365" y="518" text-anchor="middle">chmod 600 · parsed by typed reader, never sourced</text>
+            <path class="wire s-dev" d="M170 504 H196" marker-end="url(#p3-dev)"/>
+            <text class="num" x="150" y="508" text-anchor="end">7</text>
+
+            <!-- 8 -->
+            <rect class="box s-dev tint-dev" x="200" y="540" width="330" height="48" rx="2"/>
+            <text class="sm" x="365" y="560" text-anchor="middle">systemctl --user enable --now</text>
+            <text class="sm" x="365" y="578" text-anchor="middle">uconsole-status.timer</text>
+            <path class="wire s-dev" d="M170 564 H196" marker-end="url(#p3-dev)"/>
+            <text class="num" x="150" y="568" text-anchor="end">8</text>
+
+            <!-- 9 -->
+            <path class="wire s-cld" d="M170 612 H978" marker-end="url(#p3-cld)"/>
+            <text class="sm" x="345" y="604" text-anchor="middle">POST /api/device/push · Authorization: Bearer</text>
+            <text class="num" x="150" y="616" text-anchor="end">9</text>
+            <text class="xs" x="700" y="604" text-anchor="middle">…and every 5 min thereafter</text>
+          </svg>
+        </div>
+        <figcaption>
+          Step 5 is where authority is created and step 6 is where it is handed over — and the
+          codes that got it there are destroyed in the same read. A leaked code is useless after
+          ten minutes or one confirmation, whichever comes first.
+        </figcaption>
+      </figure>
+
+      <dl class="facts">
+        <div><dt>Code TTL</dt><dd>600 s</dd></div>
+        <div><dt>Token TTL</dt><dd>90 days</dd></div>
+        <div><dt>Poll interval</dt><dd>2 s</dd></div>
+        <div><dt>Code generation</dt><dd>5 req/min/IP</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 04 ══════════════ -->
+  <section class="plate" id="p4">
+    <div class="plate__no">PLATE<b>04</b></div>
+    <div class="plate__body">
+      <h2>Three gates, and every route behind one</h2>
+      <p class="claim">
+        A single negative-lookahead regex routes each API call to the gate that fits it. Browsers
+        carry a session and go through NextAuth. Devices carry no cookie, so
+        <strong><code>/api/device/push</code> enforces its own gate</strong> — token shape, payload
+        shape, a size ceiling and a per-token rate limit, all checked before a byte reaches Redis.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1040 540" role="img"
+               aria-label="Two callers approach a wall representing the NextAuth middleware matcher. The uConsole device passes through two gaps in the wall to reach the open routes and the telemetry push route. The signed-in browser passes through a guarded gate to reach the session-only routes. The push route is drawn with a second inner gate listing its own bearer, shape, size and rate checks.">
+            <defs>
+              <marker id="p4-dev" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-dev" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="p4-cld" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-cld" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- callers -->
+            <rect class="box s-dev" x="30" y="140" width="200" height="62" rx="2"/>
+            <text class="hd" x="130" y="168" text-anchor="middle">uConsole device</text>
+            <text class="xs" x="130" y="187" text-anchor="middle">bearer token, no cookie</text>
+
+            <rect class="box s-cld" x="30" y="380" width="200" height="62" rx="2"/>
+            <text class="hd" x="130" y="408" text-anchor="middle">signed-in browser</text>
+            <text class="xs" x="130" y="427" text-anchor="middle">NextAuth JWT cookie</text>
+
+            <!-- wall -->
+            <rect class="tint-cld" x="470" y="40" width="14" height="56"/>
+            <rect class="tint-cld" x="470" y="150" width="14" height="102"/>
+            <rect class="tint-cld" x="470" y="306" width="14" height="194"/>
+            <g class="s-cld">
+              <line x1="470" y1="40" x2="470" y2="96"/><line x1="484" y1="40" x2="484" y2="96"/>
+              <line x1="470" y1="150" x2="470" y2="252"/><line x1="484" y1="150" x2="484" y2="252"/>
+              <line x1="470" y1="306" x2="470" y2="500"/><line x1="484" y1="306" x2="484" y2="500"/>
+            </g>
+            <text class="tier f-cld" x="477" y="345" text-anchor="middle" transform="rotate(-90 477 345)">MIDDLEWARE</text>
+            <text class="xs f-cld" x="477" y="30" text-anchor="middle">deliberate exemptions</text>
+            <text class="xs f-cld" x="477" y="518" text-anchor="middle">auth() · NextAuth v5</text>
+
+            <!-- gate on the wall -->
+            <circle class="box s-cld" cx="477" cy="410" r="15"/>
+            <path class="wire s-cld" d="M471 408 v-6 a6 6 0 0 1 12 0 v6"/>
+            <text class="xs f-ok" x="477" y="446" text-anchor="middle">401 if no session</text>
+
+            <!-- group A -->
+            <rect class="box s-dev" x="600" y="46" width="410" height="152" rx="2"/>
+            <text class="tier f-dev" x="618" y="68">PUBLIC BY DESIGN</text>
+            <text class="sm" x="618" y="94">/api/health</text>
+            <text class="sm" x="618" y="114">/api/device/code</text>
+            <text class="sm" x="618" y="134">/api/device/poll/{secret}</text>
+            <text class="sm" x="618" y="154">/api/scripts/{name}</text>
+            <text class="sm" x="618" y="174">/install · /apt/**</text>
+            <text class="xs" x="990" y="190" text-anchor="end">allowlisted, read-only, no user data</text>
+
+            <!-- group B -->
+            <rect class="box s-dev" x="600" y="238" width="410" height="130" rx="2"/>
+            <text class="tier f-dev" x="618" y="260">BEARER — DEVICE IDENTITY</text>
+            <rect class="tint-dev" x="616" y="272" width="378" height="82" rx="2"/>
+            <text class="sm" x="632" y="294">/api/device/push</text>
+            <text class="xs" x="632" y="314">UUID v4 shape · Redis token lookup · hostname +</text>
+            <text class="xs" x="632" y="330">collectedAt validation · body ≤ 32 KB ·</text>
+            <text class="xs" x="632" y="346">30 pushes/min per token</text>
+
+            <!-- group C -->
+            <rect class="box s-cld" x="600" y="404" width="410" height="120" rx="2"/>
+            <text class="tier f-cld" x="618" y="426">SESSION — GITHUB OAUTH</text>
+            <text class="sm" x="618" y="452">/api/settings · /api/settings/regenerate-token</text>
+            <text class="sm" x="618" y="472">/api/device/status · /api/device/code/confirm</text>
+            <text class="sm" x="618" y="492">/api/github/**</text>
+            <text class="xs" x="618" y="512">Redis keys scoped by userId; repo scoped per user</text>
+
+            <!-- arrows -->
+            <path class="wire s-dev" d="M230 158 H350 V122 H596" marker-end="url(#p4-dev)"/>
+            <text class="xs" x="430" y="114" text-anchor="middle">code + poll</text>
+            <path class="wire s-dev" d="M230 184 H350 V280 H596" marker-end="url(#p4-dev)"/>
+            <text class="xs" x="430" y="272" text-anchor="middle">telemetry</text>
+            <path class="wire s-cld" d="M230 411 H596" marker-end="url(#p4-cld)"/>
+            <text class="xs" x="330" y="403" text-anchor="middle">dashboard + settings</text>
+          </svg>
+        </div>
+        <figcaption>
+          The matcher is written as an exclusion list rather than an inclusion list, which is what
+          makes it hold: every new route under <code>/api</code> is guarded the moment it exists,
+          and an exemption has to be argued for one path at a time.
+        </figcaption>
+      </figure>
+
+      <pre><code>// frontend/src/middleware.ts
+export const config = {
+  matcher: [
+    "/api/((?!auth|health|device/push|device/code$|device/poll|scripts).*)",
+  ],
+};</code></pre>
+
+      <div class="note note--good">
+        <b>Defence in depth.</b> <code>/api/device/push</code> sits outside the session matcher
+        because a device has no cookie to present — and it earns that exemption in the handler,
+        checking token shape, payload shape, body size and push rate on every request. Two
+        different callers, two different proofs of identity, neither one trusting the other's.
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 05 ══════════════ -->
+  <section class="plate" id="p5">
+    <div class="plate__no">PLATE<b>05</b></div>
+    <div class="plate__body">
+      <h2>Twenty-three features, each one isolated</h2>
+      <p class="claim">
+        The TUI builds its menu at first use from 23 independently imported feature modules, each
+        exporting a <code>HANDLERS</code> dict. Because entries resolve through that dict instead of
+        at import scope, <strong>a module that can't load is contained rather than fatal</strong>:
+        it is recorded, its row steps aside, and the launcher and the other 22 features carry on.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1040 430" role="img"
+               aria-label="Twenty-three feature modules feed an import loop. Modules that load merge their HANDLERS dicts into a cache which the menu renders from. A module that cannot load — here, one needing an absent serial library — is recorded to a log and its single menu row steps aside, while the launcher and every other feature keep working.">
+            <defs>
+              <marker id="p5-ink" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path fill="currentColor" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+              <marker id="p5-lan" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="f-lan" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <!-- module list -->
+            <rect class="box" x="40" y="70" width="230" height="300" rx="2"/>
+            <text class="tier" x="56" y="94">FEATURE_MODULES · 23</text>
+            <text class="sm" x="56" y="126">tui.aio</text>
+            <text class="sm" x="56" y="150">tui.tools</text>
+            <text class="sm" x="56" y="174">tui.games</text>
+            <text class="sm" x="56" y="198">tui.marauder</text>
+            <rect class="tint-lan" x="48" y="208" width="214" height="26" rx="2"/>
+            <text class="sm f-muted" x="56" y="226">tui.telegram</text>
+            <text class="xs f-muted" x="256" y="226" text-anchor="end">no telethon</text>
+            <text class="sm" x="56" y="254">tui.meshtastic_map</text>
+            <text class="sm" x="56" y="278">tui.esp32_hub</text>
+            <text class="sm" x="56" y="302">tui.wifi_radio</text>
+            <text class="xs" x="56" y="330">+ 15 more</text>
+            <text class="xs" x="56" y="354">19,011 lines under device/lib/tui/</text>
+
+            <!-- loader -->
+            <rect class="box" x="360" y="150" width="220" height="86" rx="2"/>
+            <text class="hd" x="470" y="180" text-anchor="middle">_load_handlers()</text>
+            <text class="xs" x="470" y="200" text-anchor="middle">import · getattr(mod,</text>
+            <text class="xs" x="470" y="216" text-anchor="middle">&quot;HANDLERS&quot;, {})</text>
+
+            <rect class="box" x="360" y="284" width="220" height="66" rx="2"/>
+            <text class="hd" x="470" y="312" text-anchor="middle">_HANDLERS_CACHE</text>
+            <text class="xs" x="470" y="332" text-anchor="middle">built once, then reused</text>
+
+            <!-- crash log -->
+            <rect class="box s-lan" x="360" y="42" width="220" height="66" rx="2"/>
+            <text class="sm f-lan" x="470" y="68" text-anchor="middle">~/crash.log</text>
+            <text class="xs" x="470" y="88" text-anchor="middle">recorded, timestamped</text>
+
+            <!-- menu -->
+            <rect class="box" x="680" y="70" width="310" height="300" rx="2"/>
+            <text class="tier" x="698" y="94">CATEGORIES → RENDERED MENU</text>
+            <text class="sm" x="698" y="126">SYSTEM · MONITOR · FILES</text>
+            <text class="sm" x="698" y="150">POWER · NETWORK · HARDWARE</text>
+            <text class="sm" x="698" y="174">TOOLS · GAMES · CONFIG</text>
+            <line class="ghost" x1="698" y1="196" x2="972" y2="196"/>
+            <text class="xs" x="698" y="222">TOOLS ▸</text>
+            <text class="sm" x="716" y="246">Git Panel · Quick Notes · Calculator</text>
+            <text class="sm" x="716" y="270">Weather · Hacker News · Forum</text>
+            <text class="sm f-muted" x="716" y="294">Telegram</text>
+            <text class="xs f-muted" x="790" y="294">— row steps aside</text>
+            <text class="sm" x="716" y="318">Markdown Viewer · Screenshot</text>
+            <text class="xs f-ok" x="698" y="352">✓ launcher and all 22 other features unaffected</text>
+
+            <!-- wires -->
+            <path class="wire" d="M270 193 H356" marker-end="url(#p5-ink)"/>
+            <text class="xs" x="313" y="185" text-anchor="middle">import</text>
+            <text class="xs" x="313" y="208" text-anchor="middle">each</text>
+
+            <path class="wire s-lan" d="M470 150 V112" marker-end="url(#p5-lan)"/>
+            <text class="xs f-lan" x="486" y="134">contained</text>
+
+            <path class="wire" d="M470 236 V280" marker-end="url(#p5-ink)"/>
+            <text class="xs" x="486" y="262">merge</text>
+
+            <path class="wire" d="M580 317 H640 V220 H676" marker-end="url(#p5-ink)"/>
+            <text class="xs" x="630" y="270" text-anchor="middle" transform="rotate(-90 630 270)">_filter_menus()</text>
+            <text class="xs" x="470" y="378" text-anchor="middle">renders the menu from whatever actually loaded</text>
+          </svg>
+        </div>
+        <figcaption>
+          The registry is what buys the resilience: because menu entries resolve through a dict
+          rather than at import scope, the blast radius of any missing dependency is one key. It is
+          also the whole extension story — adding a feature means exporting a <code>HANDLERS</code>
+          dict and naming the module in one list.
+        </figcaption>
+      </figure>
+
+      <dl class="facts">
+        <div><dt>Registered modules</dt><dd>23</dd></div>
+        <div><dt>Files under tui/</dt><dd>30</dd></div>
+        <div><dt>Menu categories</dt><dd>9</dd></div>
+        <div><dt>Blast radius</dt><dd>1 menu row,<br>never the launcher</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 06 ══════════════ -->
+  <section class="plate" id="p6">
+    <div class="plate__no">PLATE<b>06</b></div>
+    <div class="plate__body">
+      <h2>Three speeds down one track</h2>
+      <p class="claim">
+        Editing and shipping share a single track; what differs is how far along it you travel.
+        The <code>console</code> launcher prefers a source tree over the installed copy, so
+        <strong>previewing a TUI change costs seconds — no build, no deploy</strong>. The packaging
+        stations only come into play when you are actually cutting a <code>.deb</code>.
+      </p>
+
+      <figure>
+        <div class="fig">
+          <svg viewBox="0 0 1040 360" role="img"
+               aria-label="A six-station track from editing a file, to previewing it by running console, to pushing to dev and running CI, an optional make install station, publishing, and finally end users running apt upgrade. Three brackets beneath show that flicker speed reaches station two in seconds, commit speed reaches station three in about a minute plus CI, and release speed reaches station five in five to ten minutes.">
+            <defs>
+              <marker id="p6-ink" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path fill="currentColor" d="M0 0 L10 5 L0 10 z"/>
+              </marker>
+            </defs>
+
+            <line class="wire" x1="60" y1="150" x2="1000" y2="150" marker-end="url(#p6-ink)"/>
+
+            <g class="f-dev"><circle cx="90" cy="150" r="8"/></g>
+            <g class="f-dev"><circle cx="250" cy="150" r="8"/></g>
+            <g class="f-dev"><circle cx="440" cy="150" r="8"/></g>
+            <circle class="box s-dev" cx="610" cy="150" r="8" stroke-dasharray="3 3"/>
+            <g class="f-cld"><circle cx="790" cy="150" r="8"/></g>
+            <g class="f-cld"><circle cx="950" cy="150" r="8"/></g>
+
+            <text class="hd" x="90" y="122" text-anchor="middle">EDIT</text>
+            <text class="xs" x="90" y="102" text-anchor="middle">device/lib/tui/*.py</text>
+
+            <text class="hd" x="250" y="122" text-anchor="middle">PREVIEW</text>
+            <text class="xs" x="250" y="86" text-anchor="middle">run `console` —</text>
+            <text class="xs" x="250" y="102" text-anchor="middle">finds source tree</text>
+
+            <text class="hd" x="440" y="122" text-anchor="middle">COMMIT</text>
+            <text class="xs" x="440" y="54" text-anchor="middle">push dev → CI:</text>
+            <text class="xs" x="440" y="70" text-anchor="middle">shellcheck · pytest</text>
+            <text class="xs" x="440" y="86" text-anchor="middle">vitest · tsc · build</text>
+            <text class="xs" x="440" y="102" text-anchor="middle">arm64 .deb install</text>
+
+            <text class="hd" x="610" y="122" text-anchor="middle">INSTALL</text>
+            <text class="xs" x="610" y="86" text-anchor="middle">optional · rsync</text>
+            <text class="xs" x="610" y="102" text-anchor="middle">to /opt/uconsole</text>
+
+            <text class="hd f-cld" x="790" y="122" text-anchor="middle">PUBLISH</text>
+            <text class="xs" x="790" y="70" text-anchor="middle">bump · build-deb</text>
+            <text class="xs" x="790" y="86" text-anchor="middle">GPG-sign · tag</text>
+            <text class="xs" x="790" y="102" text-anchor="middle">main → Vercel</text>
+
+            <text class="hd f-cld" x="950" y="122" text-anchor="middle">UPGRADE</text>
+            <text class="xs" x="950" y="86" text-anchor="middle">apt update</text>
+            <text class="xs" x="950" y="102" text-anchor="middle">&amp;&amp; apt upgrade</text>
+
+            <!-- brackets -->
+            <path class="wire s-dev" d="M90 190 V204 H250 V190"/>
+            <text class="sm f-dev" x="170" y="224" text-anchor="middle">FLICKER</text>
+            <text class="xs" x="170" y="240" text-anchor="middle">seconds</text>
+
+            <path class="wire s-dev" d="M90 262 V276 H440 V262"/>
+            <text class="sm f-dev" x="265" y="296" text-anchor="middle">COMMIT</text>
+            <text class="xs" x="265" y="312" text-anchor="middle">~1 min, CI green in ~3 more</text>
+
+            <path class="wire s-cld" d="M90 322 V336 H790 V322"/>
+            <text class="sm f-cld" x="440" y="356" text-anchor="middle">RELEASE — 5–10 min · every station is a human decision, nothing fires on a schedule</text>
+          </svg>
+        </div>
+        <figcaption>
+          The dashed station is optional by design: <code>make install</code> is there to verify
+          the end-user install path. Day to day, <code>console</code> is already running your edits,
+          so the inner loop never leaves the first two stations.
+        </figcaption>
+      </figure>
+
+      <dl class="facts">
+        <div><dt>CI jobs</dt><dd>2 — checks +<br>arm64 install test</dd></div>
+        <div><dt>Install test</dt><dd>Debian Bookworm<br>arm64 under QEMU</dd></div>
+        <div><dt>Distribution</dt><dd>GPG-signed APT repo<br>on the Vercel CDN</dd></div>
+        <div><dt>Release trigger</dt><dd>Tag push v* →<br>release.yml</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ══════════════ PLATE 07 ══════════════ -->
+  <section class="plate" id="p7">
+    <div class="plate__no">PLATE<b>07</b></div>
+    <div class="plate__body">
+      <h2>Anatomy</h2>
+      <p class="claim">
+        Where the weight actually sits. Two thirds of the codebase is device-side Python, and most
+        of that is the TUI — the cloud dashboard is the smallest tier of the three, which is the
+        right shape for a stack whose cloud is opt-in.
+      </p>
+
+      <div class="anatomy">
+        <div class="card card--dev">
+          <h3>device/</h3>
+          <p class="kind">Python 3 · Bash · curses · Flask</p>
+          <ul>
+            <li><span>Python lines</span><b>24,204</b></li>
+            <li><span>Shell lines</span><b>8,406</b></li>
+            <li><span>TUI modules / files</span><b>23 / 30</b></li>
+            <li><span>TUI lines</span><b>19,011</b></li>
+            <li><span>Shell scripts</span><b>48</b></li>
+            <li><span>power · util</span><b>12 · 17</b></li>
+            <li><span>radio · sys · net</span><b>8 · 6 · 5</b></li>
+            <li><span>webdash routes</span><b>56</b></li>
+            <li><span>Entry points in bin/</span><b>7</b></li>
+          </ul>
+        </div>
+
+        <div class="card card--cld">
+          <h3>frontend/</h3>
+          <p class="kind">Next.js 16 · React 19 · TypeScript 5</p>
+          <ul>
+            <li><span>TypeScript lines</span><b>8,848</b></li>
+            <li><span>API routes</span><b>16</b></li>
+            <li><span>Dashboard sections</span><b>17</b></li>
+            <li><span>Viz components</span><b>7</b></li>
+            <li><span>lib/ modules</span><b>20</b></li>
+            <li><span>Auth</span><b>NextAuth v5</b></li>
+            <li><span>Store</span><b>Upstash Redis</b></li>
+            <li><span>Styling</span><b>Tailwind v4</b></li>
+          </ul>
+        </div>
+
+        <div class="card card--lan">
+          <h3>packaging/</h3>
+          <p class="kind">dpkg · APT · systemd · nginx</p>
+          <ul>
+            <li><span>systemd services</span><b>9</b></li>
+            <li><span>systemd timers</span><b>3</b></li>
+            <li><span>Maintainer</span><b>postinst +3</b></li>
+            <li><span>Reverse proxy</span><b>nginx :443</b></li>
+            <li><span>Discovery</span><b>Avahi mDNS</b></li>
+            <li><span>Also</span><b>udev · initramfs</b></li>
+            <li><span>Target</span><b>arm64 Bookworm</b></li>
+          </ul>
+        </div>
+
+        <div class="card card--nul">
+          <h3>tests/ · studio/</h3>
+          <p class="kind">pytest · Vitest · Sanity v3</p>
+          <ul>
+            <li><span>pytest suites</span><b>14</b></li>
+            <li><span>Device test functions</span><b>264</b></li>
+            <li><span>Vitest suites</span><b>10</b></li>
+            <li><span>Frontend cases</span><b>207</b></li>
+            <li><span>Test lines</span><b>3,908</b></li>
+            <li><span>Sanity schemas</span><b>4</b></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>Reading the shape:</b> the device tier is large because it degrades rather than depends —
+        SDR, LoRa, GPS, RTC and ESP32 support all detect their hardware and hide themselves when it
+        is absent, on both AIO v1 and v2 and both CM4 and CM5. That optionality is code, and it is
+        where the lines went.
+      </div>
+    </div>
+  </section>
+
+  <footer class="colophon">
+    <b>Sources.</b> Every figure and number on this sheet was read from the repository at
+    <code>v0.3.0</code> (commit <code>ebd1de1</code>): counts from the working tree, mechanisms from
+    <code>frontend/src/middleware.ts</code>, <code>frontend/src/app/api/device/push/route.ts</code>,
+    <code>device/lib/tui/framework.py</code>, <code>device/scripts/system/push-status.sh</code>,
+    <code>packaging/systemd/</code>, and the prose docs in <code>docs/</code>.<br>
+    <b>Deeper reading.</b> docs/ARCHITECTURE.md · docs/API.md · docs/DEVICE-LINKING.md ·
+    docs/PIPELINE.md · docs/SELF-HOSTING.md<br>
+    <b>Tick spacing</b> in Plate 02 is relative, not to scale. Line counts are raw
+    <code>wc -l</code> including blanks and comments.
+  </footer>
+
+</div>

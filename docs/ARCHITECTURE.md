@@ -2,6 +2,11 @@
 
 Three-tier system. Device pushes telemetry to a cloud Redis cache; cloud reads on page load; local webdash runs on-demand against sysfs.
 
+> **Visual companion:** [`architecture/atlas.html`](architecture/atlas.html) — a
+> seven-plate drawing set covering topology, polling cadence, device linking,
+> auth gates, TUI fault isolation, the release pipeline, and repo anatomy. Open
+> it in a browser.
+
 ## Data flow
 
 Three independent paths. Only one actually *polls*; the other two are event-driven or on-demand.
