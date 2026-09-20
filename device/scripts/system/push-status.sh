@@ -1,7 +1,8 @@
 #!/bin/bash
 # Push uConsole system status to the uconsole.cloud API.
 # Runs every 5 minutes via cron. Pure bash, no jq/python deps.
-# Reads config from ~/.config/uconsole/status.env
+# Reads config from /etc/uconsole/status.env (package installs)
+# or ~/.config/uconsole/status.env (standalone installs)
 
 set -euo pipefail
 
@@ -10,9 +11,21 @@ set -euo pipefail
 # owned and written by uconsole-setup, but it's still rotated through
 # user-controlled flows (re-link, manual edits) so treating it as
 # executable code would let any future write-path turn it into RCE.
-ENV_FILE="${HOME}/.config/uconsole/status.env"
-if [ ! -f "$ENV_FILE" ]; then
-    echo "Missing $ENV_FILE" >&2
+# Package installs (uconsole-setup, postinst migration) write
+# /etc/uconsole/status.env — the same path the systemd unit's
+# EnvironmentFile points at; standalone installs use ~/.config.
+# Check both so timer runs and manual runs work on either layout.
+ENV_FILE="${UCONSOLE_STATUS_ENV:-}"
+if [ -z "$ENV_FILE" ]; then
+    for cand in /etc/uconsole/status.env "${HOME}/.config/uconsole/status.env"; do
+        if [ -f "$cand" ]; then
+            ENV_FILE="$cand"
+            break
+        fi
+    done
+fi
+if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+    echo "Missing status.env (looked in /etc/uconsole and ~/.config/uconsole); run uconsole-setup to link this device" >&2
     exit 1
 fi
 

@@ -8,17 +8,24 @@ name: PR bot-fix loop
 # `issue_comment` is deliberately NOT a trigger: vercel[bot] posts a deployment
 # table on every push, and watching it would make the loop feed on deploy noise.
 #
-# SETUP: requires an `ANTHROPIC_API_KEY` repository secret
-# (Settings -> Secrets and variables -> Actions). Without it the fix job fails
-# on every run. Usage is billed to that key.
+# `pull_request_review_comment` is deliberately NOT a trigger either. Greptile
+# submits a review WITH its inline comments, so GitHub fires one
+# `pull_request_review: submitted` plus one `pull_request_review_comment:
+# created` per inline finding. Watching both meant a 12-finding review spawned
+# 13 runs of the same job on the same PR. The review event alone sees every one
+# of those comments, because the fix job reads the threads itself.
+#
+# STATUS: DISARMED. No `ANTHROPIC_API_KEY` repository secret is set, so the gate
+# job stands down on every event and the fix job has never run. Adding that
+# secret (Settings -> Secrets and variables -> Actions) arms the loop; from that
+# point every round spends Anthropic credits, and every push it makes spends a
+# re-review from whichever bots are enabled on the repo. Arm it deliberately.
 #
 # CAP: at most MAX_ROUNDS automated rounds per PR, tracked by `bot-fix-round-N`
 # labels. To give a PR more rounds, delete those labels. To run past the cap
 # once, dispatch this workflow manually with the PR number.
 
 on:
-  pull_request_review_comment:
-    types: [created]
   pull_request_review:
     types: [submitted]
   workflow_run:
@@ -35,13 +42,21 @@ permissions:
   pull-requests: write
   issues: write
 
-# One run per PR. A second event while a fix is in flight queues behind it
-# rather than racing it onto the same branch.
+# One run per BRANCH. Keyed on the head ref for every trigger, because that is
+# the only identifier all three event payloads share and it is what actually
+# gets pushed to.
+#
+# This used to key on `pull_request.number` for review events and on
+# `workflow_run.head_branch` for CI completions. Those strings never match, so
+# the two kinds of run landed in different concurrency groups and could hold a
+# checkout of the same branch at the same time — two fix jobs, two pushes, one
+# branch. `workflow_dispatch` still falls back to the PR number, since the input
+# is all it has; a manual run is human-initiated and deliberate.
 concurrency:
   group: >-
-    bot-fix-${{ github.event.pull_request.number
-      || github.event.inputs.pr
-      || github.event.workflow_run.head_branch }}
+    bot-fix-${{ github.event.pull_request.head.ref
+      || github.event.workflow_run.head_branch
+      || format('dispatch-{0}', github.event.inputs.pr) }}
   cancel-in-progress: false
 
 env:

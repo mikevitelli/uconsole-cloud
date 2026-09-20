@@ -9,8 +9,8 @@ import tempfile
 # (basename, exec_flag, title_flag_or_None)
 # NOTE: alacritty requires -e to be the last flag — title flag must be inserted BEFORE -e.
 KNOWN_TERMINALS = [
-    ("lxterminal", "-e", "--title"),
     ("foot", "--", "--title"),
+    ("lxterminal", "-e", "--title"),
     ("kitty", "--", "--title"),
     ("xterm", "-e", "-T"),
     ("alacritty", "-e", "--title"),
@@ -67,7 +67,7 @@ def detect_terminal() -> str:
         if found:
             return found
 
-    for name in ["lxterminal", "foot", "kitty", "xterm"]:
+    for name in ["foot", "lxterminal", "kitty", "xterm"]:
         found = shutil.which(name)
         if found:
             return found

@@ -7,8 +7,6 @@
 | `battery.sh` | Battery analysis (AXP228 PMU) | *(default)* snapshot, `watch`, `log` |
 | `cellhealth.sh` | Cell health diagnostics | *(default)* full test, `quick`, `log` |
 | `charge.sh` | Set charge current | `300`, `500`, `900` (mA) |
-| `cpu-freq-cap.sh` | Cap CPU at 1.2 GHz | — |
-| `pmu-voltage-min.sh` | Lower undervoltage cutoff | — |
 | `power.sh` | Power management | `status`, `reboot`, `shutdown` |
 | `network.sh` | Network diagnostics | *(default)* overview, `speed`, `scan`, `ping`, `trace`, `watch`, `log` |
 | `hotspot.sh` | WiFi hotspot toggle | `on`, `off`, `status`, `toggle` |
@@ -18,7 +16,6 @@
 | `audit.sh` | Repo audit | *(default)* overview, `junk`, `clean`, `untracked`, `categories` |
 | `backup.sh` | Backup manager | `all`, `git`, `gh`, `system`, `packages`, `desktop`, `browser`, `status` |
 | `update.sh` | System updates | `all`, `apt`, `flatpak`, `firmware`, `repo`, `status`, `log`, `snapshot` |
-| `crash-log.sh` | Boot and crash errors | — |
 | `console` (binary in `/opt/uconsole/bin/`) | TUI command center — see [console-tui.md](console-tui.md) | — |
 | `webdash` app at `/opt/uconsole/webdash/app.py` | Web dashboard (Flask) — see [webdash.md](webdash.md) | run via `systemctl --user start uconsole-webdash` |
 | `webdash-info.sh` | Webdash status overview | — |

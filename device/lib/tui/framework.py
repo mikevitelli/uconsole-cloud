@@ -79,6 +79,11 @@ if not PKG_VERSION:
 # ── Sub-menus (referenced by key from main menu items) ─────────────────────
 
 SUBMENUS = {
+    "sub:camera": [
+        ("ASCII Preview",    "_camera_ascii",       "live braille viewfinder",                "action", "📷"),
+        ("Live Preview",     "_camera_feed",        "fullscreen low-latency feed",            "action", "🎥"),
+        ("Photo",            "_camera_photo",       "snap a still to ~/Pictures",             "action", "📸"),
+    ],
     "sub:updates": [
         ("Update All",       "system/update.sh all",       "apt + flatpak + firmware + repo sync",   "stream", "🌍"),
         ("Update APT",       "system/update.sh apt",       "update apt packages",                    "stream", "📦"),
@@ -124,16 +129,11 @@ SUBMENUS = {
         ("Push Status",      "system/push-status.sh",        "push system status to uconsole.cloud", "action", "☁️"),
     ],
     "sub:hw_config": [
-        ("Fix Battery Boot", "power/fix-battery-boot.sh status","VOFF cutoff fix status",               "panel",      "🩹"),
-        ("Install Boot Fix", "power/fix-battery-boot.sh install","install 2.9V cutoff (3 layers)",  "action",      "📥"),
-        ("Remove Boot Fix",  "power/fix-battery-boot.sh remove","revert to default 3.3V cutoff",   "action",      "📤"),
-        ("PMU Voltage Min",  "power/pmu-voltage-min.sh",  "set undervoltage cutoff to 2.9 V",      "action",     "⚡"),
         ("CPU Freq",         "_cpu_freq",                 "set min/max — 1.5–2.4 GHz",             "action",     "🎚️"),
         ("Charge Rate",      "power/charge.sh",           "set charge current (300-900 mA)",        "fullscreen", "🔌"),
     ],
     "sub:power_ctl": [
         ("Power Status",     "power/power.sh status",     "current power state",                    "panel",      "🔋"),
-        ("Low Batt Status",  "power/low-battery-shutdown.sh status", "voltage vs shutdown threshold", "panel",    "🪫"),
         ("Reboot",           "power/power.sh reboot",     "reboot with 3s delay",                   "fullscreen", "🔁"),
         ("Shutdown",         "power/power.sh shutdown",   "power off with 3s delay",                "fullscreen", "🛑"),
     ],
@@ -152,6 +152,18 @@ SUBMENUS = {
         ("Ping Test",        "network/network.sh ping",     "latency test (1.1.1.1)",                "panel",  "📍"),
         ("Traceroute",       "network/network.sh trace",    "network path trace",                    "panel",  "🛤️"),
         ("Network Log",      "network/network.sh log",      "append entry to network.log",           "action", "📜"),
+    ],
+    "sub:cellular": [
+        ("Status",           "_cellular_monitor",      "live modem dashboard",                   "action", "🩺"),
+        ("Signal Monitor",   "_cellular_signal",       "live RSRP/RSSI/SNR braille graph",       "action", "📶"),
+        ("Tower Map",        "_cellular_map",          "serving cell on a map (WiGLE geo)",      "action", "🗼"),
+        ("Speed Test",       "network/4g.sh speed",    "latency + down/up over cellular",        "stream", "🏎️"),
+        ("Power On",         "network/4g.sh enable",   "power on the SIM7600 module (~25s)",     "stream", "🔌"),
+        ("Connect",          "network/4g.sh up",       "bring up T-Mobile data on wwan0",        "stream", "🟢"),
+        ("Disconnect",       "network/4g.sh down",     "drop the cellular data link",            "action", "🔴"),
+        ("Power Off",        "network/4g.sh disable",  "power module off (battery save)",        "action", "⏻"),
+        ("Reset",            "network/4g.sh reset",    "full down → off → on → up cycle",        "stream", "🔄"),
+        ("Diagnostics",      "network/4g.sh diagnose", "full modem health report",               "panel",  "🧪"),
     ],
     "sub:battest": [
         ("Start: Nitecore-3400",  "power/battery-test.sh start nitecore-3400",  "control — 3400mAh",           "action",     "▶️"),
@@ -305,7 +317,6 @@ CATEGORIES = [
             ("Live Monitor",     "_monitor",            "real-time CPU, RAM, temp, battery",      "action", "📈"),
             ("Processes",        "_processes",           "view and kill running processes",        "action", "🧮"),
             ("System Logs",      "_syslog",             "live journalctl log viewer",             "action", "📜"),
-            ("Crash Log",        "util/crash-log.sh",   "recent crash and boot errors",           "panel",  "💥"),
         ],
     },
     {
@@ -333,6 +344,7 @@ CATEGORIES = [
             ("Connect iPhone",   "network/wifi.sh iphone",      "join iPhone hotspot",            "stream",  "📱"),
             ("WiFi",             "sub:wifi",            "switcher, scan, hotspot, fallback",      "submenu", "📶"),
             ("Diagnostics",      "sub:diagnostics",     "info, speed, ping, traceroute",          "submenu", "🩺"),
+            ("Cellular",         "sub:cellular",        "4G LTE — power, connect, status",        "submenu", "🗼"),
             ("Bluetooth",        "_bluetooth",          "manage paired BT devices",               "action",  "🦷"),
             ("SSH Bookmarks",    "_ssh",                "connect to saved SSH hosts",              "action", "🔐"),
         ],
@@ -346,6 +358,7 @@ CATEGORIES = [
             ("ADS-B Map",        "sub:adsb",            "live aircraft map, table, set home",     "submenu", "✈️"),
             ("LoRa Mesh",        "sub:lora_mesh",       "Meshtastic + direct LoRa — chat, config, service", "submenu", "🕸️"),
             ("ESP32",            "_esp32_hub",          "sensor, marauder, flash",                "action",  "🤖"),
+            ("Camera",           "sub:camera",          "ASCII preview, photo, live feed",        "submenu", "📷"),
         ],
     },
     {
@@ -1902,6 +1915,8 @@ FEATURE_MODULES = [
     "tui.services",
     "tui.radio",
     "tui.antenna",
+    "tui.cellular_signal",
+    "tui.cellular_map",
     "tui.adsb",
     "tui.adsb_home_picker",
     "tui.adsb_basemap_info",
@@ -1914,6 +1929,7 @@ FEATURE_MODULES = [
     "tui.processes",
     "tui.esp32_hub",
     "tui.wifi_radio",
+    "tui.camera",
 ]
 
 _HANDLERS_CACHE = None

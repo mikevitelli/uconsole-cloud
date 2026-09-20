@@ -29,11 +29,3 @@ enabled = true
 schedule = daily
 time = 03:00
 categories = shell,system,packages,browser,scripts,desktop,git,screenshots
-
-[power]
-# MHz, 0 = no cap
-cpu_freq_cap = 1200
-# voltage threshold for emergency shutdown
-low_battery_shutdown = 3.05
-# charge current in mA
-charge_current = 1000
