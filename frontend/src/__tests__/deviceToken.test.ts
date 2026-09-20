@@ -29,6 +29,7 @@ import {
   validateDeviceToken,
   revokeDeviceToken,
   revokeDeviceTokenValue,
+  revokeOtherDeviceTokens,
   regenerateDeviceToken,
 } from "@/lib/deviceToken";
 import { getUserSettings, setUserSettings } from "@/lib/redis";
@@ -183,7 +184,9 @@ describe("revokeDeviceToken", () => {
     expect(mockDel).toHaveBeenCalledWith("devicetoken:legacy-token");
   });
 
-  it("clears the pointer from settings", async () => {
+  it("leaves settings to the caller", async () => {
+    // Both callers (unlink, settings DELETE) delete settings straight after.
+    // Clearing the pointer here bought nothing and raced concurrent mints.
     mockSmembers.mockResolvedValue(["tok-a"]);
     mockGetUserSettings.mockResolvedValue({
       repo: "owner/repo",
@@ -193,10 +196,8 @@ describe("revokeDeviceToken", () => {
 
     await revokeDeviceToken("user123");
 
-    expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
-      repo: "owner/repo",
-      linkedAt: "2026-01-01T00:00:00Z",
-    });
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:tok-a");
+    expect(mockSetUserSettings).not.toHaveBeenCalled();
   });
 
   it("does nothing if no token exists", async () => {
@@ -286,28 +287,11 @@ describe("revokeDeviceToken concurrency", () => {
     expect(mockDel).not.toHaveBeenCalledWith("usertokens:user123");
   });
 
-  it("leaves the pointer alone when a concurrent mint moved it", async () => {
-    // Snapshot says the pointer is tok-a, but by the time we clear it a
-    // concurrent mint has pointed it at a live token. Clearing would orphan it.
-    mockSmembers.mockResolvedValue(["tok-a"]);
-    mockGetUserSettings
-      .mockResolvedValueOnce({
-        repo: "owner/repo",
-        linkedAt: "2026-01-01T00:00:00Z",
-        deviceToken: "tok-a",
-      })
-      .mockResolvedValueOnce({
-        repo: "owner/repo",
-        linkedAt: "2026-01-01T00:00:00Z",
-        deviceToken: "minted-concurrently",
-      });
-
-    await revokeDeviceToken("user123");
-
-    expect(mockSetUserSettings).not.toHaveBeenCalled();
-  });
-
-  it("clears the pointer when it still references a revoked token", async () => {
+  it("never writes settings, so a concurrent mint cannot lose its pointer", async () => {
+    // Read the pointer, compare it, write it back and a mint landing inside
+    // that window has its pointer overwritten: the replacement stays live and
+    // indexed with nothing in settings naming it. Settings belong to the
+    // callers, both of which delete them outright straight after.
     mockSmembers.mockResolvedValue(["tok-a"]);
     mockGetUserSettings.mockResolvedValue({
       repo: "owner/repo",
@@ -317,10 +301,91 @@ describe("revokeDeviceToken concurrency", () => {
 
     await revokeDeviceToken("user123");
 
-    expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
+    expect(mockSetUserSettings).not.toHaveBeenCalled();
+  });
+
+  it("still revokes a pointer token that predates the index", async () => {
+    mockSmembers.mockResolvedValue([]);
+    mockGetUserSettings.mockResolvedValue({
       repo: "owner/repo",
       linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "pre-index",
     });
+
+    await revokeDeviceToken("user123");
+
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:pre-index");
+    expect(mockSrem).toHaveBeenCalledWith("usertokens:user123", "pre-index");
+  });
+});
+
+describe("revokeOtherDeviceTokens", () => {
+  it("revokes every indexed token but the one it is told to keep", async () => {
+    mockSmembers.mockResolvedValue(["stale-a", "keep-me", "stale-b"]);
+
+    await revokeOtherDeviceTokens("user123", "keep-me");
+
+    expect(mockDel).toHaveBeenCalledWith(
+      "devicetoken:stale-a",
+      "devicetoken:stale-b"
+    );
+    expect(mockSrem).toHaveBeenCalledWith(
+      "usertokens:user123",
+      "stale-a",
+      "stale-b"
+    );
+  });
+
+  it("retries a credential an earlier cleanup failed to delete", async () => {
+    // The point of sweeping the index instead of the single value a request
+    // displaced: a revoke that failed on a previous relink left that token
+    // indexed, so this call picks it up rather than leaving it live for the
+    // rest of its 90 days.
+    mockSmembers.mockResolvedValue(["missed-last-time", "current"]);
+
+    await revokeOtherDeviceTokens("user123", "current");
+
+    expect(mockDel).toHaveBeenCalledWith("devicetoken:missed-last-time");
+  });
+
+  it("touches nothing when the kept token is the only one", async () => {
+    mockSmembers.mockResolvedValue(["current"]);
+
+    await revokeOtherDeviceTokens("user123", "current");
+
+    expect(mockDel).not.toHaveBeenCalled();
+    expect(mockSrem).not.toHaveBeenCalled();
+  });
+});
+
+describe("regenerateDeviceToken", () => {
+  it("mints before revoking, so a failed mint leaves the device connected", async () => {
+    const order: string[] = [];
+    mockSet.mockImplementation(async () => {
+      order.push("mint");
+      throw new Error("redis down");
+    });
+    mockSmembers.mockImplementation(async () => {
+      order.push("sweep");
+      return ["live-token"];
+    });
+
+    await expect(regenerateDeviceToken("user123", "owner/repo")).rejects.toThrow(
+      "redis down"
+    );
+    expect(order).toEqual(["mint"]);
+    expect(mockDel).not.toHaveBeenCalledWith("devicetoken:live-token");
+  });
+
+  it("surfaces a failed sweep rather than swallowing it", async () => {
+    // Retiring the old credential is the whole point of regenerating, so
+    // unlike a relink this one must not report success on a failed cleanup.
+    mockSmembers.mockResolvedValue(["old-token"]);
+    mockDel.mockRejectedValue(new Error("redis down"));
+
+    await expect(regenerateDeviceToken("user123", "owner/repo")).rejects.toThrow(
+      "redis down"
+    );
   });
 });
 

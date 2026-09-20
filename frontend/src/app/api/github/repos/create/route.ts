@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithToken } from "@/lib/api-helpers";
-import { getUserSettings, setUserSettings } from "@/lib/redis";
+import { setUserSettings } from "@/lib/redis";
 import {
   generateDeviceToken,
-  revokeDeviceTokenValue,
+  revokeOtherDeviceTokens,
 } from "@/lib/deviceToken";
 import { createBootstrapRepo } from "@/lib/github";
 
@@ -33,28 +33,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status });
   }
 
-  // Auto-link the new repo. Capture the outgoing credential before the write
-  // below drops the pointer, or nothing can name it afterwards.
-  const prior = (await getUserSettings(session.user.id))?.deviceToken;
-
-  await setUserSettings(session.user.id, {
-    repo: result.full_name,
-    linkedAt: new Date().toISOString(),
-  });
+  // Auto-link the new repo, minting before committing. Writing the settings
+  // first meant a failed mint left the dashboard pointing at a repo no device
+  // is pushing to, and this handler is not retryable — the repository already
+  // exists on GitHub, so the retry comes back 409.
   const { token: deviceToken } = await generateDeviceToken(
     session.user.id,
     result.full_name
   );
 
-  // Retire the old credential only after the replacement is committed. The
-  // repository already exists on GitHub at this point, so a failure here is not
-  // retryable — it comes back 409 — and must not disconnect the device too.
-  if (prior && prior !== deviceToken) {
-    try {
-      await revokeDeviceTokenValue(session.user.id, prior);
-    } catch {
-      // Still indexed; unlink or a later relink will clear it.
-    }
+  await setUserSettings(session.user.id, {
+    repo: result.full_name,
+    linkedAt: new Date().toISOString(),
+    deviceToken,
+  });
+
+  // Best-effort for the same reason: the repo exists and the link is committed,
+  // so a cleanup outage must not fail the request. Stale tokens stay indexed
+  // and the next sweep clears them.
+  try {
+    await revokeOtherDeviceTokens(session.user.id, deviceToken);
+  } catch {
+    // Still indexed; the next sweep clears them.
   }
 
   return NextResponse.json({ repo: result.full_name, deviceToken });

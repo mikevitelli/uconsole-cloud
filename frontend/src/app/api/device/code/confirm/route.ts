@@ -4,6 +4,7 @@ import { getUserSettings, setUserSettings } from "@/lib/redis";
 import {
   generateDeviceToken,
   revokeDeviceTokenValue,
+  revokeOtherDeviceTokens,
 } from "@/lib/deviceToken";
 import {
   claimDeviceCode,
@@ -91,20 +92,20 @@ export async function POST(req: NextRequest) {
     throw err;
   }
 
-  // Superseded only now that the replacement is committed. Revoking earlier
-  // would strand a working device if confirmation failed.
+  // Superseded credentials go only now that the replacement is committed.
+  // Revoking earlier would strand a working device if confirmation failed.
+  // Sweeping the index rather than the single value this request displaced
+  // also retires anything an earlier cleanup failure left behind.
   //
   // Best-effort past this point: the code is consumed and the device is already
   // polling successfully on the new token, so throwing here would report a
   // committed confirmation as a 500 and the retry would be rejected as
-  // "Code already used". The stale token stays in the per-user index, so it is
-  // still revocable by unlink.
-  if (replaced && replaced !== deviceToken) {
-    try {
-      await revokeDeviceTokenValue(session.user.id, replaced);
-    } catch {
-      // Intentionally swallowed — see above.
-    }
+  // "Code already used". The stale tokens stay in the per-user index, so the
+  // next relink, regenerate or unlink sweeps them.
+  try {
+    await revokeOtherDeviceTokens(session.user.id, deviceToken);
+  } catch {
+    // Intentionally swallowed — see above.
   }
 
   return NextResponse.json({ success: true, repo: settings.repo });

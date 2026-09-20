@@ -12,6 +12,7 @@ vi.mock("@/lib/redis", () => ({
 vi.mock("@/lib/deviceToken", () => ({
   generateDeviceToken: vi.fn(),
   revokeDeviceTokenValue: vi.fn(),
+  revokeOtherDeviceTokens: vi.fn(),
 }));
 vi.mock("@/lib/deviceCode", () => ({
   claimDeviceCode: vi.fn(),
@@ -22,7 +23,11 @@ vi.mock("@/lib/deviceCode", () => ({
 import { POST } from "@/app/api/device/code/confirm/route";
 import { requireAuth } from "@/lib/api-helpers";
 import { getUserSettings, setUserSettings } from "@/lib/redis";
-import { generateDeviceToken, revokeDeviceTokenValue } from "@/lib/deviceToken";
+import {
+  generateDeviceToken,
+  revokeDeviceTokenValue,
+  revokeOtherDeviceTokens,
+} from "@/lib/deviceToken";
 import {
   claimDeviceCode,
   confirmDeviceCode,
@@ -34,6 +39,7 @@ const mockGetUserSettings = getUserSettings as ReturnType<typeof vi.fn>;
 const mockSetUserSettings = setUserSettings as ReturnType<typeof vi.fn>;
 const mockGenerateDeviceToken = generateDeviceToken as ReturnType<typeof vi.fn>;
 const mockRevokeTokenValue = revokeDeviceTokenValue as ReturnType<typeof vi.fn>;
+const mockSweep = revokeOtherDeviceTokens as ReturnType<typeof vi.fn>;
 const mockClaimDeviceCode = claimDeviceCode as ReturnType<typeof vi.fn>;
 const mockConfirmDeviceCode = confirmDeviceCode as ReturnType<typeof vi.fn>;
 const mockReleaseDeviceCode = releaseDeviceCode as ReturnType<typeof vi.fn>;
@@ -88,13 +94,13 @@ describe("POST /api/device/code/confirm", () => {
     expect(order).toEqual(["claim", "mint"]);
   });
 
-  it("revokes the superseded token once the replacement commits", async () => {
+  it("retires every superseded credential once the replacement commits", async () => {
     const res = await POST(request());
 
     expect(res.status).toBe(200);
-    expect(mockRevokeTokenValue).toHaveBeenCalledTimes(1);
-    expect(mockRevokeTokenValue).toHaveBeenCalledWith("user123", "prior-token");
-    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("user123", "new-token");
+    expect(mockSweep).toHaveBeenCalledWith("user123", "new-token");
+    // The token this request minted is the one the device is now polling on.
+    expect(mockRevokeTokenValue).not.toHaveBeenCalled();
   });
 
   it("rolls the token back and restores the pointer when confirm fails", async () => {
@@ -145,10 +151,10 @@ describe("POST /api/device/code/confirm", () => {
     expect(mockRevokeTokenValue).not.toHaveBeenCalledWith("user123", "concurrent-token");
   });
 
-  it("revokes the token the pointer actually held, not an earlier snapshot", async () => {
-    // A concurrent link superseded the opening snapshot's token before this
-    // request swapped the pointer. Revoking "prior-token" would leave the
-    // token this request really displaced live and unreferenced.
+  it("sweeps the index rather than one displaced value", async () => {
+    // A concurrent link may have superseded the pointer before this request
+    // swapped it, and an earlier cleanup may have failed outright. Sweeping
+    // everything but the token just committed covers both.
     mockGenerateDeviceToken.mockResolvedValue({
       token: "new-token",
       replaced: "actually-displaced",
@@ -156,14 +162,8 @@ describe("POST /api/device/code/confirm", () => {
 
     await POST(request());
 
-    expect(mockRevokeTokenValue).toHaveBeenCalledWith(
-      "user123",
-      "actually-displaced"
-    );
-    expect(mockRevokeTokenValue).not.toHaveBeenCalledWith(
-      "user123",
-      "prior-token"
-    );
+    expect(mockSweep).toHaveBeenCalledWith("user123", "new-token");
+    expect(mockRevokeTokenValue).not.toHaveBeenCalled();
   });
 
   it("cleans up when confirmation throws", async () => {
@@ -193,12 +193,12 @@ describe("POST /api/device/code/confirm", () => {
     expect(mockRevokeTokenValue).not.toHaveBeenCalled();
   });
 
-  it("still succeeds when the post-commit revoke fails", async () => {
+  it("still succeeds when the post-commit sweep fails", async () => {
     // The code is consumed and the device is already polling on the new token.
     // Throwing here would report a committed confirmation as a 500, and the
     // retry would come back "Code already used" — the device works, the user
     // is told it did not.
-    mockRevokeTokenValue.mockRejectedValue(new Error("redis down"));
+    mockSweep.mockRejectedValue(new Error("redis down"));
 
     const res = await POST(request());
 

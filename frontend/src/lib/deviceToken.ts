@@ -96,45 +96,68 @@ export async function revokeDeviceTokenValue(
 }
 
 /**
+ * Revoke every token this user holds except `keep`.
+ *
+ * Every flow that mints a replacement calls this rather than revoking the one
+ * value it displaced. Sweeping the whole index means a cleanup that failed on
+ * an earlier relink is retried here instead of leaving that credential live
+ * for the rest of its 90 days.
+ */
+export async function revokeOtherDeviceTokens(
+  userId: string,
+  keep: string
+): Promise<void> {
+  const stale = (await redis.smembers<string[]>(tokenIndexKey(userId))).filter(
+    (t) => t !== keep
+  );
+  if (stale.length === 0) return;
+
+  await redis.del(...stale.map((t) => `devicetoken:${t}`));
+  await redis.srem(tokenIndexKey(userId), ...stale);
+}
+
+/**
  * Revoke every token this user holds, not just the one settings point at.
  *
  * Callers (unlink, repo delete) mean "this user's devices lose access". Going
  * through the pointer alone left every superseded token live.
+ *
+ * Settings are the caller's to update: both callers delete them outright right
+ * after. Clearing the pointer here meant reading it, comparing it and writing
+ * it back as three separate round trips, and a mint landing inside that window
+ * had its pointer overwritten — the replacement credential stayed live and
+ * indexed with nothing in settings naming it.
  */
 export async function revokeDeviceToken(userId: string): Promise<void> {
   const tokens = await redis.smembers<string[]>(tokenIndexKey(userId));
-  if (tokens.length > 0) {
-    await redis.del(...tokens.map((t) => `devicetoken:${t}`));
-    // Remove exactly what was snapshotted rather than deleting the index key.
-    // A concurrent mint that indexed a token after the snapshot keeps its
-    // membership, so its credential stays revocable instead of being stranded.
-    await redis.srem(tokenIndexKey(userId), ...tokens);
-  }
 
-  const settings = await getUserSettings(userId);
-  if (settings?.deviceToken) {
-    // Cover a token minted before this index existed.
-    if (!tokens.includes(settings.deviceToken)) {
-      await redis.del(`devicetoken:${settings.deviceToken}`);
-    }
-    // Compare-and-set: only clear the pointer if it still references a token
-    // this call actually revoked. A concurrent mint may have moved it to a
-    // live token, and clearing that would orphan it.
-    const current = await getUserSettings(userId);
-    if (current?.deviceToken && current.deviceToken === settings.deviceToken) {
-      await setUserSettings(userId, {
-        repo: current.repo,
-        linkedAt: current.linkedAt,
-      });
-    }
-  }
+  // Cover a token minted before this index existed, which only the pointer
+  // knows about.
+  const pointer = (await getUserSettings(userId))?.deviceToken;
+  const all =
+    pointer && !tokens.includes(pointer) ? [...tokens, pointer] : tokens;
+  if (all.length === 0) return;
+
+  await redis.del(...all.map((t) => `devicetoken:${t}`));
+  // Remove exactly what was snapshotted rather than deleting the index key.
+  // A concurrent mint that indexed a token after the snapshot keeps its
+  // membership, so its credential stays revocable instead of being stranded.
+  await redis.srem(tokenIndexKey(userId), ...all);
 }
 
+/**
+ * Replace the device credential with a fresh one.
+ *
+ * Mint first: revoking first left the device dead with nothing in its place if
+ * the mint then failed. The sweep is allowed to throw — retiring the old
+ * credential is the whole point of regenerating, so a failure here must be
+ * reported rather than swallowed. The next regenerate or relink sweeps again.
+ */
 export async function regenerateDeviceToken(
   userId: string,
   repo: string
 ): Promise<string> {
-  await revokeDeviceToken(userId);
   const { token } = await generateDeviceToken(userId, repo);
+  await revokeOtherDeviceTokens(userId, token);
   return token;
 }

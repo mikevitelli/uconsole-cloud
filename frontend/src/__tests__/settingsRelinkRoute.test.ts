@@ -14,7 +14,7 @@ vi.mock("@/lib/redis", () => ({
 vi.mock("@/lib/deviceToken", () => ({
   generateDeviceToken: vi.fn(),
   revokeDeviceToken: vi.fn(),
-  revokeDeviceTokenValue: vi.fn(),
+  revokeOtherDeviceTokens: vi.fn(),
 }));
 vi.mock("@/lib/github", () => ({
   validateUconsoleRepo: vi.fn(),
@@ -26,7 +26,7 @@ import { getUserSettings, setUserSettings } from "@/lib/redis";
 import {
   generateDeviceToken,
   revokeDeviceToken,
-  revokeDeviceTokenValue,
+  revokeOtherDeviceTokens,
 } from "@/lib/deviceToken";
 import { validateUconsoleRepo } from "@/lib/github";
 
@@ -35,7 +35,7 @@ const mockGetUserSettings = getUserSettings as ReturnType<typeof vi.fn>;
 const mockSetUserSettings = setUserSettings as ReturnType<typeof vi.fn>;
 const mockGenerate = generateDeviceToken as ReturnType<typeof vi.fn>;
 const mockRevokeAll = revokeDeviceToken as ReturnType<typeof vi.fn>;
-const mockRevokeValue = revokeDeviceTokenValue as ReturnType<typeof vi.fn>;
+const mockSweep = revokeOtherDeviceTokens as ReturnType<typeof vi.fn>;
 const mockValidateRepo = validateUconsoleRepo as ReturnType<typeof vi.fn>;
 
 const BASE: UserSettings = {
@@ -53,7 +53,7 @@ beforeEach(() => {
   // otherwise leaks into every case after it.
   vi.resetAllMocks();
   mockSetUserSettings.mockResolvedValue(undefined);
-  mockRevokeValue.mockResolvedValue(undefined);
+  mockSweep.mockResolvedValue(undefined);
   mockRevokeAll.mockResolvedValue(undefined);
   mockAuth.mockResolvedValue({
     user: { id: "user123" },
@@ -65,55 +65,68 @@ beforeEach(() => {
 });
 
 describe("POST /api/settings — relink", () => {
-  it("commits the replacement before retiring the old credential", async () => {
+  it("mints, then commits, then retires the old credentials", async () => {
     const order: string[] = [];
-    mockSetUserSettings.mockImplementation(async () => {
-      order.push("settings");
-    });
     mockGenerate.mockImplementation(async () => {
       order.push("mint");
       return { token: "new-token" };
     });
-    mockRevokeValue.mockImplementation(async () => {
-      order.push("revoke");
+    mockSetUserSettings.mockImplementation(async () => {
+      order.push("settings");
+    });
+    mockSweep.mockImplementation(async () => {
+      order.push("sweep");
     });
 
     await POST(request());
 
-    // Revoking first disconnects a working device and leaves nothing in its
-    // place if either later step fails.
-    expect(order).toEqual(["settings", "mint", "revoke"]);
+    // Committing before the mint moves the dashboard to a repo no device is
+    // pushing to; revoking before the commit disconnects a working device and
+    // leaves nothing in its place.
+    expect(order).toEqual(["mint", "settings", "sweep"]);
   });
 
-  it("revokes the token the settings pointer held before it was wiped", async () => {
+  it("commits the repo and the new pointer in one write", async () => {
     await POST(request());
 
-    // The settings write drops the deviceToken field, so the outgoing value
-    // has to be captured up front or nothing can name it afterwards.
-    expect(mockRevokeValue).toHaveBeenCalledWith("user123", "working-token");
+    // Dropping deviceToken here is what previously left the outgoing
+    // credential unnameable from settings.
+    expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
+      repo: "owner/new-repo",
+      linkedAt: expect.any(String),
+      deviceToken: "new-token",
+    });
+  });
+
+  it("sweeps every stale credential, not just the displaced pointer", async () => {
+    await POST(request());
+
+    // Revoking only the value this request displaced never retried a cleanup
+    // an earlier relink dropped, leaving that token live for its full 90 days.
+    expect(mockSweep).toHaveBeenCalledWith("user123", "new-token");
     expect(mockRevokeAll).not.toHaveBeenCalled();
   });
 
-  it("leaves the device connected when the settings write fails", async () => {
-    mockSetUserSettings.mockRejectedValue(new Error("redis down"));
-
-    await expect(POST(request())).rejects.toThrow("redis down");
-
-    // Nothing was revoked, so the existing device still works.
-    expect(mockRevokeValue).not.toHaveBeenCalled();
-    expect(mockRevokeAll).not.toHaveBeenCalled();
-  });
-
-  it("leaves the device connected when minting fails", async () => {
+  it("commits nothing when minting fails", async () => {
     mockGenerate.mockRejectedValue(new Error("mint failed"));
 
     await expect(POST(request())).rejects.toThrow("mint failed");
 
-    expect(mockRevokeValue).not.toHaveBeenCalled();
+    // The old link and its working credential survive untouched.
+    expect(mockSetUserSettings).not.toHaveBeenCalled();
+    expect(mockSweep).not.toHaveBeenCalled();
   });
 
-  it("still succeeds when retiring the old credential fails", async () => {
-    mockRevokeValue.mockRejectedValue(new Error("redis down"));
+  it("leaves the old credential live when the settings write fails", async () => {
+    mockSetUserSettings.mockRejectedValue(new Error("redis down"));
+
+    await expect(POST(request())).rejects.toThrow("redis down");
+
+    expect(mockSweep).not.toHaveBeenCalled();
+  });
+
+  it("still succeeds when the sweep fails", async () => {
+    mockSweep.mockRejectedValue(new Error("redis down"));
 
     const res = await POST(request());
 
@@ -121,14 +134,11 @@ describe("POST /api/settings — relink", () => {
     await expect(res.json()).resolves.toMatchObject({ deviceToken: "new-token" });
   });
 
-  it("does nothing to revoke when there was no prior token", async () => {
-    mockGetUserSettings.mockResolvedValue({
-      repo: "owner/old-repo",
-      linkedAt: "2026-01-01T00:00:00Z",
-    });
+  it("sweeps on a first link too, when there was no prior token", async () => {
+    mockGetUserSettings.mockResolvedValue(null);
 
     await POST(request());
 
-    expect(mockRevokeValue).not.toHaveBeenCalled();
+    expect(mockSweep).toHaveBeenCalledWith("user123", "new-token");
   });
 });
