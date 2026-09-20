@@ -8,6 +8,7 @@ const mockExpire = vi.fn();
 const mockSadd = vi.fn();
 const mockSrem = vi.fn();
 const mockSmembers = vi.fn();
+const mockEval = vi.fn();
 
 vi.mock("@/lib/redis", () => ({
   redis: {
@@ -18,6 +19,7 @@ vi.mock("@/lib/redis", () => ({
     sadd: (...args: unknown[]) => mockSadd(...args),
     srem: (...args: unknown[]) => mockSrem(...args),
     smembers: (...args: unknown[]) => mockSmembers(...args),
+    eval: (...args: unknown[]) => mockEval(...args),
   },
   getUserSettings: vi.fn(),
   setUserSettings: vi.fn(),
@@ -31,6 +33,8 @@ import {
   revokeDeviceTokenValue,
   revokeOtherDeviceTokens,
   regenerateDeviceToken,
+  withDeviceTokenLock,
+  DeviceTokenBusyError,
 } from "@/lib/deviceToken";
 import { getUserSettings, setUserSettings } from "@/lib/redis";
 
@@ -41,6 +45,10 @@ const TTL = 60 * 60 * 24 * 90;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // "OK" is what SET NX returns when it takes the lock; the token writes
+  // ignore the return value.
+  mockSet.mockResolvedValue("OK");
+  mockEval.mockResolvedValue(1);
   mockSmembers.mockResolvedValue([]);
   mockGetUserSettings.mockResolvedValue({
     repo: "owner/repo",
@@ -390,7 +398,8 @@ describe("revokeOtherDeviceTokens", () => {
 describe("regenerateDeviceToken", () => {
   it("mints before revoking, so a failed mint leaves the device connected", async () => {
     const order: string[] = [];
-    mockSet.mockImplementation(async () => {
+    mockSet.mockImplementation(async (key: string) => {
+      if (!String(key).startsWith("devicetoken:")) return "OK"; // the lock
       order.push("mint");
       throw new Error("redis down");
     });
@@ -418,3 +427,78 @@ describe("regenerateDeviceToken", () => {
   });
 });
 
+
+describe("withDeviceTokenLock", () => {
+  it("runs the callback while holding the lock and releases it after", async () => {
+    const result = await withDeviceTokenLock("user123", async () => "done");
+
+    expect(result).toBe("done");
+    expect(mockSet).toHaveBeenCalledWith(
+      "devicelock:user123",
+      expect.any(String),
+      { ex: 10, nx: true }
+    );
+    // Released through a script, not GET-then-DEL: a lock that expired mid-run
+    // belongs to someone else by then and must not be deleted.
+    expect(mockEval).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call(\"DEL\", KEYS[1])"),
+      ["devicelock:user123"],
+      [expect.any(String)]
+    );
+  });
+
+  it("releases the lock when the callback throws", async () => {
+    await expect(
+      withDeviceTokenLock("user123", async () => {
+        throw new Error("boom");
+      })
+    ).rejects.toThrow("boom");
+
+    expect(mockEval).toHaveBeenCalled();
+  });
+
+  it("refuses rather than running alongside another change", async () => {
+    // SET NX returns null while someone else holds it.
+    mockSet.mockResolvedValue(null);
+    const ran = vi.fn();
+
+    await expect(withDeviceTokenLock("user123", ran)).rejects.toBeInstanceOf(
+      DeviceTokenBusyError
+    );
+    expect(ran).not.toHaveBeenCalled();
+  }, 10000);
+
+  it("serializes two replacements instead of interleaving them", async () => {
+    // The race this exists for: A commits, pauses, B commits and sweeps, then
+    // A's sweep deletes B's committed token. Under the lock B cannot start
+    // until A has finished sweeping.
+    const held: string[] = [];
+    let locked = false;
+    mockSet.mockImplementation(async (key: string) => {
+      if (!String(key).startsWith("devicelock:")) return "OK";
+      if (locked) return null;
+      locked = true;
+      return "OK";
+    });
+    mockEval.mockImplementation(async () => {
+      locked = false;
+      return 1;
+    });
+
+    const flow = (name: string) =>
+      withDeviceTokenLock("user123", async () => {
+        held.push(`${name}:in`);
+        await new Promise((r) => setTimeout(r, 60));
+        held.push(`${name}:out`);
+      });
+
+    await Promise.all([flow("a"), flow("b")]);
+
+    // Never "a:in, b:in" — one runs to completion before the other starts.
+    expect(held).toEqual(
+      held[0] === "a:in"
+        ? ["a:in", "a:out", "b:in", "b:out"]
+        : ["b:in", "b:out", "a:in", "a:out"]
+    );
+  });
+});

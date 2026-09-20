@@ -13,6 +13,8 @@ vi.mock("@/lib/deviceToken", () => ({
   generateDeviceToken: vi.fn(),
   revokeDeviceTokenValue: vi.fn(),
   revokeOtherDeviceTokens: vi.fn(),
+  withDeviceTokenLock: vi.fn(async (_userId: string, fn: () => Promise<unknown>) => fn()),
+  DeviceTokenBusyError: class DeviceTokenBusyError extends Error {},
 }));
 vi.mock("@/lib/deviceCode", () => ({
   claimDeviceCode: vi.fn(),
@@ -27,6 +29,7 @@ import {
   generateDeviceToken,
   revokeDeviceTokenValue,
   revokeOtherDeviceTokens,
+  withDeviceTokenLock,
 } from "@/lib/deviceToken";
 import {
   claimDeviceCode,
@@ -40,6 +43,7 @@ const mockSetUserSettings = setUserSettings as ReturnType<typeof vi.fn>;
 const mockGenerateDeviceToken = generateDeviceToken as ReturnType<typeof vi.fn>;
 const mockRevokeTokenValue = revokeDeviceTokenValue as ReturnType<typeof vi.fn>;
 const mockSweep = revokeOtherDeviceTokens as ReturnType<typeof vi.fn>;
+const mockLock = withDeviceTokenLock as ReturnType<typeof vi.fn>;
 const mockClaimDeviceCode = claimDeviceCode as ReturnType<typeof vi.fn>;
 const mockConfirmDeviceCode = confirmDeviceCode as ReturnType<typeof vi.fn>;
 const mockReleaseDeviceCode = releaseDeviceCode as ReturnType<typeof vi.fn>;
@@ -58,6 +62,7 @@ const BASE: UserSettings = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockLock.mockImplementation(async (_userId: string, fn: () => Promise<unknown>) => fn());
   mockRequireAuth.mockResolvedValue({ user: { id: "user123" } });
   mockGetUserSettings.mockResolvedValue({ ...BASE });
   mockGenerateDeviceToken.mockResolvedValue({ token: "new-token", replaced: "prior-token" });

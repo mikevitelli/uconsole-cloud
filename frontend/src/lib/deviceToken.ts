@@ -4,6 +4,12 @@ import { getUserSettings, setUserSettings } from "./redis";
 
 const TOKEN_TTL = 60 * 60 * 24 * 90; // 90 days
 
+// Long enough to cover a replacement that stalls on a slow Redis round trip,
+// short enough that a crashed request does not block the user for long.
+const LOCK_TTL = 10; // seconds
+const LOCK_WAIT_MS = 3000;
+const LOCK_POLL_MS = 50;
+
 interface DeviceTokenData {
   userId: string;
   repo: string;
@@ -25,6 +31,69 @@ interface DeviceTokenData {
  */
 function tokenIndexKey(userId: string): string {
   return `usertokens:${userId}`;
+}
+
+function lockKey(userId: string): string {
+  return `devicelock:${userId}`;
+}
+
+/** Another credential change for this user is already running. */
+export class DeviceTokenBusyError extends Error {
+  constructor() {
+    super("Another device credential change is in progress");
+    this.name = "DeviceTokenBusyError";
+  }
+}
+
+// Release the lock only if we still hold it. A GET followed by a DEL is two
+// round trips, and a flow whose lock had expired in between would delete the
+// lock a second flow now holds — letting a third in alongside it.
+const RELEASE_LOCK = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`;
+
+/**
+ * Serialize credential replacement for one user.
+ *
+ * Replacing a credential is three writes — mint, commit the pointer, sweep the
+ * stale ones — and no ordering of them survives two replacements running at
+ * once. Sweeping last lets a paused flow delete the token a later flow already
+ * committed, leaving the pointer naming a deleted credential and the device
+ * unable to authenticate. Narrowing that by re-reading the pointer, or by
+ * snapshotting the index before minting, only moves the window: a flow that
+ * stalls between its mint and its commit is still invisible to the flow
+ * running alongside it.
+ *
+ * So the flows do not run alongside each other. Contention is rare in practice
+ * (it takes two credential changes for one account in the same second) and
+ * reporting it beats guessing, so a caller that cannot take the lock within
+ * LOCK_WAIT_MS gets DeviceTokenBusyError rather than a silent partial result.
+ *
+ * Never call this from inside a callback it already holds — it does not
+ * reenter.
+ */
+export async function withDeviceTokenLock<T>(
+  userId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const nonce = randomUUID();
+  const deadline = Date.now() + LOCK_WAIT_MS;
+
+  while (
+    (await redis.set(lockKey(userId), nonce, { ex: LOCK_TTL, nx: true })) !== "OK"
+  ) {
+    if (Date.now() >= deadline) throw new DeviceTokenBusyError();
+    await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+  }
+
+  try {
+    return await fn();
+  } finally {
+    await redis.eval(RELEASE_LOCK, [lockKey(userId)], [nonce]);
+  }
 }
 
 export async function generateDeviceToken(
@@ -167,7 +236,9 @@ export async function regenerateDeviceToken(
   userId: string,
   repo: string
 ): Promise<string> {
-  const { token } = await generateDeviceToken(userId, repo);
-  await revokeOtherDeviceTokens(userId, token);
-  return token;
+  return withDeviceTokenLock(userId, async () => {
+    const { token } = await generateDeviceToken(userId, repo);
+    await revokeOtherDeviceTokens(userId, token);
+    return token;
+  });
 }

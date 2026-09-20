@@ -5,6 +5,8 @@ import {
   generateDeviceToken,
   revokeDeviceTokenValue,
   revokeOtherDeviceTokens,
+  withDeviceTokenLock,
+  DeviceTokenBusyError,
 } from "@/lib/deviceToken";
 import {
   claimDeviceCode,
@@ -68,44 +70,71 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: claim.error }, { status: 400 });
   }
 
-  let deviceToken: string | undefined;
-  let replaced: string | undefined;
-
+  // Everything that touches credentials runs under the per-user lock, so a
+  // relink running at the same time cannot sweep away the token this
+  // confirmation commits.
+  let failure: { error: string } | undefined;
   try {
-    const minted = await generateDeviceToken(session.user.id, settings.repo);
-    deviceToken = minted.token;
-    // What the pointer actually held when it moved, not a snapshot taken at the
-    // top of the request. A concurrent link may have superseded that already.
-    replaced = minted.replaced;
+    await withDeviceTokenLock(session.user.id, async () => {
+      let deviceToken: string | undefined;
+      let replaced: string | undefined;
 
-    const result = await confirmDeviceCode(normalized, deviceToken, settings.repo);
+      try {
+        const minted = await generateDeviceToken(session.user.id, settings.repo);
+        deviceToken = minted.token;
+        // What the pointer actually held when it moved, not a snapshot taken
+        // at the top of the request.
+        replaced = minted.replaced;
 
-    if (!result.success) {
-      await rollback(session.user.id, deviceToken, replaced, normalized);
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
+        const result = await confirmDeviceCode(
+          normalized,
+          deviceToken,
+          settings.repo
+        );
+
+        if (!result.success) {
+          await rollback(session.user.id, deviceToken, replaced, normalized);
+          failure = { error: result.error ?? "Could not confirm the code" };
+          return;
+        }
+      } catch (err) {
+        // A throw between minting and confirming (a failed Redis write, say)
+        // would otherwise leave the token live, the pointer moved, and the
+        // code claimed until its TTL expires.
+        await rollback(session.user.id, deviceToken, replaced, normalized);
+        throw err;
+      }
+
+      // Superseded credentials go only now that the replacement is committed.
+      // Revoking earlier would strand a working device if confirmation failed.
+      // Sweeping the index rather than the single value this request displaced
+      // also retires anything an earlier cleanup failure left behind.
+      //
+      // Best-effort past this point: the code is consumed and the device is
+      // already polling successfully on the new token, so throwing here would
+      // report a committed confirmation as a 500 and the retry would be
+      // rejected as "Code already used". The stale tokens stay in the per-user
+      // index, so the next relink, regenerate or unlink sweeps them.
+      try {
+        await revokeOtherDeviceTokens(session.user.id, deviceToken);
+      } catch {
+        // Intentionally swallowed — see above.
+      }
+    });
   } catch (err) {
-    // A throw between minting and confirming (a failed Redis write, say) would
-    // otherwise leave the token live, the pointer moved, and the code claimed
-    // until its TTL expires.
-    await rollback(session.user.id, deviceToken, replaced, normalized);
+    if (err instanceof DeviceTokenBusyError) {
+      // The code is still claimed; hand it back so the retry can use it.
+      await releaseDeviceCode(normalized);
+      return NextResponse.json(
+        { error: "Another device change is in progress. Try again." },
+        { status: 409 }
+      );
+    }
     throw err;
   }
 
-  // Superseded credentials go only now that the replacement is committed.
-  // Revoking earlier would strand a working device if confirmation failed.
-  // Sweeping the index rather than the single value this request displaced
-  // also retires anything an earlier cleanup failure left behind.
-  //
-  // Best-effort past this point: the code is consumed and the device is already
-  // polling successfully on the new token, so throwing here would report a
-  // committed confirmation as a 500 and the retry would be rejected as
-  // "Code already used". The stale tokens stay in the per-user index, so the
-  // next relink, regenerate or unlink sweeps them.
-  try {
-    await revokeOtherDeviceTokens(session.user.id, deviceToken);
-  } catch {
-    // Intentionally swallowed — see above.
+  if (failure) {
+    return NextResponse.json({ error: failure.error }, { status: 400 });
   }
 
   return NextResponse.json({ success: true, repo: settings.repo });

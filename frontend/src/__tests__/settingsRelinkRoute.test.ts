@@ -15,6 +15,8 @@ vi.mock("@/lib/deviceToken", () => ({
   generateDeviceToken: vi.fn(),
   revokeDeviceToken: vi.fn(),
   revokeOtherDeviceTokens: vi.fn(),
+  withDeviceTokenLock: vi.fn(async (_userId: string, fn: () => Promise<unknown>) => fn()),
+  DeviceTokenBusyError: class DeviceTokenBusyError extends Error {},
 }));
 vi.mock("@/lib/github", () => ({
   validateUconsoleRepo: vi.fn(),
@@ -27,6 +29,8 @@ import {
   generateDeviceToken,
   revokeDeviceToken,
   revokeOtherDeviceTokens,
+  withDeviceTokenLock,
+  DeviceTokenBusyError,
 } from "@/lib/deviceToken";
 import { validateUconsoleRepo } from "@/lib/github";
 
@@ -37,6 +41,7 @@ const mockGenerate = generateDeviceToken as ReturnType<typeof vi.fn>;
 const mockRevokeAll = revokeDeviceToken as ReturnType<typeof vi.fn>;
 const mockSweep = revokeOtherDeviceTokens as ReturnType<typeof vi.fn>;
 const mockValidateRepo = validateUconsoleRepo as ReturnType<typeof vi.fn>;
+const mockLock = withDeviceTokenLock as ReturnType<typeof vi.fn>;
 
 const BASE: UserSettings = {
   repo: "owner/old-repo",
@@ -52,6 +57,7 @@ beforeEach(() => {
   // resetAllMocks, not clearAllMocks: a mockRejectedValue set by one case
   // otherwise leaks into every case after it.
   vi.resetAllMocks();
+  mockLock.mockImplementation(async (_userId: string, fn: () => Promise<unknown>) => fn());
   mockSetUserSettings.mockResolvedValue(undefined);
   mockSweep.mockResolvedValue(undefined);
   mockRevokeAll.mockResolvedValue(undefined);
@@ -132,6 +138,37 @@ describe("POST /api/settings — relink", () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ deviceToken: "new-token" });
+  });
+
+  it("does the whole replacement under the per-user lock", async () => {
+    const order: string[] = [];
+    mockLock.mockImplementation(async (_userId: string, fn: () => Promise<unknown>) => {
+      order.push("lock");
+      const out = await fn();
+      order.push("unlock");
+      return out;
+    });
+    mockGenerate.mockImplementation(async () => {
+      order.push("mint");
+      return { token: "new-token" };
+    });
+    mockSweep.mockImplementation(async () => {
+      order.push("sweep");
+    });
+
+    await POST(request());
+
+    // A sweep outside the lock can delete a token a concurrent relink just
+    // committed, leaving settings naming a credential that no longer works.
+    expect(order).toEqual(["lock", "mint", "sweep", "unlock"]);
+  });
+
+  it("returns 409 rather than racing another change", async () => {
+    mockLock.mockRejectedValue(new DeviceTokenBusyError());
+
+    const res = await POST(request());
+
+    expect(res.status).toBe(409);
   });
 
   it("sweeps on a first link too, when there was no prior token", async () => {
