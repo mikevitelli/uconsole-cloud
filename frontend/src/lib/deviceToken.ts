@@ -92,7 +92,14 @@ export async function withDeviceTokenLock<T>(
   try {
     return await fn();
   } finally {
-    await redis.eval(RELEASE_LOCK, [lockKey(userId)], [nonce]);
+    try {
+      await redis.eval(RELEASE_LOCK, [lockKey(userId)], [nonce]);
+    } catch {
+      // The work is done and its result belongs to the caller. Rethrowing from
+      // here would report a committed replacement as a failure, and the retry
+      // would meet a consumed device code or an existing repository. The lease
+      // expires on its own within LOCK_TTL.
+    }
   }
 }
 

@@ -457,6 +457,17 @@ describe("withDeviceTokenLock", () => {
     expect(mockEval).toHaveBeenCalled();
   });
 
+  it("does not let a failed release mask a committed replacement", async () => {
+    // By the time the lock is released the work has landed. Throwing here
+    // would report a committed relink as a 500, and the retry would meet a
+    // consumed device code or an existing repo.
+    mockEval.mockRejectedValue(new Error("redis down"));
+
+    await expect(
+      withDeviceTokenLock("user123", async () => "committed")
+    ).resolves.toBe("committed");
+  });
+
   it("refuses rather than running alongside another change", async () => {
     // SET NX returns null while someone else holds it.
     mockSet.mockResolvedValue(null);
