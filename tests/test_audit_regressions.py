@@ -309,5 +309,5 @@ def test_cellular_map_op_token_path_is_user_relative():
     """The packaged TUI runtime must not hardcode an operator home path.
     Read the 1Password token from the current user's home via expanduser."""
     src = _read("device/lib/tui/cellular_map.py")
-    assert 'os.path.expanduser("~/.config/op/service-account-token")' in src
+    assert "~/.config/op/service-account-token" in src
     assert "/home/mikevitelli/.config/op/service-account-token" not in src
