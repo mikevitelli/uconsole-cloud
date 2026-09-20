@@ -215,7 +215,8 @@ def _op_field(title, label="credential"):
     """Fetch a 1Password field via the op CLI (service account). None on failure.
     Shared by the WiGLE and OpenCelliD secret loaders; the value is never logged."""
     try:
-        with open("/home/mikevitelli/.config/op/service-account-token") as f:
+        token_path = os.path.expanduser("~/.config/op/service-account-token")
+        with open(token_path) as f:
             tok = f.read().strip()
     except Exception:
         return None
