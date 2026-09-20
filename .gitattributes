@@ -1,0 +1,19 @@
+# Normalize line endings to LF, in the repo and in the working tree.
+#
+# device/ ships bash and python into a Debian .deb for arm64. A CRLF checkout
+# (Git for Windows defaults to core.autocrlf=true) corrupts those scripts and
+# they land broken on the device, so LF is forced rather than left to config.
+* text=auto eol=lf
+
+# Binaries — never convert, never diff.
+*.deb binary
+*.gpg binary
+*.gz  binary
+*.png binary
+*.gif binary
+*.ico binary
+
+# The published APT repo is GPG-signed: Release.gpg is a detached signature over
+# Release, and InRelease is clearsigned. Any byte change invalidates them and apt
+# clients reject the repo, so nothing under here may be normalized.
+frontend/public/apt/** -text
