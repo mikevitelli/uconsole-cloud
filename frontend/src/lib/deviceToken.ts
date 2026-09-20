@@ -54,6 +54,16 @@ export async function generateDeviceToken(
     // can revoke a token a concurrent write already superseded.
     const settings = await getUserSettings(userId);
     const replaced = settings?.deviceToken;
+
+    // Index the credential being displaced, not just the new one. A token
+    // minted before this index existed is known only to the pointer, and the
+    // pointer is about to stop naming it — so without this the sweep that
+    // follows cannot see it and it stays live for the rest of its 90 days.
+    // sadd is a no-op when it is already a member.
+    if (replaced) {
+      await redis.sadd(tokenIndexKey(userId), replaced);
+    }
+
     if (settings) {
       await setUserSettings(userId, { ...settings, deviceToken: token });
     }

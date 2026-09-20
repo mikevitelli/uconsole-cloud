@@ -319,6 +319,35 @@ describe("revokeDeviceToken concurrency", () => {
   });
 });
 
+describe("generateDeviceToken indexes what it displaces", () => {
+  it("indexes a pointer-only token as it is superseded", async () => {
+    // Tokens minted before the index existed are known only to the pointer,
+    // and the mint is the last moment anything names them. Missing this leaves
+    // them invisible to the sweep and live for the rest of their 90 days.
+    mockGetUserSettings.mockResolvedValue({
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "legacy-pointer-only",
+    });
+
+    const { token } = await generateDeviceToken("user123", "owner/repo");
+
+    expect(mockSadd).toHaveBeenCalledWith("usertokens:user123", token);
+    expect(mockSadd).toHaveBeenCalledWith(
+      "usertokens:user123",
+      "legacy-pointer-only"
+    );
+  });
+
+  it("indexes only the new token on a first link", async () => {
+    mockGetUserSettings.mockResolvedValue(null);
+
+    await generateDeviceToken("user123", "owner/repo");
+
+    expect(mockSadd).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("revokeOtherDeviceTokens", () => {
   it("revokes every indexed token but the one it is told to keep", async () => {
     mockSmembers.mockResolvedValue(["stale-a", "keep-me", "stale-b"]);
