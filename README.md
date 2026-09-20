@@ -28,13 +28,25 @@ The [ClockworkPi uConsole](https://www.clockworkpi.com/uconsole) is a handheld L
 
 **uconsole-cloud** is a three-tier stack:
 
-- **Device** — a Debian `.deb` installs a curses TUI (`console`), a Flask web dashboard (`webdash`), an offline CLI AI agent (`uconsole-ai`), 50+ management scripts, and a handful of systemd units. Nothing leaves the device by default.
+- **Device** — a Debian `.deb` installs a curses TUI (`console`), a Flask web dashboard (`webdash`), an offline CLI AI agent (`uconsole-ai`), 48 management scripts, and a handful of systemd units. Nothing leaves the device by default.
 - **Local network** — webdash serves at `https://uconsole.local` via nginx, self-signed TLS, and mDNS. When no known WiFi is in range, the device spins up a fallback AP (`uConsole` / `clockwork`) so your phone or laptop can always reach it.
 - **Cloud (optional)** — [uconsole.cloud](https://uconsole.cloud) is a Next.js dashboard that shows device telemetry, backup coverage, and hardware inventory from anywhere. Auth via GitHub OAuth, telemetry stored in Upstash Redis, opt-in per device.
 
-Hardware-optional features (RTL-SDR, LoRa, GPS, RTC, ESP32, dual-radio AC1200 WiFi) gracefully degrade when the [HackerGadgets AIO board](https://www.hackergadgets.com/) isn't installed. Everything works on both **AIO v1** and **AIO v2**, on both **CM4** and **CM5**.
+Hardware-optional features (RTL-SDR, LoRa, GPS, RTC, ESP32, dual-radio AC1200 WiFi, SIM7600G-H cellular, CSI camera) gracefully degrade when the [HackerGadgets AIO board](https://www.hackergadgets.com/) isn't installed. Everything works on both **AIO v1** and **AIO v2**, on both **CM4** and **CM5**.
 
 This is the public software half of a two-repo setup. The companion repo, `mikevitelli/uconsole` (private), captures the full installed device state — configs, dotfiles, WiFi profiles, SSH keys, package manifests — as a backup/restore reference.
+
+---
+
+## New in v0.3.1
+
+**Cellular.** The uConsole gets off WiFi entirely. A SIMCom SIM7600G-H over `wwan0` with a full TUI suite — live modem dashboard, RSRP/RSSI/SNR braille graph, and a GPS-tagged map of the serving cell tower. Power the module on, connect, run a speed test, and tear it back down without leaving the menu.
+
+**Camera.** A curses live viewfinder rendered as braille, a fullscreen low-latency feed, and stills to `~/Pictures` — all off one long-lived `rpicam-vid` pipeline, so switching views never re-inits the sensor.
+
+**A leaner power stack.** The device-specific battery/VOFF hack is gone. It hardcoded i2c bus 0 (wrong on CM5) and a 2.9V cutoff tuned for one cell chemistry; the package now removes it on upgrade and keeps the portable udev-rule fix instead.
+
+Full detail in the [changelog](CHANGELOG.md).
 
 ---
 
@@ -106,17 +118,17 @@ The bootstrap adds the GPG-signed APT repo and installs the `uconsole-cloud` pac
 SYSTEM   MONITOR   FILES   POWER   NETWORK   HARDWARE   TOOLS   GAMES   CONFIG
 ```
 
-A curses launcher with full gamepad + keyboard input, organized into 9 categories backed by 23 feature modules. Each module is import-isolated, so a broken module hides only its own menu entry — the rest of the TUI keeps working.
+A curses launcher with full gamepad + keyboard input, organized into 9 categories backed by 32 feature modules. Each module is import-isolated, so a broken module hides only its own menu entry — the rest of the TUI keeps working.
 
 Highlights from across the categories:
 
-- **MONITOR** — 1-second live gauges for CPU, memory, disk, temperature, battery, and network; hostname-aware header, configurable refresh rate
-- **POWER** — battery health curves tuned for Samsung INR18650-35E cells, CPU frequency caps, PMU voltage floor, low-battery shutdown
-- **NETWORK** — WiFi connect/scan/hotspot/iPhone-tether, WiFi Radio Mode picker (CM5 onboard / AC1200 / both), antenna array braille ribbon monitor for the MT7921 2x2 chains
-- **HARDWARE** — AIO v2 rail dashboard (GPS / LoRa / SDR / USB power gating + telemetry), GPS globe, FM radio, global ADS-B map with hi-res basemap fetch (powered by readsb + viewadsb), Meshtastic mesh map (SX1262 LoRa, with the TCXO init fix that was missing upstream), ESP32 hub for Marauder / MicroPython / MimiClaw firmware flashing and chat
-- **TOOLS** — git panel, notes, calculator, stopwatch, Telegram client (tdlib), weather, Hacker News, uConsole forum browser, offline AI agent shell (`uconsole-ai`)
+- **MONITOR** — 1-second live gauges for CPU, memory, disk, temperature, battery, and network; hostname-aware header, configurable refresh rate; process viewer and live journalctl reader
+- **POWER** — 18650 cell-health sag/recovery tests, per-chemistry discharge-curve logging (Samsung 35E / 30Q, Panasonic GA, Nitecore 3400), CPU frequency caps, charge-rate control
+- **NETWORK** — WiFi connect/scan/hotspot/iPhone-tether; radio mode picker (CM5 onboard / AC1200 / both); MT7921 antenna-array ribbon monitor; **4G/LTE suite** — modem dashboard, RSRP/RSSI/SNR graph, tower map, speed test
+- **HARDWARE** — AIO v2 rail dashboard (GPS / LoRa / SDR / USB power gating); GPS globe; FM radio; global ADS-B map (readsb + viewadsb); Meshtastic mesh map (SX1262, with the TCXO init fix missing upstream); ESP32 hub (Marauder / MicroPython / MimiClaw); **camera** — braille viewfinder, live feed, stills
+- **TOOLS** — git panel, notes, calculator, stopwatch, pomodoro, Telegram (tdlib), weather, Hacker News, uConsole forum, markdown viewer, screenshot, offline AI shell (`uconsole-ai`)
 - **GAMES** — Watch Dogs Go (auto-installs on first launch), minesweeper, snake, tetris, 2048, ROM launcher with crash-safe detached spawn
-- **CONFIG** — theme picker, view mode, keybinds, cloud push interval, Watch Dogs config
+- **CONFIG** — theme picker, view mode, keybinds, battery gauge source, trackball scroll, cloud push interval, monitor refresh rate, Watch Dogs config
 
 External programs (emulators, Watch Dogs Go, terminal apps) launch through a shared `tui.launcher` helper, so a child crash can never signal the curses parent.
 
@@ -136,7 +148,9 @@ External programs (emulators, Watch Dogs Go, terminal apps) launch through a sha
 
 **Antenna Array monitor** — live braille ribbon for the AC1200 MT7921 2x2 chains. Per-chain RSSI on top/bottom traces with the band between them filled and colored by the A−B delta — flaky u.FL connectors show up as the ribbon fattening and going red.
 
-**Battery + power hygiene** — battery-safety units (opt-in, default off), AC-gated apt upgrades, CPU frequency caps, PMU voltage floor tuning, low-battery shutdown thresholds calibrated for INR18650-35E cells.
+**Cellular (SIM7600G-H)** — `scripts/network/4g.sh` drives module power gating, bearer bring-up, and signal queries. The carrier hands out an IPv6 bearer with no DHCP, so the script assigns the address itself and reaches IPv4 over NAT64. APN and interface are overridable (`UCONSOLE_4G_APN`, `UCONSOLE_4G_IFACE`).
+
+**Battery + power hygiene** — AC-gated apt upgrades, CPU frequency caps, charge-rate control, and multi-chemistry discharge-curve logging. The device-specific battery/VOFF stack (initramfs hook, `axp-voff-shutdown`, `pmu-voltage-min`, `low-battery-shutdown`) was **retired in v0.3.1** — it hardcoded i2c bus 0 (wrong on CM5) and a 2.9V cutoff tuned for one cell chemistry, and the package actively removes it on upgrade. The supported opt-in fix is now the udev-rule path (`scripts/power/fix-voltage-cutoff.sh`). `crash-log.service` survives as a passive, chemistry- and bus-agnostic boot diagnostic.
 
 **WiFi suite** — connect / scan / hotspot / iPhone-tether, plus `wifi-fallback.sh` (NetworkManager dispatcher that auto-creates the `uConsole` AP when no known network is around, tears it down when one appears) and the dual-radio mode picker for boards running both CM5 onboard WiFi and AC1200.
 
@@ -150,6 +164,7 @@ uconsole link        Link device to uconsole.cloud (code auth + QR)
 uconsole push        Push status to cloud now
 uconsole status      Show config, timer status, last push time
 uconsole doctor      Diagnose services, SSL, nginx, connectivity
+uconsole passwd      Rotate the webdash / device passwords
 uconsole restore     Run restore.sh from backup repo
 uconsole unlink      Remove cloud config and stop timer
 uconsole update      Update via APT
@@ -174,6 +189,8 @@ Tab completion is installed under `/usr/share/bash-completion/completions/`.
   - GPS over UART (gpsd)
   - ESP32 / ESP32-S3 over USB serial (Marauder, MicroPython, MimiClaw)
   - MT7921-based AC1200 dual-band WiFi card
+  - SIMCom SIM7600G-H 4G/LTE modem (ModemManager, `wwan0`)
+  - CSI camera via `rpicam` / libcamera
 - **PCIe NVMe:** the project documents the `dtparam=pciex1_gen=2` derate required for the SN770M on the CM5 carrier — Gen 3 is unstable on the uConsole's PCIe routing.
 
 ---
@@ -188,7 +205,7 @@ Tab completion is installed under `/usr/share/bash-completion/completions/`.
 | Backup data source | GitHub REST API |
 | CMS | Sanity v3 |
 | Styling | Tailwind CSS v4 |
-| Testing | Vitest 4 (frontend) + pytest (device, ~1000 tests) |
+| Testing | Vitest 4 (frontend) + pytest (device, ~1150 tests) |
 | Hosting | Vercel |
 | CI/CD | GitHub Actions (.deb build, APT publish, arm64 install test via QEMU) |
 | Device | Bash + Python 3, Flask webdash, curses TUI, systemd user + system units |
