@@ -22,9 +22,13 @@ vi.mock("@/lib/github", () => ({
   validateUconsoleRepo: vi.fn(),
 }));
 
-import { POST } from "@/app/api/settings/route";
-import { requireAuthWithToken } from "@/lib/api-helpers";
-import { getUserSettings, setUserSettings } from "@/lib/redis";
+import { POST, DELETE } from "@/app/api/settings/route";
+import { requireAuth, requireAuthWithToken } from "@/lib/api-helpers";
+import {
+  getUserSettings,
+  setUserSettings,
+  deleteUserSettings,
+} from "@/lib/redis";
 import {
   generateDeviceToken,
   revokeDeviceToken,
@@ -35,6 +39,7 @@ import {
 import { validateUconsoleRepo } from "@/lib/github";
 
 const mockAuth = requireAuthWithToken as ReturnType<typeof vi.fn>;
+const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetUserSettings = getUserSettings as ReturnType<typeof vi.fn>;
 const mockSetUserSettings = setUserSettings as ReturnType<typeof vi.fn>;
 const mockGenerate = generateDeviceToken as ReturnType<typeof vi.fn>;
@@ -42,6 +47,7 @@ const mockRevokeAll = revokeDeviceToken as ReturnType<typeof vi.fn>;
 const mockSweep = revokeOtherDeviceTokens as ReturnType<typeof vi.fn>;
 const mockValidateRepo = validateUconsoleRepo as ReturnType<typeof vi.fn>;
 const mockLock = withDeviceTokenLock as ReturnType<typeof vi.fn>;
+const mockDeleteUserSettings = deleteUserSettings as ReturnType<typeof vi.fn>;
 
 const BASE: UserSettings = {
   repo: "owner/old-repo",
@@ -59,6 +65,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockLock.mockImplementation(async (_userId: string, fn: () => Promise<unknown>) => fn());
   mockSetUserSettings.mockResolvedValue(undefined);
+  mockDeleteUserSettings.mockResolvedValue(undefined);
+  mockRequireAuth.mockResolvedValue({ user: { id: "user123" } });
   mockSweep.mockResolvedValue(undefined);
   mockRevokeAll.mockResolvedValue(undefined);
   mockAuth.mockResolvedValue({
@@ -177,5 +185,40 @@ describe("POST /api/settings — relink", () => {
     await POST(request());
 
     expect(mockSweep).toHaveBeenCalledWith("user123", "new-token");
+  });
+});
+
+describe("DELETE /api/settings — unlink", () => {
+  it("revokes and deletes settings under the replacement lock", async () => {
+    // A relink indexes its new token before it writes settings. An unlocked
+    // unlink can delete that token and then have the relink's settings write
+    // land afterwards, recreating settings that name a credential which no
+    // longer exists: the dashboard reads as linked and the device cannot push.
+    const order: string[] = [];
+    mockLock.mockImplementation(async (_userId: string, fn: () => Promise<unknown>) => {
+      order.push("lock");
+      const out = await fn();
+      order.push("unlock");
+      return out;
+    });
+    mockRevokeAll.mockImplementation(async () => {
+      order.push("revoke");
+    });
+    mockDeleteUserSettings.mockImplementation(async () => {
+      order.push("delete-settings");
+    });
+
+    await DELETE();
+
+    expect(order).toEqual(["lock", "revoke", "delete-settings", "unlock"]);
+  });
+
+  it("returns 409 rather than racing a replacement", async () => {
+    mockLock.mockRejectedValue(new DeviceTokenBusyError());
+
+    const res = await DELETE();
+
+    expect(res.status).toBe(409);
+    expect(mockRevokeAll).not.toHaveBeenCalled();
   });
 });

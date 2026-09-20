@@ -99,7 +99,24 @@ export async function DELETE() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await revokeDeviceToken(session.user.id);
-  await deleteUserSettings(session.user.id);
+  // Under the same lock as replacement. A relink in flight indexes its new
+  // token before it writes settings, so an unlocked unlink could delete that
+  // token and then have the relink's settings write land afterwards,
+  // recreating settings that name a credential which no longer exists.
+  try {
+    await withDeviceTokenLock(session.user.id, async () => {
+      await revokeDeviceToken(session.user.id);
+      await deleteUserSettings(session.user.id);
+    });
+  } catch (err) {
+    if (err instanceof DeviceTokenBusyError) {
+      return NextResponse.json(
+        { error: "Another device change is in progress. Try again." },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
+
   return NextResponse.json({ ok: true });
 }
