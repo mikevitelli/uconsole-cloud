@@ -300,3 +300,31 @@ def test_no_leaked_sudoers_files_in_source():
         assert "mikevitelli " not in body, (
             f"{fname}: hardcoded operator username 'mikevitelli' present"
         )
+
+
+def test_shipped_device_python_has_no_hardcoded_operator_home():
+    """Shipped device Python must not embed an operator-specific home path.
+
+    The install-test Docker build greps the packaged payload for personal
+    data; a hardcoded `/home/mikevitelli/...` path in device/lib caused the
+    package privacy check to fail.
+    """
+    roots = (
+        os.path.join(REPO, "device/lib"),
+        os.path.join(REPO, "device/bin"),
+    )
+    leaked = []
+    for root in roots:
+        for dirpath, _, filenames in os.walk(root):
+            for fname in filenames:
+                if not fname.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, fname)
+                with open(path, encoding="utf-8") as f:
+                    body = f.read()
+                if "/home/mikevitelli/" in body:
+                    leaked.append(os.path.relpath(path, REPO))
+    assert not leaked, (
+        "operator-specific home path leaked into shipped device Python:\n"
+        + "\n".join(f"  - {path}" for path in leaked)
+    )

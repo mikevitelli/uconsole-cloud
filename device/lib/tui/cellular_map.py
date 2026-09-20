@@ -43,6 +43,7 @@ POLL_FRAMES = 4        # 4 * 1s timeout ≈ 4s between CPSI polls
 CACHE_DIR = os.path.expanduser("~/.config/uconsole")
 TOWER_CACHE = os.path.join(CACHE_DIR, "cell-towers.json")
 OPENCELLID_KEY_FILE = os.path.join(CACHE_DIR, "opencellid.key")
+OP_SERVICE_ACCOUNT_TOKEN_FILE = os.path.expanduser("~/.config/op/service-account-token")
 
 # Cached, pre-encoded HTTP-Basic credential for WiGLE (module global). Never
 # printed or logged. Populated lazily by _wigle_cred().
@@ -214,11 +215,13 @@ def upsert_serving(cache, cell, geo):
 def _op_field(title, label="credential"):
     """Fetch a 1Password field via the op CLI (service account). None on failure.
     Shared by the WiGLE and OpenCelliD secret loaders; the value is never logged."""
-    try:
-        with open("/home/mikevitelli/.config/op/service-account-token") as f:
-            tok = f.read().strip()
-    except Exception:
-        return None
+    tok = os.environ.get("OP_SERVICE_ACCOUNT_TOKEN")
+    if not tok:
+        try:
+            with open(OP_SERVICE_ACCOUNT_TOKEN_FILE) as f:
+                tok = f.read().strip()
+        except Exception:
+            return None
     env2 = dict(os.environ)
     env2["OP_SERVICE_ACCOUNT_TOKEN"] = tok
     try:
