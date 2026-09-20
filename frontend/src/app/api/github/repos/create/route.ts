@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithToken } from "@/lib/api-helpers";
-import { setUserSettings } from "@/lib/redis";
-import { generateDeviceToken, revokeDeviceToken } from "@/lib/deviceToken";
+import { getUserSettings, setUserSettings } from "@/lib/redis";
+import {
+  generateDeviceToken,
+  revokeDeviceTokenValue,
+} from "@/lib/deviceToken";
 import { createBootstrapRepo } from "@/lib/github";
 
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/;
@@ -30,9 +33,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status });
   }
 
-  // Auto-link the new repo. Revoke the outgoing credential first — the write
-  // below drops the pointer, orphaning whatever it referenced.
-  await revokeDeviceToken(session.user.id);
+  // Auto-link the new repo. Capture the outgoing credential before the write
+  // below drops the pointer, or nothing can name it afterwards.
+  const prior = (await getUserSettings(session.user.id))?.deviceToken;
 
   await setUserSettings(session.user.id, {
     repo: result.full_name,
@@ -42,6 +45,17 @@ export async function POST(req: NextRequest) {
     session.user.id,
     result.full_name
   );
+
+  // Retire the old credential only after the replacement is committed. The
+  // repository already exists on GitHub at this point, so a failure here is not
+  // retryable — it comes back 409 — and must not disconnect the device too.
+  if (prior && prior !== deviceToken) {
+    try {
+      await revokeDeviceTokenValue(session.user.id, prior);
+    } catch {
+      // Still indexed; unlink or a later relink will clear it.
+    }
+  }
 
   return NextResponse.json({ repo: result.full_name, deviceToken });
 }

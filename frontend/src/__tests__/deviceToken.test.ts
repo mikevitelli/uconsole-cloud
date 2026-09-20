@@ -160,7 +160,14 @@ describe("revokeDeviceToken", () => {
       "devicetoken:tok-b",
       "devicetoken:tok-c"
     );
-    expect(mockDel).toHaveBeenCalledWith("usertokens:user123");
+    // Snapshotted members are removed individually. Deleting the index key
+    // wholesale would drop a token a concurrent mint added after the snapshot.
+    expect(mockSrem).toHaveBeenCalledWith(
+      "usertokens:user123",
+      "tok-a",
+      "tok-b",
+      "tok-c"
+    );
   });
 
   it("still revokes a token minted before the index existed", async () => {
@@ -221,3 +228,99 @@ describe("regenerateDeviceToken", () => {
     expect(mockDel).toHaveBeenCalledWith("devicetoken:old-token");
   });
 });
+
+// ── Greptile P1 follow-ups on #58 ────────────────────────────────
+
+describe("generateDeviceToken partial-mint cleanup", () => {
+  it("deletes the token when indexing fails", async () => {
+    // The token key is written first. A throw after that point leaves a live
+    // 90-day credential with nothing referencing it and nothing able to reach
+    // it — the orphan this module exists to prevent.
+    mockSadd.mockRejectedValueOnce(new Error("redis down"));
+
+    await expect(
+      generateDeviceToken("user123", "owner/repo")
+    ).rejects.toThrow("redis down");
+
+    expect(mockDel).toHaveBeenCalledWith(
+      expect.stringMatching(/^devicetoken:/)
+    );
+  });
+
+  it("deletes the token when the settings write fails", async () => {
+    mockSetUserSettings.mockRejectedValueOnce(new Error("settings write failed"));
+
+    await expect(
+      generateDeviceToken("user123", "owner/repo")
+    ).rejects.toThrow("settings write failed");
+
+    expect(mockDel).toHaveBeenCalledWith(
+      expect.stringMatching(/^devicetoken:/)
+    );
+  });
+
+  it("surfaces the original error even if cleanup itself fails", async () => {
+    mockSadd.mockRejectedValueOnce(new Error("redis down"));
+    mockDel.mockRejectedValueOnce(new Error("cleanup also failed"));
+
+    await expect(
+      generateDeviceToken("user123", "owner/repo")
+    ).rejects.toThrow("redis down");
+  });
+});
+
+describe("revokeDeviceToken concurrency", () => {
+  it("removes only the tokens it snapshotted, not the whole index", async () => {
+    // Deleting the index key would drop a token a concurrent mint added after
+    // the snapshot, stranding a live credential outside the index.
+    mockSmembers.mockResolvedValue(["tok-a", "tok-b"]);
+    mockGetUserSettings.mockResolvedValue({
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "tok-b",
+    });
+
+    await revokeDeviceToken("user123");
+
+    expect(mockSrem).toHaveBeenCalledWith("usertokens:user123", "tok-a", "tok-b");
+    expect(mockDel).not.toHaveBeenCalledWith("usertokens:user123");
+  });
+
+  it("leaves the pointer alone when a concurrent mint moved it", async () => {
+    // Snapshot says the pointer is tok-a, but by the time we clear it a
+    // concurrent mint has pointed it at a live token. Clearing would orphan it.
+    mockSmembers.mockResolvedValue(["tok-a"]);
+    mockGetUserSettings
+      .mockResolvedValueOnce({
+        repo: "owner/repo",
+        linkedAt: "2026-01-01T00:00:00Z",
+        deviceToken: "tok-a",
+      })
+      .mockResolvedValueOnce({
+        repo: "owner/repo",
+        linkedAt: "2026-01-01T00:00:00Z",
+        deviceToken: "minted-concurrently",
+      });
+
+    await revokeDeviceToken("user123");
+
+    expect(mockSetUserSettings).not.toHaveBeenCalled();
+  });
+
+  it("clears the pointer when it still references a revoked token", async () => {
+    mockSmembers.mockResolvedValue(["tok-a"]);
+    mockGetUserSettings.mockResolvedValue({
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+      deviceToken: "tok-a",
+    });
+
+    await revokeDeviceToken("user123");
+
+    expect(mockSetUserSettings).toHaveBeenCalledWith("user123", {
+      repo: "owner/repo",
+      linkedAt: "2026-01-01T00:00:00Z",
+    });
+  });
+});
+

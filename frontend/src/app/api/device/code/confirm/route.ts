@@ -93,8 +93,18 @@ export async function POST(req: NextRequest) {
 
   // Superseded only now that the replacement is committed. Revoking earlier
   // would strand a working device if confirmation failed.
+  //
+  // Best-effort past this point: the code is consumed and the device is already
+  // polling successfully on the new token, so throwing here would report a
+  // committed confirmation as a 500 and the retry would be rejected as
+  // "Code already used". The stale token stays in the per-user index, so it is
+  // still revocable by unlink.
   if (replaced && replaced !== deviceToken) {
-    await revokeDeviceTokenValue(session.user.id, replaced);
+    try {
+      await revokeDeviceTokenValue(session.user.id, replaced);
+    } catch {
+      // Intentionally swallowed — see above.
+    }
   }
 
   return NextResponse.json({ success: true, repo: settings.repo });

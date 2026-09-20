@@ -6,7 +6,11 @@ import {
   deleteUserSettings,
 } from "@/lib/redis";
 import { validateUconsoleRepo } from "@/lib/github";
-import { generateDeviceToken, revokeDeviceToken } from "@/lib/deviceToken";
+import {
+  generateDeviceToken,
+  revokeDeviceToken,
+  revokeDeviceTokenValue,
+} from "@/lib/deviceToken";
 
 export async function GET() {
   const session = await requireAuth();
@@ -39,10 +43,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Relinking replaces the device's credential. Revoke the outgoing one first:
-  // the write below drops the pointer, and anything it still referenced would
-  // otherwise stay valid for the rest of its 90 days.
-  await revokeDeviceToken(session.user.id);
+  // Capture the outgoing credential before the write below drops the pointer,
+  // or nothing will be able to name it afterwards.
+  const prior = (await getUserSettings(session.user.id))?.deviceToken;
 
   await setUserSettings(session.user.id, {
     repo: repo.trim(),
@@ -53,6 +56,19 @@ export async function POST(req: NextRequest) {
     session.user.id,
     repo.trim()
   );
+
+  // Retire the old credential only now that a usable replacement is committed.
+  // Revoking first would disconnect a working device and leave nothing in its
+  // place if either step above failed. Best-effort: the link has succeeded, and
+  // a cleanup outage must not report it as a failure — the token stays in the
+  // per-user index either way, so it remains revocable.
+  if (prior && prior !== deviceToken) {
+    try {
+      await revokeDeviceTokenValue(session.user.id, prior);
+    } catch {
+      // Still indexed; unlink or a later relink will clear it.
+    }
+  }
 
   return NextResponse.json({ ok: true, deviceToken });
 }

@@ -192,4 +192,17 @@ describe("POST /api/device/code/confirm", () => {
     expect(mockReleaseDeviceCode).toHaveBeenCalledWith(CODE);
     expect(mockRevokeTokenValue).not.toHaveBeenCalled();
   });
+
+  it("still succeeds when the post-commit revoke fails", async () => {
+    // The code is consumed and the device is already polling on the new token.
+    // Throwing here would report a committed confirmation as a 500, and the
+    // retry would come back "Code already used" — the device works, the user
+    // is told it did not.
+    mockRevokeTokenValue.mockRejectedValue(new Error("redis down"));
+
+    const res = await POST(request());
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ success: true });
+  });
 });

@@ -40,21 +40,40 @@ export async function generateDeviceToken(
 
   await redis.set(`devicetoken:${token}`, data, { ex: TOKEN_TTL });
 
-  // Index before the pointer moves, so the token is revocable even if the
-  // write below never lands.
-  await redis.sadd(tokenIndexKey(userId), token);
-  await redis.expire(tokenIndexKey(userId), TOKEN_TTL);
+  // From here the token key exists. Anything that throws before the caller
+  // receives it leaves a live credential nothing references or can reach —
+  // the exact orphan this module exists to prevent — so undo it on the way out.
+  try {
+    // Index before the pointer moves, so the token is revocable even if the
+    // write below never lands.
+    await redis.sadd(tokenIndexKey(userId), token);
+    await redis.expire(tokenIndexKey(userId), TOKEN_TTL);
 
-  // Read the pointer as late as possible and report what was actually
-  // displaced. Callers that revoke a value captured earlier in the request can
-  // revoke a token that a concurrent write already superseded.
-  const settings = await getUserSettings(userId);
-  const replaced = settings?.deviceToken;
-  if (settings) {
-    await setUserSettings(userId, { ...settings, deviceToken: token });
+    // Read the pointer as late as possible and report what was actually
+    // displaced. Callers that revoke a value captured earlier in the request
+    // can revoke a token a concurrent write already superseded.
+    const settings = await getUserSettings(userId);
+    const replaced = settings?.deviceToken;
+    if (settings) {
+      await setUserSettings(userId, { ...settings, deviceToken: token });
+    }
+
+    return { token, replaced };
+  } catch (err) {
+    await discard(userId, token);
+    throw err;
   }
+}
 
-  return { token, replaced };
+/** Best-effort removal of a token the caller never got to use. */
+async function discard(userId: string, token: string): Promise<void> {
+  try {
+    await redis.del(`devicetoken:${token}`);
+    await redis.srem(tokenIndexKey(userId), token);
+  } catch {
+    // Nothing better to do: the original failure is what the caller needs to
+    // see, and the token is in the index if that part landed.
+  }
 }
 
 export async function validateDeviceToken(
@@ -86,19 +105,26 @@ export async function revokeDeviceToken(userId: string): Promise<void> {
   const tokens = await redis.smembers<string[]>(tokenIndexKey(userId));
   if (tokens.length > 0) {
     await redis.del(...tokens.map((t) => `devicetoken:${t}`));
+    // Remove exactly what was snapshotted rather than deleting the index key.
+    // A concurrent mint that indexed a token after the snapshot keeps its
+    // membership, so its credential stays revocable instead of being stranded.
+    await redis.srem(tokenIndexKey(userId), ...tokens);
   }
-  await redis.del(tokenIndexKey(userId));
 
   const settings = await getUserSettings(userId);
-  if (settings) {
+  if (settings?.deviceToken) {
     // Cover a token minted before this index existed.
-    if (settings.deviceToken && !tokens.includes(settings.deviceToken)) {
+    if (!tokens.includes(settings.deviceToken)) {
       await redis.del(`devicetoken:${settings.deviceToken}`);
     }
-    if (settings.deviceToken) {
+    // Compare-and-set: only clear the pointer if it still references a token
+    // this call actually revoked. A concurrent mint may have moved it to a
+    // live token, and clearing that would orphan it.
+    const current = await getUserSettings(userId);
+    if (current?.deviceToken && current.deviceToken === settings.deviceToken) {
       await setUserSettings(userId, {
-        repo: settings.repo,
-        linkedAt: settings.linkedAt,
+        repo: current.repo,
+        linkedAt: current.linkedAt,
       });
     }
   }
